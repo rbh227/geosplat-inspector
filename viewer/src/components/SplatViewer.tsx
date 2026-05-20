@@ -31,7 +31,7 @@ export default function SplatViewer() {
 
       try {
         await viewer.addSplatScene('/scene2.ply', {
-          splatAlphaRemovalThreshold: 5,
+          splatAlphaRemovalThreshold: 20,
           showLoadingUI: true,
         });
         if (cancelled) return;
