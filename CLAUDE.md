@@ -23,7 +23,7 @@ agent can semantically query.
 - SSH: `ssh exouser@149.165.173.161`
 - Persistent volume: `/media/volume/Tene_Volume/`
 - Conda env: `geosplat`
-- GPUs: 4× L40 (use one for training)
+- GPUs: 4× L40S (use one for training)
 
 ## Conventions
 
@@ -37,8 +37,16 @@ agent can semantically query.
 
 (Update this list as scenes are added.)
 
-- (none yet)
+- `scene2` — first real-world capture. Trained two checkpoints with
+  splatfacto on Jetstream (`pipeline/data/splats/scene2/`):
+  - `splat_7k.ply` (7,000 iters, 63 MB, 265k Gaussians) — fast iteration baseline.
+  - `splat_30k.ply` (30,000 iters, 65 MB, 271k Gaussians) — current dev
+    default in `viewer/public/scene2.ply`. Marginal Gaussian-count
+    gain over 7k; the win is in sharpness/color refinement.
 
 ## Status
 
-Phase 0 in progress. See docs/00-start-here.md.
+Phase 2 chunk 1 in progress. Next.js viewer scaffolded; renders
+`scene2.ply` with `@mkkellogg/gaussian-splats-3d`. See
+`docs/00-start-here.md` for the overall plan and
+`docs/01-jetstream-setup.md` for the GPU-side environment brief.
