@@ -1,0 +1,14 @@
+node_modules/
+.env.local
+.env*.local
+pipeline/data/raw/
+pipeline/data/frames/
+pipeline/data/colmap/
+pipeline/data/splats/
+viewer/.next/
+viewer/out/
+*.ply
+*.splat
+__pycache__/
+*.pyc
+.DS_Store
