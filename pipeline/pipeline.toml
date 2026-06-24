@@ -1,0 +1,58 @@
+# SplatAgent Pipeline — Default Configuration
+# Override any value via CLI flags or a custom TOML file.
+
+[run]
+scene_id = ""          # Auto-generated UUID if empty
+output_dir = "./runs"
+resume = true
+seed = 42
+
+[ingest]
+source_type = "images"  # "images" or "video"
+source_path = ""
+
+[ingest.video]
+fps = 2.0
+max_frames = 300
+blur_threshold = 100.0
+dedup_threshold = 0.95
+
+[ingest.images]
+max_dimension = 1600
+formats = ["jpg", "jpeg", "png", "webp", "tiff", "bmp"]
+
+[sfm]
+colmap_binary = "colmap"
+camera_model = "OPENCV"
+single_camera = true
+matcher = "exhaustive"
+vocab_tree_path = ""
+mapper_max_num_models = 1
+min_registered_ratio = 0.5
+
+[train]
+iterations = 30000
+sh_degree = 3
+position_lr_init = 0.00016
+position_lr_final = 0.0000016
+position_lr_max_steps = 30000
+feature_lr = 0.0025
+opacity_lr = 0.05
+scaling_lr = 0.005
+rotation_lr = 0.001
+densify_from_iter = 500
+densify_until_iter = 15000
+densify_interval = 100
+densify_grad_threshold = 0.0002
+prune_opacity_threshold = 0.005
+prune_scale_threshold = 10.0
+loss_lambda_dssim = 0.2
+checkpoint_interval = 5000
+log_interval = 100
+eval_interval = 1000
+white_background = false
+
+[export]
+ply_format = "standard"
+include_sh_coefficients = true
+max_sh_degree = 3

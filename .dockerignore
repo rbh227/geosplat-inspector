@@ -1,0 +1,17 @@
+# Keep the build context small & reproducible (deps are rebuilt in-image).
+node_modules
+dist
+dist-ssr
+.venv
+.venv-api
+**/__pycache__
+**/*.pyc
+.git
+.DS_Store
+*.log
+*.zip
+.env
+.env.*
+pipeline
+**/.pytest_cache
+**/.mypy_cache

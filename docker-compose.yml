@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: .
+    platform: linux/amd64   # open3d has no linux/arm64 wheel; see Dockerfile
+    ports:
+      - "8000:8000"         # API + frontend at http://localhost:8000
+    environment:
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-gemini}
+      - MODEL_NAME=${MODEL_NAME:-gemini-2.5-flash}
+      # API key is read from the host env at runtime — never baked into the image.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./examples:/app/examples   # live example scenes (overrides the baked copy)

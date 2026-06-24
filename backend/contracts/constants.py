@@ -1,0 +1,11 @@
+"""Shared constants (ARCHITECTURE.md §6.2). Frozen."""
+
+SH_C0: float = 0.28209479177387814
+FLOATER_ALPHA: float = 0.05
+VISIBILITY_ALPHA: float = 0.10
+OUTLIER_K: int = 16
+OUTLIER_STD_RATIO: float = 2.0
+NEEDLE_RATIO: float = 10.0
+OVERSIZED_SCENE_FRAC: float = 0.05
+HIST_BINS: int = 50
+UNDO_STACK_MAX: int = 50
