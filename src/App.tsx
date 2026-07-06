@@ -209,7 +209,6 @@ export default function App() {
     if (on) setSelectionCount(viewerRef.current?.clearSelection() ?? 0)
   }, [])
 
-
   const handleKeepSelection = useCallback(() => {
     const ids = viewerRef.current?.keepSelection() ?? new Uint32Array(0)
     commitEdit('keep_only_ids', ids)

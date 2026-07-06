@@ -21,6 +21,7 @@ import { composeMove, composeLook, type MoveDirection, type RotateDirection } fr
 
 const TWEEN_DURATION_MS = 500
 const INTS_PER_SPLAT = 8 // PackedSplats stores 8 x uint32 per splat
+const MAX_PITCH = 1.5 // radians (~86°) — pitch clamp shared by drag-look and the rotate pad
 
 /* ------------------------------------------------------------------ */
 /*  Undo snapshot                                                     */
@@ -270,11 +271,11 @@ export class SceneManager implements ViewerHandle {
     if (this.navigationMode === 'fly' && !animate) {
       // The agent's rotation tools drive this path frame-by-frame; compare
       // orientation before/after so the rotate pad lights for them too (R8).
-      const before = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+      const before = this.cameraEuler()
       this.camera.position.copy(position)
       this.camera.lookAt(target)
       this.flyDistance = position.distanceTo(target) || this.flyDistance
-      const after = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+      const after = this.cameraEuler()
       const dYaw = after.y - before.y
       const dPitch = after.x - before.x
       const dirs: RotateDirection[] = []
@@ -417,6 +418,7 @@ export class SceneManager implements ViewerHandle {
   }
 
   getActiveRotations(): RotateDirection[] {
+    if (this.agentRotationPulse.size === 0) return Array.from(this.activeRotations)
     return Array.from(new Set([...this.activeRotations, ...this.agentRotationPulse]))
   }
 
@@ -425,11 +427,19 @@ export class SceneManager implements ViewerHandle {
   }
 
   /** Flash the rotate pad for agent-driven rotation (R8). Highlight only —
-   *  the pulse set is never consumed by the rotation math. */
+   *  the pulse set is never consumed by the rotation math. Called per frame
+   *  during agent tweens, so React is only notified when the set changes;
+   *  the timer reset still runs every call to keep a long tween lit. */
   private pulseRotationHighlight(dirs: RotateDirection[]): void {
     if (dirs.length === 0) return
-    dirs.forEach((d) => this.agentRotationPulse.add(d))
-    this.emitRotationChange()
+    let changed = false
+    dirs.forEach((d) => {
+      if (!this.agentRotationPulse.has(d)) {
+        this.agentRotationPulse.add(d)
+        changed = true
+      }
+    })
+    if (changed) this.emitRotationChange()
     if (this.agentPulseTimer) clearTimeout(this.agentPulseTimer)
     this.agentPulseTimer = setTimeout(() => {
       this.agentPulseTimer = null
@@ -444,6 +454,12 @@ export class SceneManager implements ViewerHandle {
     this.applyLook(dYaw, dPitch)
   }
 
+  /** Camera orientation as a YXZ euler — the order is load-bearing: yaw (y)
+   *  and pitch (x) stay independent, matching the drag-look math. */
+  private cameraEuler(): THREE.Euler {
+    return new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+  }
+
   /** Rotate the view by yaw/pitch radians, honoring the current nav mode:
    *  orbit rotates around the target, fly turns the camera in place. */
   private applyLook(dYaw: number, dPitch: number): void {
@@ -452,9 +468,9 @@ export class SceneManager implements ViewerHandle {
       this.controls.rotateUp(dPitch)
       this.controls.update()
     } else {
-      const euler = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+      const euler = this.cameraEuler()
       euler.y += dYaw
-      euler.x = Math.max(-1.5, Math.min(1.5, euler.x + dPitch))
+      euler.x = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, euler.x + dPitch))
       this.camera.quaternion.setFromEuler(euler)
     }
   }
@@ -472,9 +488,9 @@ export class SceneManager implements ViewerHandle {
     const dx = e.clientX - this.lookLast.x
     const dy = e.clientY - this.lookLast.y
     this.lookLast = { x: e.clientX, y: e.clientY }
-    const euler = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+    const euler = this.cameraEuler()
     euler.y -= dx * 0.004
-    euler.x = Math.max(-1.5, Math.min(1.5, euler.x - dy * 0.004))
+    euler.x = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, euler.x - dy * 0.004))
     this.camera.quaternion.setFromEuler(euler)
   }
 

@@ -159,7 +159,7 @@ export default function SelectionOverlay({
     if (tool === 'brush') {
       if (maskRef.current) ctx.drawImage(maskRef.current, 0, 0)
       if (cursor.current) {
-        ctx.strokeStyle = eraseMode ? 'rgba(255,120,110,0.8)' : 'rgba(255,255,255,0.5)'
+        ctx.strokeStyle = eraseMode ? ERASE_STROKE_STYLE : 'rgba(255,255,255,0.5)'
         ctx.lineWidth = 1.5
         ctx.beginPath()
         ctx.arc(cursor.current.x, cursor.current.y, brushRadius.current, 0, Math.PI * 2)

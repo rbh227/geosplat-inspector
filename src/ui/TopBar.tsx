@@ -39,6 +39,12 @@ export default function TopBar({
   const [samplesOpen, setSamplesOpen] = useState(false)
   const samplesRef = useRef<HTMLDivElement>(null)
 
+  const exportTitle = !canExport
+    ? 'Export needs a backend-registered .ply scene (view-only formats can\'t export)'
+    : removedCount > 0
+      ? `Download the edited scene (.ply) — ${removedCount.toLocaleString()} splats removed since load; the original file is untouched`
+      : 'Download the current scene (.ply) — no edits since load'
+
   // click-away closes the dropdown
   useEffect(() => {
     if (!samplesOpen) return
@@ -90,13 +96,7 @@ export default function TopBar({
           onClick={onExport}
           disabled={!canExport}
           className="topbar-btn"
-          title={
-            !canExport
-              ? 'Export needs a backend-registered .ply scene (view-only formats can\'t export)'
-              : removedCount > 0
-                ? `Download the edited scene (.ply) — ${removedCount.toLocaleString()} splats removed since load; the original file is untouched`
-                : 'Download the current scene (.ply) — no edits since load'
-          }
+          title={exportTitle}
         >
           <Download size={12} />Export
           {removedCount > 0 && (
