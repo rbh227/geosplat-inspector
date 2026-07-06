@@ -53,6 +53,14 @@ export default function App() {
   const [status, setStatus] = useState<string | null>(null)
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Edit-aware export (R9-R11/KTD6) ──
+  // backendSceneId mirrors sceneIdRef into React state: registration resolves
+  // async after first render, and a ref alone would never re-enable the button.
+  const [backendSceneId, setBackendSceneId] = useState<string | null>(null)
+  // Alive count snapshotted from the viewer handle right after load resolves;
+  // removedCount derives from the live count, so undo/redo/reload stay correct.
+  const [baselineCount, setBaselineCount] = useState(0)
+
   /** Transient status toast (e.g. "Edit rejected — scene restored"). */
   const showStatus = useCallback((text: string) => {
     setStatus(text)
@@ -165,10 +173,12 @@ export default function App() {
   const registerScene = useCallback(async (file: File) => {
     disposeAgent()
     sceneIdRef.current = null
+    setBackendSceneId(null)
     if (!isBackendLoadable(file.name)) return
     try {
       const { id } = await uploadScene(file)
       sceneIdRef.current = id
+      setBackendSceneId(id)
     } catch (err) {
       console.warn('[backend] scene upload failed; agent disabled for this scene:', err)
     }
@@ -246,6 +256,20 @@ export default function App() {
     fileInputRef.current?.click()
   }, [])
 
+  /** Download the backend's live scene — the edited alive set (R9/KTD7).
+   *  The source file on disk is never modified; this serves the edited copy. */
+  const handleExport = useCallback(() => {
+    if (!backendSceneId) return
+    const a = document.createElement('a')
+    a.href = scenePlyUrl(backendSceneId)
+    a.download = ''
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }, [backendSceneId])
+
+  const removedCount = Math.max(0, baselineCount - viewerState.splatCount)
+
   // A load failed: re-show the picker and tell the user (the SceneManager
   // loaders reject on a corrupt/undecodable file with no UI feedback of their own).
   const reportLoadError = useCallback((what: string, err: unknown) => {
@@ -265,6 +289,9 @@ export default function App() {
         reportLoadError(file.name, err)
         return
       }
+      // Snapshot the baseline synchronously from the handle (not React state,
+      // which hasn't flushed yet) so the export badge measures from THIS load.
+      setBaselineCount(viewerRef.current?.getSplatCount() ?? 0)
       void registerScene(file)
     })()
   }, [registerScene, reportLoadError])
@@ -274,9 +301,11 @@ export default function App() {
     setHasScene(true)
     disposeAgent()
     sceneIdRef.current = null
+    setBackendSceneId(null)
     void (async () => {
       try {
         await viewerRef.current?.loadSplat(url)
+        setBaselineCount(viewerRef.current?.getSplatCount() ?? 0)
       } catch (err) {
         reportLoadError(label, err)
       }
@@ -449,6 +478,9 @@ export default function App() {
         onImport={handleImport}
         onLoadDemo={handleLoadDemo}
         onResetView={handleResetView}
+        canExport={backendSceneId !== null}
+        removedCount={removedCount}
+        onExport={handleExport}
       />
 
       {/* Body: viewport + right panel */}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, FolderOpen, Orbit, PanelRight, Plane, RotateCcw } from 'lucide-react'
+import { ChevronDown, Download, FolderOpen, Orbit, PanelRight, Plane, RotateCcw, Upload } from 'lucide-react'
 import { DEMO_SPLATS, type DemoSplat } from '../demos'
 import { isBackendLoadable } from '../backend/client'
 
@@ -18,6 +18,11 @@ interface TopBarProps {
   onImport: () => void
   onLoadDemo: (demo: DemoSplat) => void
   onResetView: () => void
+  /** Export is enabled only for backend-registered scenes (R11). */
+  canExport: boolean
+  /** Splats removed since load — badge stays quiet at zero (R10). */
+  removedCount: number
+  onExport: () => void
 }
 
 /**
@@ -29,6 +34,7 @@ export default function TopBar({
   stage, onStageChange, stageLocked,
   navigationMode, onToggleNavMode,
   rightOpen, onToggleRight, onImport, onLoadDemo, onResetView,
+  canExport, removedCount, onExport,
 }: TopBarProps) {
   const [samplesOpen, setSamplesOpen] = useState(false)
   const samplesRef = useRef<HTMLDivElement>(null)
@@ -48,7 +54,7 @@ export default function TopBar({
       {/* Left: file actions */}
       <div className="flex items-center gap-1">
         <button onClick={onImport} className="topbar-btn">
-          <Download size={12} />Import…
+          <Upload size={12} />Import…
         </button>
 
         {/* Samples dropdown */}
@@ -76,6 +82,29 @@ export default function TopBar({
             </div>
           )}
         </div>
+
+        {/* Edit-aware export (R9-R11): quiet until the scene diverges from the
+            loaded file, then a badge confirms the edits took. Downloads the
+            backend's live alive set — the file on disk is never modified. */}
+        <button
+          onClick={onExport}
+          disabled={!canExport}
+          className="topbar-btn"
+          title={
+            !canExport
+              ? 'Export needs a backend-registered .ply scene (view-only formats can\'t export)'
+              : removedCount > 0
+                ? `Download the edited scene (.ply) — ${removedCount.toLocaleString()} splats removed since load; the original file is untouched`
+                : 'Download the current scene (.ply) — no edits since load'
+          }
+        >
+          <Download size={12} />Export
+          {removedCount > 0 && (
+            <span className="rounded-[2px] bg-red-500/25 px-1 font-mono text-[10px] leading-[14px] text-red-300">
+              −{removedCount.toLocaleString()}
+            </span>
+          )}
+        </button>
 
         <span className="mx-1 h-[16px] w-px bg-border-mid" />
 
@@ -139,10 +168,14 @@ export default function TopBar({
           font-family: var(--font-sans);
           transition: background 120ms, border-color 120ms, color 120ms;
         }
-        .topbar-btn:hover {
+        .topbar-btn:hover:not(:disabled) {
           background: var(--color-bg-hover);
           border-color: var(--color-border-active);
           color: var(--color-text-primary);
+        }
+        .topbar-btn:disabled {
+          opacity: 0.4;
+          cursor: default;
         }
         .topbar-icon-btn {
           display: inline-flex; align-items: center; justify-content: center;
