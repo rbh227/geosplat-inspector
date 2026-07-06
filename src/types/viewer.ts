@@ -1,7 +1,7 @@
 import type * as THREE from 'three'
-import type { MoveDirection } from '../viewer/flyController.ts'
+import type { MoveDirection, RotateDirection } from '../viewer/flyController.ts'
 
-export type { MoveDirection }
+export type { MoveDirection, RotateDirection }
 
 export interface CameraPose {
   position: THREE.Vector3
@@ -72,6 +72,10 @@ export interface ViewerHandle {
   setNavigationMode(mode: 'orbit' | 'fly'): void
   setMovementInput(direction: MoveDirection, active: boolean): void
   getActiveDirections(): MoveDirection[]
+
+  // Rotate control (R7/R8) — works in both nav modes
+  setRotationInput(direction: RotateDirection, active: boolean): void
+  getActiveRotations(): RotateDirection[]
 
   // Stable-ID editing (v0.2 — KTD2/KTD3)
   getLiveIds(): Uint32Array

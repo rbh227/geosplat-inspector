@@ -22,6 +22,12 @@ export const KEY_TO_DIRECTION: Readonly<Record<string, MoveDirection>> = {
   KeyE: 'down',
 }
 
+export type RotateDirection = 'yaw-left' | 'yaw-right' | 'pitch-up' | 'pitch-down'
+
+export const ROTATE_DIRECTIONS: readonly RotateDirection[] = [
+  'yaw-left', 'yaw-right', 'pitch-up', 'pitch-down',
+]
+
 type Vec3 = readonly [number, number, number]
 
 /**
@@ -50,4 +56,26 @@ export function composeMove(
   if (len < 1e-8) return [0, 0, 0]
   const k = (speed * dt) / len
   return [x * k, y * k, z * k]
+}
+
+/**
+ * Yaw/pitch deltas (radians) for one frame from the active rotate-direction
+ * set. Positive yaw turns the view left, positive pitch looks up — matching
+ * the drag-to-look euler math in SceneManager. Same normalization contract
+ * as composeMove: a yaw+pitch diagonal is not faster than a single axis.
+ */
+export function composeLook(
+  dirs: ReadonlySet<RotateDirection>,
+  speed: number,
+  dt: number,
+): [number, number] {
+  let yaw = 0, pitch = 0
+  if (dirs.has('yaw-left')) yaw += 1
+  if (dirs.has('yaw-right')) yaw -= 1
+  if (dirs.has('pitch-up')) pitch += 1
+  if (dirs.has('pitch-down')) pitch -= 1
+  const len = Math.hypot(yaw, pitch)
+  if (len < 1e-8) return [0, 0]
+  const k = (speed * dt) / len
+  return [yaw * k, pitch * k]
 }

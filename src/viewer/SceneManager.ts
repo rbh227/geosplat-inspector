@@ -13,7 +13,7 @@ import { tweenCamera } from './camera.ts'
 import { computeFraming, computeCoreBounds, nearFarForDistance, type Vec3 } from './framing.ts'
 import { IdMap } from './idMap.ts'
 import { transformPoints } from './selection.ts'
-import { composeMove, type MoveDirection } from './flyController.ts'
+import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -88,11 +88,22 @@ export class SceneManager implements ViewerHandle {
   private lookLast = { x: 0, y: 0 }
   private restoreFlyAfterTween = false
 
+  /* Rotate control (R7/R8) — pad-held directions drive the per-frame step;
+     the agent-pulse set drives the highlight ONLY, never the rotation math,
+     so agent rotation keeps its degree precision. */
+  private activeRotations = new Set<RotateDirection>()
+  private agentRotationPulse = new Set<RotateDirection>()
+  private agentPulseTimer: ReturnType<typeof setTimeout> | null = null
+  private rotateSpeed = 1.2 // radians/sec while a pad button is held
+
   /* Callback for React state sync */
   onStateChange: ((state: ViewerState) => void) | null = null
 
   /* Movement-state callback (pad highlight — fires for ANY input source) */
   onMovementChange: ((dirs: MoveDirection[]) => void) | null = null
+
+  /* Rotation-state callback (rotate-pad highlight — fires for ANY input source) */
+  onRotationChange: ((dirs: RotateDirection[]) => void) | null = null
 
   /* ---------------------------------------------------------------- */
   /*  Constructor                                                     */
@@ -168,6 +179,10 @@ export class SceneManager implements ViewerHandle {
   unmount(): void {
     this.mounted = false
     cancelAnimationFrame(this.animFrameId)
+    if (this.agentPulseTimer) {
+      clearTimeout(this.agentPulseTimer)
+      this.agentPulseTimer = null
+    }
     window.removeEventListener('resize', this.handleResize)
     const el = this.renderer.domElement
     el.removeEventListener('pointerdown', this.onLookStart)
@@ -195,6 +210,7 @@ export class SceneManager implements ViewerHandle {
     } else {
       this.controls.update()
     }
+    this.stepRotate(dt)
     this.spark.render(this.scene, this.camera)
 
     // FPS
@@ -252,9 +268,19 @@ export class SceneManager implements ViewerHandle {
     // (frontend/src/agent/camera.ts drives its own rAF tween). In fly mode,
     // drive the camera directly — no mode churn, no coreBounds resampling.
     if (this.navigationMode === 'fly' && !animate) {
+      // The agent's rotation tools drive this path frame-by-frame; compare
+      // orientation before/after so the rotate pad lights for them too (R8).
+      const before = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
       this.camera.position.copy(position)
       this.camera.lookAt(target)
       this.flyDistance = position.distanceTo(target) || this.flyDistance
+      const after = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+      const dYaw = after.y - before.y
+      const dPitch = after.x - before.x
+      const dirs: RotateDirection[] = []
+      if (Math.abs(dYaw) > 1e-4) dirs.push(dYaw > 0 ? 'yaw-left' : 'yaw-right')
+      if (Math.abs(dPitch) > 1e-4) dirs.push(dPitch > 0 ? 'pitch-up' : 'pitch-down')
+      this.pulseRotationHighlight(dirs)
       this.emitStateChange()
       return
     }
@@ -378,6 +404,61 @@ export class SceneManager implements ViewerHandle {
     this.camera.position.z += dz
   }
 
+  /* Rotate control (R7/R8) — button-based direction changes, both nav modes */
+
+  /** Velocity-style rotation input from the on-screen rotate pad. Unlike
+   *  movement, rotation works in BOTH nav modes and never forces a switch. */
+  setRotationInput(direction: RotateDirection, active: boolean): void {
+    const had = this.activeRotations.has(direction)
+    if (active === had) return
+    if (active) this.activeRotations.add(direction)
+    else this.activeRotations.delete(direction)
+    this.emitRotationChange()
+  }
+
+  getActiveRotations(): RotateDirection[] {
+    return Array.from(new Set([...this.activeRotations, ...this.agentRotationPulse]))
+  }
+
+  private emitRotationChange(): void {
+    this.onRotationChange?.(this.getActiveRotations())
+  }
+
+  /** Flash the rotate pad for agent-driven rotation (R8). Highlight only —
+   *  the pulse set is never consumed by the rotation math. */
+  private pulseRotationHighlight(dirs: RotateDirection[]): void {
+    if (dirs.length === 0) return
+    dirs.forEach((d) => this.agentRotationPulse.add(d))
+    this.emitRotationChange()
+    if (this.agentPulseTimer) clearTimeout(this.agentPulseTimer)
+    this.agentPulseTimer = setTimeout(() => {
+      this.agentPulseTimer = null
+      this.agentRotationPulse.clear()
+      this.emitRotationChange()
+    }, 250)
+  }
+
+  private stepRotate(dt: number): void {
+    if (this.activeRotations.size === 0) return
+    const [dYaw, dPitch] = composeLook(this.activeRotations, this.rotateSpeed, dt)
+    this.applyLook(dYaw, dPitch)
+  }
+
+  /** Rotate the view by yaw/pitch radians, honoring the current nav mode:
+   *  orbit rotates around the target, fly turns the camera in place. */
+  private applyLook(dYaw: number, dPitch: number): void {
+    if (this.navigationMode === 'orbit') {
+      this.controls.rotateLeft(dYaw)
+      this.controls.rotateUp(dPitch)
+      this.controls.update()
+    } else {
+      const euler = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+      euler.y += dYaw
+      euler.x = Math.max(-1.5, Math.min(1.5, euler.x + dPitch))
+      this.camera.quaternion.setFromEuler(euler)
+    }
+  }
+
   /* Drag-to-look (fly mode only; orbit mode keeps OrbitControls' own drag) */
 
   private onLookStart = (e: PointerEvent): void => {
@@ -442,6 +523,10 @@ export class SceneManager implements ViewerHandle {
     this.controls.rotateLeft((dx * Math.PI) / 180)
     this.controls.rotateUp((dy * Math.PI) / 180)
     this.controls.update()
+    const dirs: RotateDirection[] = []
+    if (dx !== 0) dirs.push(dx > 0 ? 'yaw-left' : 'yaw-right')
+    if (dy !== 0) dirs.push(dy > 0 ? 'pitch-up' : 'pitch-down')
+    this.pulseRotationHighlight(dirs)
     this.emitStateChange()
   }
 

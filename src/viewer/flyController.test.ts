@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeMove, KEY_TO_DIRECTION, type MoveDirection } from './flyController.ts'
+import { composeLook, composeMove, KEY_TO_DIRECTION, type MoveDirection, type RotateDirection } from './flyController.ts'
 
 const FWD = [0, 0, -1] as const
 const RIGHT = [1, 0, 0] as const
@@ -31,6 +31,38 @@ describe('composeMove', () => {
 
   it('empty set produces zero displacement', () => {
     expect(composeMove(dirs(), FWD, RIGHT, UP, 5, 1)).toEqual([0, 0, 0])
+  })
+})
+
+describe('composeLook', () => {
+  const rdirs = (...d: RotateDirection[]) => new Set<RotateDirection>(d)
+
+  it('positive yaw for yaw-left, negative for yaw-right', () => {
+    expect(composeLook(rdirs('yaw-left'), 2, 0.5)).toEqual([1, 0])
+    expect(composeLook(rdirs('yaw-right'), 2, 0.5)).toEqual([-1, 0])
+  })
+
+  it('positive pitch for pitch-up, negative for pitch-down', () => {
+    expect(composeLook(rdirs('pitch-up'), 2, 0.5)).toEqual([0, 1])
+    expect(composeLook(rdirs('pitch-down'), 2, 0.5)).toEqual([0, -1])
+  })
+
+  it('opposite directions cancel to zero', () => {
+    expect(composeLook(rdirs('yaw-left', 'yaw-right'), 2, 0.5)).toEqual([0, 0])
+    expect(composeLook(rdirs('pitch-up', 'pitch-down'), 2, 0.5)).toEqual([0, 0])
+  })
+
+  it('normalizes yaw+pitch diagonals — no speed boost', () => {
+    const [yaw, pitch] = composeLook(rdirs('yaw-left', 'pitch-up'), 1, 1)
+    expect(Math.hypot(yaw, pitch)).toBeCloseTo(1, 6)
+  })
+
+  it('scales with speed and dt', () => {
+    expect(composeLook(rdirs('yaw-left'), 3, 2)).toEqual([6, 0])
+  })
+
+  it('empty set produces zero rotation', () => {
+    expect(composeLook(rdirs(), 5, 1)).toEqual([0, 0])
   })
 })
 

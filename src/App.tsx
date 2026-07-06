@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { MoveDirection, ViewerState, ViewerHandle } from './types/viewer'
+import type { MoveDirection, RotateDirection, ViewerState, ViewerHandle } from './types/viewer'
 import type { ChatMessage, AgentAction } from './types/agent'
 import { createAgent, WebSocketTransport, PanelBus } from '@agent'
 import type { Agent, TraceEntry } from '@agent'
@@ -17,6 +17,7 @@ import NarrationBar from './ui/NarrationBar'
 import ChatPanel from './ui/ChatPanel'
 import EditorToolbar from './ui/EditorToolbar'
 import MovePad from './ui/MovePad'
+import RotatePad from './ui/RotatePad'
 import EmptyState from './ui/EmptyState'
 import type { DemoSplat } from './demos'
 
@@ -48,6 +49,7 @@ export default function App() {
   const [eraseMode, setEraseMode] = useState(false)
   const [selectionCount, setSelectionCount] = useState(0)
   const [activeDirections, setActiveDirections] = useState<ReadonlySet<MoveDirection>>(new Set())
+  const [activeRotations, setActiveRotations] = useState<ReadonlySet<RotateDirection>>(new Set())
   const [status, setStatus] = useState<string | null>(null)
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -98,6 +100,10 @@ export default function App() {
 
   const handleMovementChange = useCallback((dirs: MoveDirection[]) => {
     setActiveDirections(new Set(dirs))
+  }, [])
+
+  const handleRotationChange = useCallback((dirs: RotateDirection[]) => {
+    setActiveRotations(new Set(dirs))
   }, [])
 
   const handleSelectionChange = useCallback((count: number) => {
@@ -455,6 +461,7 @@ export default function App() {
                 ref={viewerRef}
                 onStateChange={handleStateChange}
                 onMovementChange={handleMovementChange}
+                onRotationChange={handleRotationChange}
                 onSelectionChange={handleSelectionChange}
                 onManualInput={handleManualInput}
               />
@@ -490,15 +497,25 @@ export default function App() {
               />
             )}
 
-            {/* WASD movement pad — every input source lights it (R8/R13) */}
+            {/* Rotate + WASD movement pads — every input source lights them
+                (R8/R13); a shared flex container declares their layout. */}
             {hasScene && (
-              <MovePad
-                activeDirections={activeDirections}
-                onInput={(dir, active) => {
-                  if (active) handleManualInput()
-                  viewerRef.current?.setMovementInput(dir, active)
-                }}
-              />
+              <div className="absolute bottom-3 right-3 z-20 flex items-end gap-2">
+                <RotatePad
+                  activeRotations={activeRotations}
+                  onInput={(dir, active) => {
+                    if (active) handleManualInput()
+                    viewerRef.current?.setRotationInput(dir, active)
+                  }}
+                />
+                <MovePad
+                  activeDirections={activeDirections}
+                  onInput={(dir, active) => {
+                    if (active) handleManualInput()
+                    viewerRef.current?.setMovementInput(dir, active)
+                  }}
+                />
+              </div>
             )}
 
             {/* Pause banner: persists until Resume or Stop — never self-dismisses.

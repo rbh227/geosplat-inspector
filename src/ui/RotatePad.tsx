@@ -1,46 +1,43 @@
-import type { MoveDirection } from '../types/viewer.ts'
+import type { RotateDirection } from '../types/viewer.ts'
 
 /**
- * On-screen WASD movement pad (R8). Six buttons in a 3x3 grid:
- * Q (up) / W (forward) / E (down) on top, A / S / D below.
+ * On-screen rotate pad (R7) — arrow-key layout beside the WASD move pad:
+ * look up on top, turn left / look down / turn right below.
  *
- * The pad is a VIEW of the shared movement state plus one input source among
- * three (keyboard, pad, agent move_camera) — `activeDirections` drives the
- * highlight no matter who is moving, which is what makes agent flight
- * watchable on the pad (R13/SC2).
+ * Like the move pad, this is a VIEW of shared rotation state plus one input
+ * source among two (pad, agent rotation) — `activeRotations` drives the
+ * highlight no matter who is turning the camera (R8).
  */
 
 interface PadKey {
   label: string
-  direction: MoveDirection
+  direction: RotateDirection
   gridArea: string
   title: string
 }
 
 const KEYS: PadKey[] = [
-  { label: 'Q', direction: 'up', gridArea: '1 / 1', title: 'Up' },
-  { label: 'W', direction: 'forward', gridArea: '1 / 2', title: 'Forward' },
-  { label: 'E', direction: 'down', gridArea: '1 / 3', title: 'Down' },
-  { label: 'A', direction: 'left', gridArea: '2 / 1', title: 'Left' },
-  { label: 'S', direction: 'back', gridArea: '2 / 2', title: 'Back' },
-  { label: 'D', direction: 'right', gridArea: '2 / 3', title: 'Right' },
+  { label: '↑', direction: 'pitch-up', gridArea: '1 / 2', title: 'Look up' },
+  { label: '←', direction: 'yaw-left', gridArea: '2 / 1', title: 'Turn left' },
+  { label: '↓', direction: 'pitch-down', gridArea: '2 / 2', title: 'Look down' },
+  { label: '→', direction: 'yaw-right', gridArea: '2 / 3', title: 'Turn right' },
 ]
 
-interface MovePadProps {
-  activeDirections: ReadonlySet<MoveDirection>
-  onInput: (direction: MoveDirection, active: boolean) => void
+interface RotatePadProps {
+  activeRotations: ReadonlySet<RotateDirection>
+  onInput: (direction: RotateDirection, active: boolean) => void
   disabled?: boolean
 }
 
-export default function MovePad({ activeDirections, onInput, disabled = false }: MovePadProps) {
+export default function RotatePad({ activeRotations, onInput, disabled = false }: RotatePadProps) {
   return (
     <div
       className="grid gap-1 select-none"
       style={{ gridTemplateColumns: 'repeat(3, 2.25rem)', gridTemplateRows: 'repeat(2, 2.25rem)' }}
-      aria-label="Movement pad"
+      aria-label="Rotate pad"
     >
       {KEYS.map((k) => {
-        const active = activeDirections.has(k.direction)
+        const active = activeRotations.has(k.direction)
         return (
           <button
             key={k.direction}
@@ -63,7 +60,7 @@ export default function MovePad({ activeDirections, onInput, disabled = false }:
             onPointerUp={() => onInput(k.direction, false)}
             onPointerCancel={() => onInput(k.direction, false)}
             onPointerLeave={() => {
-              if (activeDirections.has(k.direction)) onInput(k.direction, false)
+              if (activeRotations.has(k.direction)) onInput(k.direction, false)
             }}
           >
             {k.label}

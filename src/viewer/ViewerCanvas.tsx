@@ -6,7 +6,7 @@ import {
   useState,
   useCallback,
 } from 'react'
-import type { MoveDirection, ViewerHandle, ViewerState } from '../types/viewer.ts'
+import type { MoveDirection, RotateDirection, ViewerHandle, ViewerState } from '../types/viewer.ts'
 import { SceneManager } from './SceneManager.ts'
 import { KEY_TO_DIRECTION } from './flyController.ts'
 
@@ -18,6 +18,8 @@ interface ViewerCanvasProps {
   onStateChange?: (state: ViewerState) => void
   /** Active movement directions changed (any source: keys, pad, agent). */
   onMovementChange?: (dirs: MoveDirection[]) => void
+  /** Active rotate directions changed (any source: pad, agent — R8). */
+  onRotationChange?: (dirs: RotateDirection[]) => void
   /** Selection count changed (any source: tools, agent, clear). */
   onSelectionChange?: (count: number) => void
   /** Fires on any manual viewport/keyboard input (agent pause trigger, R14). */
@@ -29,7 +31,7 @@ interface ViewerCanvasProps {
 /* ------------------------------------------------------------------ */
 
 const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
-  function ViewerCanvas({ onStateChange, onMovementChange, onSelectionChange, onManualInput }, ref) {
+  function ViewerCanvas({ onStateChange, onMovementChange, onRotationChange, onSelectionChange, onManualInput }, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const managerRef = useRef<SceneManager | null>(null)
     const [isDragging, setIsDragging] = useState(false)
@@ -70,6 +72,8 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         setNavigationMode: (m) => mgr().setNavigationMode(m),
         setMovementInput: (d, a) => mgr().setMovementInput(d, a),
         getActiveDirections: () => mgr().getActiveDirections(),
+        setRotationInput: (d, a) => mgr().setRotationInput(d, a),
+        getActiveRotations: () => mgr().getActiveRotations(),
         getLiveIds: () => mgr().getLiveIds(),
         deleteByIds: (ids) => mgr().deleteByIds(ids),
         keepOnlyIds: (ids) => mgr().keepOnlyIds(ids),
@@ -124,6 +128,12 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         managerRef.current.onMovementChange = onMovementChange ?? null
       }
     }, [onMovementChange])
+
+    useEffect(() => {
+      if (managerRef.current) {
+        managerRef.current.onRotationChange = onRotationChange ?? null
+      }
+    }, [onRotationChange])
 
     useEffect(() => {
       if (managerRef.current) {
