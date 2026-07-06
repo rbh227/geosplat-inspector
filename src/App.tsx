@@ -103,6 +103,11 @@ export default function App() {
     setSelectionCount(count)
   }, [])
 
+  /** Escape with no gesture in progress lands in pointer mode (R6/KTD5). */
+  const handleExitTool = useCallback(() => {
+    setActiveTool(null)
+  }, [])
+
   const [agentPaused, setAgentPaused] = useState(false)
   const isThinkingRef = useRef(false)
   const agentPausedRef = useRef(false)
@@ -452,6 +457,7 @@ export default function App() {
                 tool={activeTool}
                 onSelectionChange={handleSelectionChange}
                 onManualInput={handleManualInput}
+                onExitTool={handleExitTool}
               />
             )}
 

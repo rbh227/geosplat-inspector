@@ -4,6 +4,7 @@ import {
   CircleDashed,
   Hexagon,
   Lasso,
+  MousePointer2,
   Redo2,
   Trash2,
   Undo2,
@@ -82,6 +83,18 @@ export default function EditorToolbar({
   const hasSelection = selectionCount > 0
   return (
     <div className="absolute left-0 top-0 bottom-0 z-20 flex w-[34px] flex-col items-center gap-0.5 border-r border-border-panel bg-bg-topbar pt-2">
+      {/* Pointer mode: no tool active — drags reach the camera controls (R4/R5) */}
+      <RailButton
+        title="Pointer / navigate (drag rotates the view)"
+        active={activeTool === null}
+        disabled={disabled}
+        onClick={() => onToolChange(null)}
+      >
+        <MousePointer2 size={15} />
+      </RailButton>
+
+      <div className="my-1 h-px w-5 bg-border-mid" />
+
       {TOOLS.map(({ tool, icon: Icon, title }) => (
         <RailButton
           key={tool}

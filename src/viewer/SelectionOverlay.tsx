@@ -29,9 +29,11 @@ interface SelectionOverlayProps {
   onSelectionChange?: (count: number) => void
   /** Any pointer-down here is manual input (agent pause trigger, R14). */
   onManualInput?: () => void
+  /** Escape with no gesture in progress exits to pointer mode (R6/KTD5). */
+  onExitTool?: () => void
 }
 
-export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, onManualInput }: SelectionOverlayProps) {
+export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, onManualInput, onExitTool }: SelectionOverlayProps) {
   const displayRef = useRef<HTMLCanvasElement>(null)
   const maskRef = useRef<HTMLCanvasElement | null>(null) // offscreen, brush only
   const brushRadius = useRef(24)
@@ -319,8 +321,19 @@ export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, o
     if (!tool) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        resetInteraction()
-        redrawDisplay()
+        // Two-step exit (KTD5): first Escape cancels an in-progress gesture,
+        // Escape with nothing in progress drops to pointer mode.
+        const inProgress =
+          drawing.current ||
+          lassoPath.current.length > 0 ||
+          polygonVerts.current.length > 0 ||
+          volumeAnchor.current !== null
+        if (inProgress) {
+          resetInteraction()
+          redrawDisplay()
+        } else {
+          onExitTool?.()
+        }
       } else if (tool === 'brush' && (e.key === '[' || e.key === ']')) {
         brushRadius.current = Math.max(4, Math.min(200, brushRadius.current + (e.key === ']' ? 4 : -4)))
         redrawDisplay()
@@ -328,7 +341,7 @@ export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, o
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tool, resetInteraction, redrawDisplay])
+  }, [tool, resetInteraction, redrawDisplay, onExitTool])
 
   /* tool switched off / changed: drop any in-progress state */
   useEffect(() => {
