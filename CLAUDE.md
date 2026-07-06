@@ -19,14 +19,14 @@ See ARCHITECTURE.md for the full spec. Key points:
 
 | Boundary | Owner | Path | Edits |
 |----------|-------|------|-------|
-| Contracts | FROZEN (Phase 0) | `/backend/contracts/`, `/frontend/src/contracts.ts` | **Never** — stop and raise |
+| Contracts | Versioned per phase (v0.2 = editor phase) | `/backend/contracts/`, `/frontend/src/contracts.ts` | Frozen WITHIN a phase; extend only with a version bump + both mirrors + registry tests |
 | Splat data layer | Agent 1 | `/backend/splat/` | loader, numpy model, alive mask, exporter, spatial |
 | Analysis & editing | Agent 2 | `/backend/analysis/` | metrics engine, editing engine, selection, history |
 | Agent loop | Agent 3 | `/backend/agent/`, `/backend/providers/` | perceive→act→verify loop, tool dispatch, model adapters |
 | API server | Agent 4 | `/backend/api/`, `/backend/server.py`, `Dockerfile`, `docker-compose.yml` | FastAPI REST + WS, scene serving, state |
 | Frontend agent | Agent 5 | `/frontend/src/agent/` (new) | WS client, frontend tool executors, panel wiring |
 
-**Rule:** An agent edits only its own folder(s). Import from `/backend/contracts/` freely; never edit contracts.
+**Rule (historical, Phase-0 multi-agent build):** the boundary map documents the original split. Contracts now freeze per phase, not forever: v0.1 froze the Phase-0 build, v0.2 (editor-first rework, `docs/plans/2026-07-05-001`) added the spatial-selection/movement/selection-edit tools. Keep `backend/contracts/tools.py` and `frontend/src/contracts.ts` in sync — `backend/contracts/tests/test_tools.py` + `frontend/src/agent/contracts.test.ts` are the drift guards.
 
 ## Build / Lint / Test Commands
 
@@ -98,22 +98,23 @@ pipeline/            Offline generation pipeline (separate from backend)
 - **API keys**: via env only (`VITE_GEMINI_API_KEY` for frontend, `GEMINI_API_KEY` for backend). Never in code/image.
 - **Dev server**: `npm run dev` (Vite with COOP/COEP headers for SharedArrayBuffer)
 
-## What Works (Fully Wired)
-- Welcome page with animated 3D robot scene
+## What Works (Fully Wired) — editor-first app (docs/plans/2026-07-05-001)
+- Classic editor shell (Postshot mold): top bar with Clean/Understand stage switcher + orbit/fly toggle, left tool rail, viewport-dominant center, right agent/chat panel
 - Drag-drop or click-to-load `.ply`/`.splat`/`.spz`/`.ksplat` files
-- SparkJS Gaussian splat renderer with orbit controls
-- Existing browser-based Gemini agent with 16 tools (being replaced by backend agent)
-- Capture frame → send screenshot to Gemini as image for analysis
-- Basic cleanup: opacity filter, outlier removal, bbox crop
-- Advanced cleanup: scale filter, color filter, density filter, height filter, auto-clean pipeline
-- All cleanup operations reversible with undo stack
-- Chat UI with action history display
-- Real-time HUD (splat count, FPS, camera position)
+- SparkJS Gaussian splat renderer with orbit controls AND custom fly navigation (WASD/QE keys, drag-to-look, on-screen movement pad — the pad lights up for ANY input source, including the agent)
+- Selection tools (SuperSplat grammar): brush (`[`/`]` resize, ring cursor), lasso, polygon (≥3 verts, snap/double-click close), sphere + box volumes with live SplatEdit SDF dim-preview; delete/keep/invert/clear; Alt = remove-from-selection; Escape cancels
+- Stable splat IDs across compaction (`src/viewer/idMap.ts`): frontend and backend share one ID space; after backend reloads the viewer adopts `GET /ids`
+- One logical edit history: every destructive edit (manual or agent) lands in the backend `History` via `/edit` (`delete_by_ids`/`keep_only_ids`); the local stack mirrors it for instant undo; failed backend edits reload the authoritative scene with a status toast
+- Backend agent with stage-gated tools: Clean = full editor surface (40-tool v0.2 registry), Understand = look-only analyst (navigation/capture/answer; edits rejected at spec AND dispatch level)
+- Skills vocabulary (`backend/agent/system_prompt.py` SKILLS): one list rendered into the system prompt and served via `GET /agent/skills`; clickable pills in the chat panel run the same routines the agent composes
+- Agent visible operation: `move_camera` lights the pad, sphere/box selections flash the SDF preview before committing, screen-space selections are paced; pause-on-manual-input holds the loop at the next tool-call boundary with a Resume/Stop banner
+- Real-time HUD (splat count, FPS, camera position) in the top bar
 
 ## What's Not Done / Known Issues
-- **Backend not yet implemented**: agents 1–5 build the server-side agent
+- **Analyst answer quality untuned**: the Understand-stage capture-then-answer structure is tested (CI proxies in `backend/agent/tests/test_analyst_prompt.py`), but live-model counting accuracy on real post-disaster scenes needs manual iteration
+- **Selection loops are O(N) per operation**: fine at demo scale; 600K+ splat scenes may want the cached-centers/stride optimizations before heavy brush sessions
 - **Pipeline not tested end-to-end on GPU**: gsplat/PyTorch compatibility issue
-- **No persistent storage**: no save/export of cleaned splats across sessions
+- **No persistent storage**: no save of cleaned splats across sessions (export via the backend `.ply` serve works)
 
 ## gstack
 - **Web browsing**: ALWAYS use the `/browse` skill from gstack for all web browsing. NEVER use `mcp__claude-in-chrome__*` tools.

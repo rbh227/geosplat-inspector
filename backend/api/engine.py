@@ -51,6 +51,10 @@ class Scene(Protocol):
         """Number of currently-alive Gaussians."""
         ...
 
+    def alive_ids(self) -> list[int]:
+        """Original ids of alive Gaussians, in export order (v0.2)."""
+        ...
+
 
 @runtime_checkable
 class SceneBackend(Protocol):
@@ -67,4 +71,4 @@ class AgentRunner(Protocol):
     commands through `channel`. Must honor cancellation cooperatively.
     """
 
-    async def run(self, prompt: str, scene: Scene, channel: FrontendChannel) -> None: ...
+    async def run(self, prompt: str, scene: Scene, channel: FrontendChannel, stage: str = "clean") -> None: ...

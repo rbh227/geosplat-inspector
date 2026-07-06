@@ -22,12 +22,16 @@ from typing import Any
 from backend.contracts import FrontendChannel
 
 # §6.8 type sets, kept local so we can validate without importing the TS file.
+# v0.2 adds: get_selection / selection_tool / movement_input commands, the
+# correlated selection / tool_result replies, and the stateful agent_pause /
+# agent_resume signals (distinct from user_interrupt, which aborts a run).
 COMMAND_TYPES = {
     "camera_move", "capture_request", "drop_marker",
     "clear_markers", "narrate", "reload_scene",
+    "get_selection", "selection_tool", "movement_input",
 }
 TRACE_TYPES = {"thought", "tool_call", "tool_result", "complete"}
-REPLY_TYPES = {"frame", "user_interrupt"}
+REPLY_TYPES = {"frame", "user_interrupt", "selection", "tool_result", "agent_pause", "agent_resume"}
 
 DEFAULT_COMMAND_TIMEOUT = 30.0  # seconds to await a frontend reply
 
@@ -40,6 +44,8 @@ class ConnectionManager:
         self._pending: dict[str, asyncio.Future] = {}    # corr_id -> Future
         self._pending_scene: dict[str, str] = {}         # corr_id -> scene_id
         self._interrupted: set[str] = set()              # scene_ids interrupted
+        self._paused: set[str] = set()                   # scene_ids paused (stateful, non-consuming)
+        self._resume_events: dict[str, asyncio.Event] = {}  # scene_id -> resume signal
 
     # ---- connection lifecycle -------------------------------------------- #
     async def connect(self, scene_id: str, websocket: Any) -> None:
@@ -73,6 +79,21 @@ class ConnectionManager:
         mtype = message.get("type")
         if mtype == "user_interrupt":
             self._interrupted.add(scene_id)
+            # an abort also releases a paused loop so it can wind down
+            self._paused.discard(scene_id)
+            ev = self._resume_events.get(scene_id)
+            if ev is not None:
+                ev.set()
+            return
+        if mtype == "agent_pause":
+            self._paused.add(scene_id)
+            self._resume_events.setdefault(scene_id, asyncio.Event()).clear()
+            return
+        if mtype == "agent_resume":
+            self._paused.discard(scene_id)
+            ev = self._resume_events.get(scene_id)
+            if ev is not None:
+                ev.set()
             return
         if mtype == "frame" or "id" in message:
             corr_id = message.get("id")
@@ -86,6 +107,17 @@ class ConnectionManager:
             self._interrupted.discard(scene_id)
             return True
         return False
+
+    # ---- pause/resume (v0.2, stateful — unlike the consume-once interrupt) -- #
+    def is_paused(self, scene_id: str) -> bool:
+        return scene_id in self._paused
+
+    async def wait_resume(self, scene_id: str) -> None:
+        """Block until the operator resumes (or aborts) a paused run."""
+        if scene_id not in self._paused:
+            return
+        ev = self._resume_events.setdefault(scene_id, asyncio.Event())
+        await ev.wait()
 
     # ---- outbound: command (await reply) ---------------------------------- #
     async def send_command(
@@ -181,6 +213,14 @@ class WSChannel(FrontendChannel):
     @property
     def interrupted(self) -> bool:
         return self._mgr.take_interrupt(self._scene_id)
+
+    @property
+    def paused(self) -> bool:
+        """Non-consuming pause state (v0.2). The loop checks this between tool calls."""
+        return self._mgr.is_paused(self._scene_id)
+
+    async def wait_resume(self) -> None:
+        await self._mgr.wait_resume(self._scene_id)
 
 
 __all__ = ["ConnectionManager", "WSChannel", "COMMAND_TYPES", "TRACE_TYPES", "REPLY_TYPES"]

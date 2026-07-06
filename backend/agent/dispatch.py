@@ -45,6 +45,9 @@ class BackendExecutor(Protocol):
     def recolor(self, selection: dict, rgb: list[float]) -> dict: ...
     def adjust_opacity(self, selection: dict, factor: float) -> dict: ...
     def truncate_sh(self, degree: int) -> dict: ...
+    # selection editing (v0.2) — ids pulled from the frontend at dispatch time
+    def delete_selection(self, ids: list[int]) -> dict: ...
+    def keep_selection(self, ids: list[int]) -> dict: ...
     # history
     def snapshot(self) -> None: ...
     def undo(self) -> dict: ...
@@ -67,7 +70,22 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
     "drop_marker": "drop_marker",
     "clear_markers": "clear_markers",
     "narrate": "narrate",
+    # v0.2 — editor tools ride the shared visible action layer
+    "select_by_brush": "selection_tool",
+    "select_by_lasso": "selection_tool",
+    "select_by_polygon": "selection_tool",
+    "select_by_sphere": "selection_tool",
+    "select_by_box": "selection_tool",
+    "invert_selection": "selection_tool",
+    "clear_selection": "selection_tool",
+    "get_selection_state": "selection_tool",
+    "move_camera": "movement_input",
 }
+
+# Backend tools that operate on the CURRENT frontend selection: dispatch pulls
+# the stable splat IDs over the channel first (get_selection), then hands them
+# to the editing engine. The model never sees or forwards raw ID arrays.
+_SELECTION_EDIT_TOOLS = frozenset({"delete_selection", "keep_selection"})
 
 
 class ToolDispatcher:
@@ -92,6 +110,24 @@ class ToolDispatcher:
 
     # -- backend ----------------------------------------------------------
     async def _dispatch_backend(self, call: ToolCall) -> dict:
+        args = dict(call.args)
+
+        # Selection edits: resolve the frontend's current selection to stable
+        # IDs before touching the engine (KTD2 — one shared edit path).
+        if call.name in _SELECTION_EDIT_TOOLS:
+            try:
+                pulled = await self.channel.send_command({"type": "get_selection", "args": {}})
+            except Exception as exc:  # noqa: BLE001 - renderer gone / timeout
+                return {"ok": False, "name": call.name, "error": f"selection pull failed: {exc}"}
+            ids = pulled.get("ids") if isinstance(pulled, dict) else None
+            if not ids:
+                return {
+                    "ok": False,
+                    "name": call.name,
+                    "error": "selection is empty — use a select_by_* tool first",
+                }
+            args = {"ids": ids}
+
         snapshotted = False
         if call.name in DESTRUCTIVE_TOOLS:
             self.executor.snapshot()
@@ -102,7 +138,7 @@ class ToolDispatcher:
         if method is None:
             return {"ok": False, "name": call.name, "error": f"executor missing {call.name}"}
         try:
-            result = method(**call.args)
+            result = method(**args)
         except TypeError as exc:
             return {"ok": False, "name": call.name, "error": f"bad args: {exc}"}
         except Exception as exc:  # noqa: BLE001 - surface engine errors to the loop

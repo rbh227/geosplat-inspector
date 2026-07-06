@@ -40,6 +40,8 @@ _EDIT_OPS = frozenset(
         "opacity_threshold", "remove_outliers", "prune_oversized",
         "remove_needles", "crop_bbox", "crop_sphere",
         "recolor", "adjust_opacity", "truncate_sh",
+        # v0.2 — ID-based edits from the frontend's stable ID map
+        "delete_by_ids", "keep_only_ids",
     }
 )
 # These two take a `selection` dict as their first positional arg.
@@ -81,6 +83,10 @@ class RealScene:
 
     def count(self) -> int:
         return int(self.model.alive.sum())
+
+    def alive_ids(self) -> list[int]:
+        """Original ids of alive Gaussians, in export order (v0.2)."""
+        return [int(i) for i in self.model.alive_indices()]
 
 
 class RealBackend:
@@ -138,6 +144,17 @@ class RealBackendExecutor:
     def truncate_sh(self, degree: int) -> dict:
         return self._s.editing.truncate_sh(degree)
 
+    # selection editing (v0.2) — ids arrive from the frontend's stable ID map
+    # via the dispatcher's get_selection WS pull (see backend/agent/dispatch.py)
+    def delete_selection(self, ids: list[int]) -> dict:
+        return self._s.editing.delete_by_ids(ids)
+
+    def keep_selection(self, ids: list[int]) -> dict:
+        return self._s.editing.keep_only_ids(ids)
+
+    def get_selection_state(self, ids: list[int]) -> dict:
+        return self._s.editing.selection_state(ids)
+
     # history
     def snapshot(self) -> None:
         self._s.editing.snapshot()  # no-op marker; edits already auto-snapshot
@@ -164,16 +181,18 @@ class RealAgentRunner:
     `complete{error}` trace event (routes._drive) rather than at import time.
     """
 
-    async def run(self, prompt: str, scene, channel) -> None:  # scene: RealScene
+    async def run(self, prompt: str, scene, channel, stage: str = "clean") -> None:  # scene: RealScene
         # Imported lazily: keeps server boot independent of google-genai being
         # installed (the loop only needs it at run time).
-        from backend.agent import AgentLoop, ToolDispatcher, SYSTEM_PROMPT
+        from backend.agent import AgentLoop, ToolDispatcher
+        from backend.agent.system_prompt import Stage, system_prompt_for
         from backend.providers import get_provider
 
+        resolved: Stage = "understand" if stage == "understand" else "clean"
         executor = RealBackendExecutor(scene)
         dispatcher = ToolDispatcher(executor, channel)
-        provider = get_provider(system_instruction=SYSTEM_PROMPT)
-        loop = AgentLoop(provider, dispatcher, channel)
+        provider = get_provider(system_instruction=system_prompt_for(resolved))
+        loop = AgentLoop(provider, dispatcher, channel, stage=resolved)
         await loop.run(prompt)
 
 

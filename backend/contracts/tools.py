@@ -1,4 +1,10 @@
-"""Tool contract registry (ARCHITECTURE.md §6.5). Frozen."""
+"""Tool contract registry (ARCHITECTURE.md §6.5).
+
+v0.2 — editor phase. The contract freezes per phase: v0.1 froze the Phase-0
+build; v0.2 adds spatial selection, movement, and selection-edit tools for the
+editor-first rework (docs/plans/2026-07-05-001). Additions only — nothing is
+removed or renamed.
+"""
 
 from __future__ import annotations
 
@@ -102,6 +108,81 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "type": "object", "properties": {},
     }, "ok"),
 
+    # ── frontend (selection) — v0.2 ──
+    # Screen-space tools take viewport-normalized coordinates (0..1, origin
+    # top-left). Volume tools take backend-space world coordinates (Y-down);
+    # the frontend applies the render-space flip. All selection tools mutate
+    # the viewer's current selection and return its summary — never raw IDs
+    # (IDs cross to the backend via the get_selection WS pull, not the model).
+    ToolEntry("select_by_brush", "frontend", {
+        "type": "object",
+        "properties": {
+            "center_xy": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2,
+                          "description": "Viewport-normalized [u,v], 0..1, origin top-left"},
+            "radius": {"type": "number", "description": "Brush radius as a fraction of viewport height (0..1)"},
+            "mode": {"type": "string", "enum": ["add", "remove"], "description": "Add to or remove from selection (default add)"},
+        },
+        "required": ["center_xy", "radius"],
+    }, "{count, bbox}"),
+    ToolEntry("select_by_lasso", "frontend", {
+        "type": "object",
+        "properties": {
+            "points_xy": {"type": "array", "minItems": 3,
+                          "items": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+                          "description": "Freehand outline, viewport-normalized [u,v] points"},
+            "mode": {"type": "string", "enum": ["add", "remove"]},
+        },
+        "required": ["points_xy"],
+    }, "{count, bbox}"),
+    ToolEntry("select_by_polygon", "frontend", {
+        "type": "object",
+        "properties": {
+            "points_xy": {"type": "array", "minItems": 3,
+                          "items": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+                          "description": "Polygon vertices, viewport-normalized [u,v]; closed automatically"},
+            "mode": {"type": "string", "enum": ["add", "remove"]},
+        },
+        "required": ["points_xy"],
+    }, "{count, bbox}"),
+    ToolEntry("select_by_sphere", "frontend", {
+        "type": "object",
+        "properties": {
+            "center": _vec3("Sphere center in backend/world coords"),
+            "radius": {"type": "number"},
+            "mode": {"type": "string", "enum": ["add", "remove"]},
+        },
+        "required": ["center", "radius"],
+    }, "{count, bbox}"),
+    ToolEntry("select_by_box", "frontend", {
+        "type": "object",
+        "properties": {
+            "min": _vec3("Box min corner, backend/world coords"),
+            "max": _vec3("Box max corner, backend/world coords"),
+            "mode": {"type": "string", "enum": ["add", "remove"]},
+        },
+        "required": ["min", "max"],
+    }, "{count, bbox}"),
+    ToolEntry("invert_selection", "frontend", {
+        "type": "object", "properties": {},
+    }, "{count, bbox}"),
+    ToolEntry("clear_selection", "frontend", {
+        "type": "object", "properties": {},
+    }, "{count: 0}"),
+    ToolEntry("get_selection_state", "frontend", {
+        "type": "object", "properties": {},
+    }, "{count, bbox}"),
+
+    # ── frontend (movement) — v0.2 ──
+    ToolEntry("move_camera", "frontend", {
+        "type": "object",
+        "properties": {
+            "direction": {"type": "string", "enum": ["forward", "back", "left", "right", "up", "down"],
+                          "description": "Fly-mode movement direction (W/S/A/D/up/down)"},
+            "duration_ms": {"type": "number", "description": "How long to hold the input"},
+        },
+        "required": ["direction", "duration_ms"],
+    }, "ok"),
+
     # ── backend (analysis) ──
     ToolEntry("get_metrics", "backend", {
         "type": "object",
@@ -176,6 +257,17 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "properties": {"degree": {"type": "integer", "minimum": 0, "maximum": 3}},
         "required": ["degree"],
     }, "ok"),
+
+    # ── backend (selection editing) — v0.2 ──
+    # These act on the viewer's current selection: dispatch pulls the stable
+    # splat IDs from the frontend (get_selection WS command), then the editing
+    # engine masks by ID and snapshots the shared history.
+    ToolEntry("delete_selection", "backend", {
+        "type": "object", "properties": {},
+    }, "before/after counts"),
+    ToolEntry("keep_selection", "backend", {
+        "type": "object", "properties": {},
+    }, "before/after counts"),
 
     # ── backend (history) ──
     ToolEntry("snapshot", "backend", {

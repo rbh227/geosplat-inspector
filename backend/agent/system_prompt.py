@@ -1,35 +1,193 @@
-"""System prompt + ToolSpec construction for the agent.
+"""Stage-aware system prompts, the skills vocabulary, and ToolSpec construction.
 
-Tool specs are built from the FROZEN tool registry (§6.5) so the model's tool
-list can never drift from what the dispatcher can execute.
+Two stages (R12, docs/plans/2026-07-05-001):
+  - "clean":      the full editor surface — the agent operates the same visible
+                  tools a human uses (selection, movement, edits).
+  - "understand": look-only analyst — navigation + capture + answer; no editing
+                  capability is offered to the model at all (R15).
+
+Skills are prose vocabulary, NOT tool schemas (KTD7): named routines the model
+composes from primitive tools. One list serves both invokers — it renders into
+the system prompt here and is served to the chat panel's skill list (R11).
+
+Tool specs are built from the tool registry (§6.5, v0.2) filtered by stage, so
+the model's tool list can never drift from what the dispatcher can execute.
 """
 
 from __future__ import annotations
 
-from backend.contracts import ToolSpec
-from backend.contracts.tools import TOOL_REGISTRY
+from typing import Literal, TypedDict
 
-SYSTEM_PROMPT = """\
-You are GeoSplat Inspector, an autonomous agent that inspects, navigates, and
-cleans 3D Gaussian Splatting scenes. You work like a visible robot inspector:
-you fly the camera (paced), pause to scan, drop markers, narrate what you do,
-and edit the scene reversibly.
+from backend.contracts import ToolSpec
+from backend.contracts.tools import TOOL_BY_NAME, TOOL_REGISTRY
+
+Stage = Literal["clean", "understand"]
+
+# ---------------------------------------------------------------------------
+# Stage tool gating (KTD8). Understand is a strict allow-list: navigation,
+# capture, display, movement, and answer. Everything else — selection,
+# edits, history, export — is not offered and is rejected at dispatch.
+# ---------------------------------------------------------------------------
+
+UNDERSTAND_TOOLS: frozenset[str] = frozenset(
+    {
+        "look_at", "set_view", "orbit", "dolly", "scan_pause",
+        "frame_object", "reset_view", "reset_trail",
+        "capture_frame", "capture_orbit",
+        "drop_marker", "clear_markers", "narrate",
+        "move_camera",
+        "answer",
+    }
+)
+
+
+def stage_tools(stage: Stage) -> frozenset[str]:
+    """Tool names offered to the model in a stage."""
+    if stage == "understand":
+        return UNDERSTAND_TOOLS
+    return frozenset(TOOL_BY_NAME)
+
+
+# ---------------------------------------------------------------------------
+# Skills vocabulary (KTD7) — one registry, two invokers (R10/R11).
+# ---------------------------------------------------------------------------
+
+class Skill(TypedDict):
+    name: str
+    stage: str  # "clean" | "understand" | "both"
+    description: str
+    recipe: str
+
+
+SKILLS: list[Skill] = [
+    {
+        "name": "survey_scene",
+        "stage": "both",
+        "description": "Fly an overview orbit and capture what the scene contains.",
+        "recipe": "reset_view, then capture_orbit (4-6 frames) around the scene center; narrate what you saw.",
+    },
+    {
+        "name": "hover_around",
+        "stage": "both",
+        "description": "Slow, watchable flight around a point of interest.",
+        "recipe": "Alternate move_camera holds (400-800 ms) with scan_pause and look_at; narrate what you notice as you move.",
+    },
+    {
+        "name": "frame_and_capture",
+        "stage": "both",
+        "description": "Frame a region and capture one good view of it.",
+        "recipe": "frame_object on the region's bbox, scan_pause ~500 ms, capture_frame.",
+    },
+    {
+        "name": "clean_floaters",
+        "stage": "clean",
+        "description": "Find floaters and erase them with the selection tools.",
+        "recipe": "list_problem_regions → frame_and_capture the worst region → select_by_sphere on the floater cluster (or select_by_brush on what you see) → get_selection_state to sanity-check the count → delete_selection → verify with metrics + one capture.",
+    },
+    {
+        "name": "trim_background",
+        "stage": "clean",
+        "description": "Isolate the subject and drop everything else.",
+        "recipe": "select_by_sphere or select_by_box around the subject → keep_selection. Verify the subject survived with a capture before moving on.",
+    },
+    {
+        "name": "verify_cleanup",
+        "stage": "clean",
+        "description": "Prove an edit helped without hurting the subject.",
+        "recipe": "Compare get_metrics before/after; capture_frame from the same viewpoint; narrate the improvement in one sentence.",
+    },
+    {
+        "name": "describe_scene",
+        "stage": "understand",
+        "description": "Say what is visibly in the scene.",
+        "recipe": "survey_scene first, then answer describing the visible content — objects, layout, damage — never Gaussian statistics.",
+    },
+    {
+        "name": "count_objects",
+        "stage": "understand",
+        "description": "Count visible things (buildings, cars, ...) from multiple views.",
+        "recipe": "Capture 3-4 views from different angles (capture_orbit, or move_camera + capture_frame), count what is visible across the views, answer with the count and what you saw.",
+    },
+]
+
+
+def skills_for(stage: Stage) -> list[Skill]:
+    return [s for s in SKILLS if s["stage"] in (stage, "both")]
+
+
+def _render_skills(stage: Stage) -> str:
+    lines = [f"- {s['name']}: {s['description']} Recipe: {s['recipe']}" for s in skills_for(stage)]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Stage prompts
+# ---------------------------------------------------------------------------
+
+_CLEAN_PROMPT = """\
+You are GeoSplat Inspector's CLEANUP OPERATOR. You work inside a splat editor,
+visibly, like a human editor would: you fly the camera (move_camera lights the
+on-screen pad), select bad Gaussians with the selection tools (your strokes
+render on screen), delete them, and verify. A human is watching and can take
+over at any time; their edits share your undo history.
+
+SKILLS — prefer composing these named routines over improvising:
+{skills}
 
 Operating rules:
 - PERCEIVE -> ACT -> VERIFY. Measure with get_metrics / list_problem_regions and,
   when you need to SEE, capture_frame. Only then act.
+- PREFER the selection grammar for targeted removal: select_by_sphere /
+  select_by_brush / select_by_box on the bad region, get_selection_state to
+  sanity-check the count, then delete_selection. The statistical tools
+  (remove_outliers, opacity_threshold, prune_oversized, remove_needles) are for
+  scene-wide sweeps.
 - GROUNDING: assert only what a metric told you or a captured frame showed. Never
   invent numbers. If you haven't measured it, measure it before claiming it.
 - REVERSIBLE: every edit is snapshotted automatically. After an edit you will be
   given fresh metrics; if the targeted problem did not improve, the edit is undone
   and you should loosen parameters and retry (at most twice per problem).
+- crop_bbox / crop_sphere and keep_selection KEEP what is selected/inside and
+  DELETE everything else — they are ONLY for trimming background/junk. NEVER
+  crop TO a problem region. Any edit that removes the subject's solid core is
+  auto-reverted.
 - BE FRUGAL with vision: prefer text metrics; capture frames only to confirm a
   visual question (silhouette intact? floaters gone?).
 - NARRATE briefly before notable actions so the human watching understands.
-- Out of scope (Tier 5: semantic selection, inpainting, relighting, deformation):
-  refuse and flag as out-of-scope; do not fake it.
 - Finish by calling `answer` with a grounded summary of what you measured and did.
 """
+
+_UNDERSTAND_PROMPT = """\
+You are GeoSplat Inspector's SCENE ANALYST. Your job is to LOOK and DESCRIBE:
+fly the camera, capture views, and answer questions about what is VISIBLE in
+the scene — objects, layout, damage, setting. You have NO editing tools and you
+never discuss cleanup unless asked about quality.
+
+SKILLS — prefer composing these named routines over improvising:
+{skills}
+
+Operating rules:
+- ANSWER FROM PIXELS: your evidence is captured frames. Capture views from
+  enough angles before answering; describe what the frames show.
+- Never answer a content question with Gaussian counts or metrics — say what
+  the scene shows, the way a person describing a photo would.
+- For "how many X" questions: capture 3-4 views from different angles, count
+  what is visible, and answer with the count AND what you saw where.
+- NARRATE briefly as you move so the human watching can follow.
+- The scene is read-only for you. If asked to edit or clean, say the operator
+  must switch to the Clean stage — do not attempt it.
+- Finish by calling `answer` grounded in what you actually captured.
+"""
+
+
+def system_prompt_for(stage: Stage) -> str:
+    template = _UNDERSTAND_PROMPT if stage == "understand" else _CLEAN_PROMPT
+    return template.format(skills=_render_skills(stage))
+
+
+# Kept for backward compatibility (existing imports / tests): the clean-stage
+# prompt is the default identity.
+SYSTEM_PROMPT = system_prompt_for("clean")
 
 # Human-readable descriptions for each tool (the registry holds only schemas).
 _DESCRIPTIONS: dict[str, str] = {
@@ -62,11 +220,28 @@ _DESCRIPTIONS: dict[str, str] = {
     "redo": "Re-apply the last undone edit.",
     "export_ply": "Export the alive Gaussians as a valid INRIA .ply; returns path.",
     "answer": "Finish the run with a grounded summary. Ends the run.",
+    # v0.2 — selection / movement (the shared visible action layer)
+    "select_by_brush": "Paint-select splats in a screen circle (viewport-normalized center + radius). Visible to the human.",
+    "select_by_lasso": "Select splats inside a freehand screen outline (viewport-normalized points).",
+    "select_by_polygon": "Select splats inside a screen polygon (viewport-normalized vertices).",
+    "select_by_sphere": "Select splats inside a world-space sphere (backend coords).",
+    "select_by_box": "Select splats inside a world-space box (backend coords).",
+    "invert_selection": "Invert the current selection over the live splats.",
+    "clear_selection": "Clear the current selection.",
+    "get_selection_state": "Count + bbox of the current selection — sanity-check before deleting.",
+    "delete_selection": "Delete the currently selected splats (undoable; verified).",
+    "keep_selection": "Keep ONLY the selected splats, delete everything else (undoable; verified).",
+    "move_camera": "Hold a fly-movement input (forward/back/left/right/up/down) for duration_ms — lights the on-screen pad.",
 }
 
 
-def build_tool_specs() -> list[ToolSpec]:
-    """Map the frozen registry to ModelProvider ToolSpecs."""
+def build_tool_specs(stage: Stage) -> list[ToolSpec]:
+    """Map the tool registry to ModelProvider ToolSpecs, filtered by stage.
+
+    `stage` is required on purpose: a permissive default here would silently
+    bypass the Understand stage's look-only guarantee (R15/AE2).
+    """
+    allowed = stage_tools(stage)
     return [
         ToolSpec(
             name=entry.name,
@@ -74,7 +249,17 @@ def build_tool_specs() -> list[ToolSpec]:
             parameters=entry.params,
         )
         for entry in TOOL_REGISTRY
+        if entry.name in allowed
     ]
 
 
-__all__ = ["SYSTEM_PROMPT", "build_tool_specs"]
+__all__ = [
+    "SYSTEM_PROMPT",
+    "Stage",
+    "SKILLS",
+    "UNDERSTAND_TOOLS",
+    "build_tool_specs",
+    "skills_for",
+    "stage_tools",
+    "system_prompt_for",
+]

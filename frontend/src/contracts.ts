@@ -1,6 +1,9 @@
 /**
  * Shared contracts for GeoSplat Inspector (ARCHITECTURE.md §6.5, §6.7, §6.8).
- * FROZEN after Phase 0 — do not edit.
+ * v0.2 — editor phase. The contract freezes per phase; v0.2 adds spatial
+ * selection, movement, and selection-edit tools plus the agent pause/resume
+ * and selection-pull WS types (docs/plans/2026-07-05-001). Must stay in sync
+ * with backend/contracts/tools.py.
  */
 
 // ─── §6.2 Constants (mirrored from Python) ───
@@ -84,6 +87,12 @@ export const FRONTEND_TOOLS = [
   "look_at", "set_view", "orbit", "dolly", "scan_pause",
   "frame_object", "reset_view", "capture_frame", "capture_orbit",
   "drop_marker", "clear_markers", "narrate", "reset_trail",
+  // v0.2 — selection
+  "select_by_brush", "select_by_lasso", "select_by_polygon",
+  "select_by_sphere", "select_by_box",
+  "invert_selection", "clear_selection", "get_selection_state",
+  // v0.2 — movement
+  "move_camera",
 ] as const;
 
 export const BACKEND_TOOLS = [
@@ -92,6 +101,8 @@ export const BACKEND_TOOLS = [
   "remove_needles", "crop_bbox", "crop_sphere",
   "recolor", "adjust_opacity", "truncate_sh",
   "snapshot", "undo", "redo", "export_ply", "answer",
+  // v0.2 — selection editing (IDs pulled from the frontend at dispatch time)
+  "delete_selection", "keep_selection",
 ] as const;
 
 export type FrontendToolName = typeof FRONTEND_TOOLS[number];
@@ -126,7 +137,13 @@ export type WSCommandType =
   | "drop_marker"
   | "clear_markers"
   | "narrate"
-  | "reload_scene";
+  | "reload_scene"
+  // v0.2: pull the current selection's stable splat IDs from the viewer
+  | "get_selection"
+  // v0.2: agent-driven selection/movement tools, executed on the shared
+  // visible action layer (same code paths as manual tools)
+  | "selection_tool"
+  | "movement_input";
 
 export interface WSCommand {
   type: WSCommandType;
@@ -135,7 +152,17 @@ export interface WSCommand {
 }
 
 /** Frontend → backend responses */
-export type WSResponseType = "frame" | "user_interrupt";
+export type WSResponseType =
+  | "frame"
+  | "user_interrupt"
+  // v0.2: correlated reply carrying the current selection's stable IDs
+  | "selection"
+  // v0.2: correlated reply for selection_tool / movement_input commands
+  | "tool_result"
+  // v0.2: stateful pause/resume signals — distinct from user_interrupt,
+  // which aborts the run; pause holds it at the next tool-call boundary
+  | "agent_pause"
+  | "agent_resume";
 
 export interface WSResponse {
   type: WSResponseType;

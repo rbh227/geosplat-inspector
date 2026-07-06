@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation — Agent: from cleaner to inspector (move + capture + analyze)</title>
+<style>
+  :root { --bg:#0d0f14; --panel:#161922; --line:#262b38; --fg:#e7e3d8; --dim:#9aa0ad; --cyan:#5fd0d6; --amber:#e8a33d; --green:#6bd28a; --red:#e86d6d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:25px; letter-spacing:-.01em; margin:0 0 6px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.14em; color:var(--dim); margin:38px 0 14px; border-bottom:1px solid var(--line); padding-bottom:8px; }
+  .sub { color:var(--dim); margin:0 0 4px; }
+  .meta { color:var(--dim); font-size:12.5px; font-family:ui-monospace,monospace; margin-top:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin:14px 0; }
+  .card h3 { margin:0 0 4px; font-size:17px; }
+  .rank { color:var(--cyan); font-family:ui-monospace,monospace; font-size:13px; }
+  .tag { display:inline-block; font-size:10.5px; font-family:ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--dim); margin-left:8px; }
+  .tag.move { color:var(--cyan); border-color:#2c4a4d; }
+  .tag.analyze { color:var(--green); border-color:#234a2f; }
+  .tag.shift { color:var(--amber); border-color:#4a3a1e; }
+  .card p { margin:8px 0; }
+  .label { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+  .basis { font-family:ui-monospace,monospace; font-size:12.5px; color:var(--dim); }
+  ul.cut { list-style:none; padding:0; }
+  ul.cut li { padding:8px 0; border-bottom:1px solid var(--line); }
+  ul.cut .why { color:var(--dim); }
+  .pill { color:var(--green); }
+  code { background:#1d212b; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>From cleaner to inspector</h1>
+  <p class="sub">Make the agent's primary loop <b>move + capture + analyze</b>. Cleaning becomes a secondary, opt-in capability — not the reflex.</p>
+  <p class="meta">2026-06-29 · repo-grounded · ce-ideate · related: 2026-06-29-agent-messy-scene-viewability.html</p>
+
+  <h2>The gap (grounding — observed live this session)</h2>
+  <div class="card">
+    <p>Watched the agent on two prompts and it ignored both:</p>
+    <p><b>"Orbit around the scene slowly"</b> → orbited 1°, then ran <code>remove_needles</code> + <code>opacity_threshold</code> (unasked) and claimed it cleaned the scene.<br>
+    <b>"What is in this scene"</b> → ran <code>remove_outliers</code> (unasked) and answered with <b>Gaussian counts</b> instead of describing what's actually visible.</p>
+    <p>Two root causes: (1) <code>backend/agent/system_prompt.py</code> frames the agent's identity around the floater-<b>cleanup</b> flow ("CLEANING:", "the flagship floater loop"), and (2) the local <b>Qwen2.5-VL-7B</b> model has weak instruction-following and pattern-matches every prompt onto inspect→clean→answer. The agent has good navigation/vision <i>tools</i> — it just doesn't treat looking and describing as its <i>job</i>.</p>
+    <p class="basis">basis: backend/agent/system_prompt.py · backend/agent/loop.py · live agent trace 2026-06-29</p>
+  </div>
+
+  <h2>Top ideas (survivors)</h2>
+
+  <div class="card">
+    <h3><span class="rank">#1</span> Reframe the agent: "inspector first, editor on request"<span class="tag shift">shift</span></h3>
+    <p>Rewrite <code>system_prompt.py</code> so the agent's stated identity is <b>navigate, look, describe</b> — and editing is a separate capability with a hard rule: <i>never edit the scene unless the user explicitly asks to clean / remove / fix.</i> The current prompt makes cleaning the default mental model; this flips it.</p>
+    <p><span class="label">Why strong</span> Cheapest possible fix, directly targets the observed failure, and is the foundation every other idea sits on. One-file change.</p>
+    <p class="basis">builds on: backend/agent/system_prompt.py</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#2</span> Intent routing + tool-gating (INSPECT vs EDIT)<span class="tag shift">shift</span></h3>
+    <p>Classify each prompt up front into <b>INSPECT</b> (move/capture/analyze) or <b>EDIT</b> (clean), and only expose the relevant tool subset to the model that turn. In INSPECT mode the cleanup tools <i>aren't even offered</i>, so a weak model <b>literally cannot</b> clean when you asked it to orbit. The structural fix prose alone can't guarantee.</p>
+    <p><span class="label">Why strong</span> Robust against weak instruction-following — it removes the option instead of asking the model to resist it. The real cure for "it cleaned when I said orbit."</p>
+    <p class="basis">builds on: dispatcher / build_tool_specs in system_prompt.py + loop.py</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#3</span> Vision-first scene description<span class="tag analyze">analyze</span></h3>
+    <p>For "what is in this scene," the default answer should be <code>capture_frame</code> → <b>describe the visual content</b> (objects, layout, colors, setting) using the VL model's eyes — not a dump of Gaussian counts. Reserve metrics for explicitly quantitative questions ("how many / how messy"). Make <i>description</i> a first-class answer mode.</p>
+    <p><span class="label">Why strong</span> Directly fixes the "answered with counts" failure; it's the "analyze" half of your ask, and it's what a person actually means by "what is in this scene."</p>
+    <p class="basis">builds on: capture_frame + the VL model; demote get_metrics from the default answer path</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#4</span> Autonomous best-view search<span class="tag move">move</span></h3>
+    <p>Give the agent a real "find the best angle" behavior: <code>capture_orbit</code> several candidate views, score each for legibility (foreground fill, low empty/sky, subject centered), then settle the camera on the winner and narrate why. (Carried from the prior ideation — still the headline <i>move</i> capability the agent lacks.)</p>
+    <p><span class="label">Why strong</span> The marquee "move" behavior; now unblocked since this session fixed orbit actually orbiting. Buildable on existing tools.</p>
+    <p class="basis">builds on: capture_orbit, set_view, the orbit-arc fix landed this session</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#5</span> Guided inspection tour<span class="tag move">move</span></h3>
+    <p>A canned "fly around and show me the scene" behavior: orbit + <code>scan_pause</code> at a few stops + <code>narrate</code> each + <code>drop_marker</code> on notable features. Turns "inspect" into a legible, demo-friendly sweep that ends in a spoken summary — the move+capture+analyze loop made concrete.</p>
+    <p><span class="label">Why strong</span> This <i>is</i> the new primary loop in one behavior, and it's exactly the "robot inspector" demo the project's north star calls for.</p>
+    <p class="basis">builds on: orbit, scan_pause, narrate, drop_marker, capture_frame</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#6</span> Cleaning becomes opt-in / proposed, not reflexive<span class="tag shift">shift</span></h3>
+    <p>Flip the bias: instead of cleaning unprompted, the agent <b>describes</b> the scene and <b>offers</b> — "this scene is ~39% floaters; want me to clean it?" — and only edits on a yes. Cleaning stays a first-class capability, just no longer the default action.</p>
+    <p><span class="label">Why strong</span> The clean expression of "cleaning secondary." Pairs with #1/#2 and makes the agent feel like a collaborator, not a bulldozer.</p>
+    <p class="basis">builds on: get_metrics + narrate + the EDIT-mode gate from #2</p>
+  </div>
+
+  <h2>Considered &amp; cut</h2>
+  <ul class="cut">
+    <li><b>Auto-capture + describe on every arrival</b> — <span class="why">good perception habit, but it's a sub-mechanism of the inspection loop (#4/#5), not a standalone idea. Fold in.</span></li>
+    <li><b>Multi-view "contact sheet" UI</b> — <span class="why">nice presentation surface; it's how #4 could <i>display</i> candidates, not a separate direction. Defer.</span></li>
+    <li><b>"Go look at the X" semantic navigation</b> — <span class="why">bumps Tier-5 semantic selection, which ARCHITECTURE explicitly defers/refuses. Risky now.</span></li>
+    <li><b>Decouple the verify→revert loop from inspection</b> — <span class="why">real, but it's the implementation of #2 (only EDIT mode carries edit-verify scaffolding), not its own idea. Merge.</span></li>
+  </ul>
+
+  <h2>How they map to your ask</h2>
+  <div class="card">
+    <p><b>Move</b> → #4 (best-view), #5 (guided tour).<br>
+    <b>Capture</b> → the mechanism inside #4/#5 (and feeds #3).<br>
+    <b>Analyze</b> → #3 (vision-first description).<br>
+    <b>Cleaning becomes secondary</b> → #1 (reframe identity), #2 (gate tools by intent), #6 (offer, don't reflex).</p>
+    <p class="pill">Recommended first brainstorm: <b>#1 + #2 together</b> — reframe the identity (cheap) <i>and</i> gate the tools by intent (robust against the weak 7B model). That's the literal "switch from cleaning to inspecting," and it makes #3–#6 stick. #3 is the close second (it fixes the "what is in this scene" failure outright).</p>
+  </div>
+
+</div>
+</body>
+</html>

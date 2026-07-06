@@ -26,7 +26,7 @@ from backend.providers import RateLimitError
 from .config import AgentConfig
 from .dispatch import ToolDispatcher
 from .grounding import GroundingError, GroundingLedger
-from .system_prompt import SYSTEM_PROMPT, build_tool_specs
+from .system_prompt import Stage, build_tool_specs, stage_tools, system_prompt_for
 from .types import (
     DESTRUCTIVE_TOOLS,
     VISION_TOOLS,
@@ -37,7 +37,7 @@ from .types import (
     ev_tool_call,
     ev_tool_result,
 )
-from .verify import verify_edit
+from .verify import silhouette_intact, verify_edit
 
 
 class AgentLoop:
@@ -47,14 +47,17 @@ class AgentLoop:
         dispatcher: ToolDispatcher,
         channel: FrontendChannel,
         config: AgentConfig | None = None,
-        system_prompt: str = SYSTEM_PROMPT,
+        system_prompt: str | None = None,
+        stage: Stage = "clean",
     ):
         self.provider = provider
         self.dispatcher = dispatcher
         self.channel = channel
         self.config = config or AgentConfig()
-        self.system_prompt = system_prompt
-        self.tools = build_tool_specs()
+        self.stage = stage
+        self.system_prompt = system_prompt if system_prompt is not None else system_prompt_for(stage)
+        self.tools = build_tool_specs(stage)
+        self._allowed_tools = stage_tools(stage)
 
         # per-run state (reset in run())
         self._messages: list[dict] = []
@@ -110,12 +113,51 @@ class AgentLoop:
                 returned = await self._handle_call(call, step)
                 if returned:  # answer() fired
                     return self._result
+                verdict = await self._pause_checkpoint()
+                if verdict:
+                    return await self._finish_status(verdict)
 
         return await self._finish_status("max_steps")
+
+    # -- pause / takeover (KTD9, R14) --------------------------------------
+    async def _pause_checkpoint(self) -> str | None:
+        """Between tool calls: honor operator takeover. Pause is stateful and
+        holds the loop until an explicit resume; interrupt aborts the run.
+        Channels without pause support (mocks, stubs) fall through silently.
+        """
+        if getattr(self.channel, "interrupted", False):  # consume-once abort
+            await self._emit(ev_narrate("Stopped by the operator."))
+            return "interrupted"
+        if getattr(self.channel, "paused", False):
+            await self._emit(ev_narrate("Paused — the operator has control."))
+            wait = getattr(self.channel, "wait_resume", None)
+            if wait is not None:
+                await wait()
+            if getattr(self.channel, "interrupted", False):
+                await self._emit(ev_narrate("Stopped by the operator."))
+                return "interrupted"
+            # the operator may have edited during the pause: re-measure so the
+            # next verify compares against the real current state
+            self._last_metrics = None
+            await self._emit(ev_narrate("Resumed."))
+        return None
 
     # -- per-call handling ------------------------------------------------
     async def _handle_call(self, call: ToolCall, step: int) -> bool:
         await self._emit(ev_tool_call(call.name, call.args, step))
+
+        # Stage backstop (defense in depth, AE2): the spec filter already keeps
+        # blocked tools out of the model's list, but a hallucinated call must
+        # ALSO never reach the dispatcher in a look-only stage.
+        if call.name != "answer" and call.name not in self._allowed_tools:
+            rejection = {
+                "ok": False,
+                "error": f"{call.name} is not available in the {self.stage} stage"
+                + (" — the operator must switch to Clean to edit" if self.stage == "understand" else ""),
+            }
+            await self._emit(ev_tool_result(call.name, rejection, step))
+            self._feed_back(call.name, rejection)
+            return False
 
         if call.name == "answer":
             return await self._try_answer(str(call.args.get("text", "")))
@@ -164,6 +206,37 @@ class AgentLoop:
             return
 
         after = await self._measure()
+
+        # Subject-loss guard: a single edit shouldn't destroy the dense subject
+        # (judged by the SOLID, non-near-transparent core — not the raw total,
+        # since on messy scenes the noise is often the majority). Cropping TO a
+        # problem region (instead of removing the bad Gaussians inside it) keeps
+        # the junk and wipes the object — and the per-tool metric still
+        # "improves", so verify_edit alone would keep it. Revert and steer the
+        # model toward targeted removal.
+        if not silhouette_intact(before, after):
+            undo_res = await self.dispatcher.dispatch(ToolCall("undo", {}))
+            self._result.edits_reverted += 1
+            self._last_metrics = before
+            b, a = before["gaussianCount"], after["gaussianCount"]
+            detail = f"{call.name} removed {b - a}/{b} Gaussians, destroying the subject's solid core"
+            await self._emit(ev_narrate(f"Reverted {call.name}: {detail}"))
+            await self._emit(ev_tool_result(f"verify:{call.name}", detail, step))
+            await self._emit(ev_tool_result("undo", undo_res, step))
+            self._feed_back(
+                call.name,
+                {
+                    "kept": False,
+                    "reverted": True,
+                    "reason": detail,
+                    "hint": "that deleted most of the scene. Target the bad "
+                    "Gaussians with remove_outliers / opacity_threshold / "
+                    "prune_oversized; do NOT crop to a problem region "
+                    "(crop_bbox/crop_sphere KEEP what's inside and delete the rest).",
+                },
+            )
+            return
+
         vr = verify_edit(call.name, before, after)
         await self._emit(ev_tool_result(f"verify:{call.name}", vr.detail, step))
 

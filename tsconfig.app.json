@@ -18,13 +18,14 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
 
     /* Path aliases */
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@agent": ["./frontend/src/agent/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "frontend/src"],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
 }

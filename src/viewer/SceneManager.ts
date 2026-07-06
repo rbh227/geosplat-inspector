@@ -1,8 +1,19 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark'
+import {
+  SparkRenderer,
+  SplatMesh,
+  SplatEdit,
+  SplatEditSdf,
+  SplatEditSdfType,
+  SplatEditRgbaBlendMode,
+} from '@sparkjsdev/spark'
 import type { ViewerHandle, ViewerState, ViewPreset, SceneStats } from '../types/viewer.ts'
 import { tweenCamera } from './camera.ts'
+import { computeFraming, computeCoreBounds, nearFarForDistance, type Vec3 } from './framing.ts'
+import { IdMap } from './idMap.ts'
+import { transformPoints } from './selection.ts'
+import { composeMove, type MoveDirection } from './flyController.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -19,6 +30,8 @@ interface UndoEntry {
   label: string
   data: Uint32Array
   numSplats: number
+  /** ID-map state captured with the buffer — restored together on undo. */
+  idMapSnap: { data: Uint32Array; live: number } | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -54,8 +67,32 @@ export class SceneManager implements ViewerHandle {
   /* Undo */
   private undoStack: UndoEntry[] = []
 
+  /* Stable splat identity across compaction (KTD3) */
+  private idMap: IdMap | null = null
+
+  /* Selection (v0.2) — original-ID set, survives compaction by construction */
+  private selection = new Set<number>()
+  private sdfPreviewEdit: SplatEdit | null = null
+  private sdfPreviewSdf: SplatEditSdf | null = null
+
+  /* Selection-change callback (count for the toolbar/status surfaces) */
+  onSelectionChange: ((count: number) => void) | null = null
+
+  /* Fly navigation (KTD6) — custom thin controller, see flyController.ts */
+  private navigationMode: 'orbit' | 'fly' = 'orbit'
+  private activeDirections = new Set<MoveDirection>()
+  private clock = new THREE.Clock()
+  private flyDistance = 3        // carried look-target distance across mode switches
+  private flySpeed = 3           // world units/sec, scaled to scene radius on entry
+  private lookActive = false     // drag-to-look pointer state
+  private lookLast = { x: 0, y: 0 }
+  private restoreFlyAfterTween = false
+
   /* Callback for React state sync */
   onStateChange: ((state: ViewerState) => void) | null = null
+
+  /* Movement-state callback (pad highlight — fires for ANY input source) */
+  onMovementChange: ((dirs: MoveDirection[]) => void) | null = null
 
   /* ---------------------------------------------------------------- */
   /*  Constructor                                                     */
@@ -66,7 +103,13 @@ export class SceneManager implements ViewerHandle {
       preserveDrawingBuffer: true,
       antialias: false,
     })
-    this.renderer.setPixelRatio(window.devicePixelRatio)
+    // Cap DPR at 2: on Retina (DPR 2-3) an uncapped ratio renders 4-9x the
+    // pixels and tanks FPS on large (600K+ splat) scenes.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    // Subtle, opaque non-black clear so a small/distant subject isn't lost in
+    // black margins (also satisfies the opaque-clear requirement for captures).
+    // Neutral gray to match the workbench chrome (--color-bg-deep).
+    this.renderer.setClearColor(0x151515, 1)
 
     this.scene = new THREE.Scene()
 
@@ -112,6 +155,12 @@ export class SceneManager implements ViewerHandle {
     this.handleResize()
     window.addEventListener('resize', this.handleResize)
 
+    // Fly-mode drag-to-look (inert while in orbit mode)
+    const el = this.renderer.domElement
+    el.addEventListener('pointerdown', this.onLookStart)
+    el.addEventListener('pointermove', this.onLookMove)
+    window.addEventListener('pointerup', this.onLookEnd)
+
     this.mounted = true
     this.loop()
   }
@@ -120,6 +169,10 @@ export class SceneManager implements ViewerHandle {
     this.mounted = false
     cancelAnimationFrame(this.animFrameId)
     window.removeEventListener('resize', this.handleResize)
+    const el = this.renderer.domElement
+    el.removeEventListener('pointerdown', this.onLookStart)
+    el.removeEventListener('pointermove', this.onLookMove)
+    window.removeEventListener('pointerup', this.onLookEnd)
     this.controls.dispose()
     this.renderer.domElement.remove()
     this.renderer.dispose()
@@ -136,7 +189,12 @@ export class SceneManager implements ViewerHandle {
     if (!this.mounted) return
     this.animFrameId = requestAnimationFrame(this.loop)
 
-    this.controls.update()
+    const dt = this.clock.getDelta() // every frame, so deltas stay small
+    if (this.navigationMode === 'fly') {
+      this.stepFly(dt)
+    } else {
+      this.controls.update()
+    }
     this.spark.render(this.scene, this.camera)
 
     // FPS
@@ -172,6 +230,7 @@ export class SceneManager implements ViewerHandle {
       fileName: this.fileName,
       isLoading: this.loading,
       undoCount: this.undoStack.length,
+      navigationMode: this.navigationMode,
     }
   }
 
@@ -189,28 +248,157 @@ export class SceneManager implements ViewerHandle {
     animate = true,
   ): void {
     this.cancelCurrentTween()
+    // Fast path: the agent's animation layer calls animate=false EVERY FRAME
+    // (frontend/src/agent/camera.ts drives its own rAF tween). In fly mode,
+    // drive the camera directly — no mode churn, no coreBounds resampling.
+    if (this.navigationMode === 'fly' && !animate) {
+      this.camera.position.copy(position)
+      this.camera.lookAt(target)
+      this.flyDistance = position.distanceTo(target) || this.flyDistance
+      this.emitStateChange()
+      return
+    }
+    // Animated pose sets (presets, internal tweens) auto-yield fly mode: the
+    // tween drives OrbitControls, and fly resumes on completion.
+    const wasFly = this.navigationMode === 'fly'
+    if (wasFly) this.setNavigationMode('orbit')
     if (animate) {
+      this.restoreFlyAfterTween = wasFly
       this.cancelTween = tweenCamera(
         this.controls,
         this.camera,
         position,
         target,
         TWEEN_DURATION_MS,
-        () => this.emitStateChange(),
+        () => {
+          if (this.restoreFlyAfterTween) {
+            this.restoreFlyAfterTween = false
+            this.setNavigationMode('fly')
+          }
+          this.emitStateChange()
+        },
       )
     } else {
       this.camera.position.copy(position)
       this.controls.target.copy(target)
       this.controls.update()
+      if (wasFly) this.setNavigationMode('fly')
       this.emitStateChange()
     }
   }
 
   getCameraPose() {
+    if (this.navigationMode === 'fly') {
+      // FlyControls-style navigation has no orbit target; expose a virtual
+      // one projected along the view direction so every consumer of
+      // getCameraPose().target keeps working (KTD6).
+      const dir = this.camera.getWorldDirection(new THREE.Vector3())
+      return {
+        position: this.camera.position.clone(),
+        target: this.camera.position.clone().add(dir.multiplyScalar(this.flyDistance)),
+      }
+    }
     return {
       position: this.camera.position.clone(),
       target: this.controls.target.clone(),
     }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  ViewerHandle – Fly navigation (v0.2, KTD6)                      */
+  /* ---------------------------------------------------------------- */
+
+  getNavigationMode(): 'orbit' | 'fly' {
+    return this.navigationMode
+  }
+
+  setNavigationMode(mode: 'orbit' | 'fly'): void {
+    if (mode === this.navigationMode) return
+    this.cancelCurrentTween()
+    this.restoreFlyAfterTween = false
+    if (mode === 'fly') {
+      this.flyDistance = this.camera.position.distanceTo(this.controls.target) || 3
+      const radius = this.coreBounds()?.radius ?? 3
+      this.flySpeed = Math.max(radius * 0.6, 0.5)
+      this.activeDirections.clear()
+      this.emitMovementChange()
+      this.controls.enabled = false
+    } else {
+      // Hand the orbit controller a coherent target: forward-projected at the
+      // carried distance, so there is no jump on re-entry.
+      const dir = this.camera.getWorldDirection(new THREE.Vector3())
+      this.controls.target.copy(this.camera.position).add(dir.multiplyScalar(this.flyDistance))
+      this.controls.enabled = true
+      this.controls.update()
+      this.activeDirections.clear()
+      this.emitMovementChange()
+      this.lookActive = false
+    }
+    this.navigationMode = mode
+    this.emitStateChange()
+  }
+
+  /**
+   * Velocity-style movement input — the ONE entry point shared by keyboard,
+   * the on-screen pad, and the agent's move_camera tool (R13: any source
+   * lights the pad). Activating a direction while in orbit auto-switches to
+   * fly, which is what the agent movement path requires.
+   */
+  setMovementInput(direction: MoveDirection, active: boolean): void {
+    if (active && this.navigationMode !== 'fly') this.setNavigationMode('fly')
+    const had = this.activeDirections.has(direction)
+    if (active === had) return
+    if (active) this.activeDirections.add(direction)
+    else this.activeDirections.delete(direction)
+    this.emitMovementChange()
+  }
+
+  getActiveDirections(): MoveDirection[] {
+    return Array.from(this.activeDirections)
+  }
+
+  private emitMovementChange(): void {
+    this.onMovementChange?.(this.getActiveDirections())
+  }
+
+  private stepFly(dt: number): void {
+    if (this.activeDirections.size === 0) return
+    const fwd = this.camera.getWorldDirection(new THREE.Vector3())
+    const right = new THREE.Vector3().crossVectors(fwd, this.camera.up).normalize()
+    const [dx, dy, dz] = composeMove(
+      this.activeDirections,
+      [fwd.x, fwd.y, fwd.z],
+      [right.x, right.y, right.z],
+      [0, 1, 0],
+      this.flySpeed,
+      dt,
+    )
+    this.camera.position.x += dx
+    this.camera.position.y += dy
+    this.camera.position.z += dz
+  }
+
+  /* Drag-to-look (fly mode only; orbit mode keeps OrbitControls' own drag) */
+
+  private onLookStart = (e: PointerEvent): void => {
+    if (this.navigationMode !== 'fly') return
+    this.lookActive = true
+    this.lookLast = { x: e.clientX, y: e.clientY }
+  }
+
+  private onLookMove = (e: PointerEvent): void => {
+    if (!this.lookActive || this.navigationMode !== 'fly') return
+    const dx = e.clientX - this.lookLast.x
+    const dy = e.clientY - this.lookLast.y
+    this.lookLast = { x: e.clientX, y: e.clientY }
+    const euler = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion)
+    euler.y -= dx * 0.004
+    euler.x = Math.max(-1.5, Math.min(1.5, euler.x - dy * 0.004))
+    this.camera.quaternion.setFromEuler(euler)
+  }
+
+  private onLookEnd = (): void => {
+    this.lookActive = false
   }
 
   lookAt(target: THREE.Vector3, animate = true): void {
@@ -218,14 +406,11 @@ export class SceneManager implements ViewerHandle {
   }
 
   setView(preset: ViewPreset, animate = true): void {
-    const bbox = this.getBoundingBox()
-    const center = new THREE.Vector3()
-    let radius = 3
-
-    if (bbox) {
-      bbox.getCenter(center)
-      radius = bbox.getSize(new THREE.Vector3()).length() * 0.8
-    }
+    const bounds = this.coreBounds()
+    const center = bounds
+      ? new THREE.Vector3(bounds.center[0], bounds.center[1], bounds.center[2])
+      : new THREE.Vector3()
+    const radius = bounds ? bounds.radius : 3
 
     const posMap: Record<ViewPreset, THREE.Vector3> = {
       front: new THREE.Vector3(center.x, center.y, center.z + radius),
@@ -239,6 +424,15 @@ export class SceneManager implements ViewerHandle {
         center.z + radius * 0.57,
       ),
     }
+
+    // Preset cameras sit at `radius` (or `radius * 0.57 * √3 ≈ radius` for iso)
+    // from the target. Derive near/far from that distance + scene radius so
+    // large scenes keep usable depth precision after a preset jump.
+    const distance = posMap[preset].distanceTo(center)
+    const { near, far } = nearFarForDistance(distance, radius)
+    this.camera.near = near
+    this.camera.far = far
+    this.camera.updateProjectionMatrix()
 
     this.setCameraPose(posMap[preset], center, animate)
   }
@@ -348,6 +542,12 @@ export class SceneManager implements ViewerHandle {
 
       await mesh.initialized
 
+      // Fresh identity map: original IDs 0..N-1 (KTD3). Backend-driven
+      // reloads overwrite this via setIdMapFromIds with the alive-ID list.
+      this.idMap = new IdMap(mesh.packedSplats?.numSplats ?? 0)
+      this.selection.clear()
+      this.emitSelectionChange()
+
       this.frameScene()
     } finally {
       this.loading = false
@@ -376,6 +576,12 @@ export class SceneManager implements ViewerHandle {
       this.splatMesh = mesh
 
       await mesh.initialized
+
+      // Fresh identity map: original IDs 0..N-1 (KTD3). Backend-driven
+      // reloads overwrite this via setIdMapFromIds with the alive-ID list.
+      this.idMap = new IdMap(mesh.packedSplats?.numSplats ?? 0)
+      this.selection.clear()
+      this.emitSelectionChange()
 
       this.frameScene()
     } finally {
@@ -410,12 +616,14 @@ export class SceneManager implements ViewerHandle {
             splat.color,
           )
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = total - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
@@ -462,12 +670,14 @@ export class SceneManager implements ViewerHandle {
             splat.color,
           )
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = n - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
@@ -500,15 +710,233 @@ export class SceneManager implements ViewerHandle {
             splat.color,
           )
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = total - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  ViewerHandle – Selection (v0.2)                                 */
+  /* ---------------------------------------------------------------- */
+
+  getSelectionIds(): Uint32Array {
+    return Uint32Array.from(this.selection)
+  }
+
+  getSelectionCount(): number {
+    return this.selection.size
+  }
+
+  /** Add or remove original IDs from the current selection. */
+  updateSelection(ids: Iterable<number>, mode: 'add' | 'remove' = 'add'): number {
+    for (const id of ids) {
+      if (mode === 'add') this.selection.add(id)
+      else this.selection.delete(id)
+    }
+    this.emitSelectionChange()
+    return this.selection.size
+  }
+
+  clearSelection(): number {
+    this.selection.clear()
+    this.emitSelectionChange()
+    return 0
+  }
+
+  invertSelection(): number {
+    const next = new Set<number>()
+    const live = this.idMap?.liveIds()
+    if (live) {
+      for (const id of live) if (!this.selection.has(id)) next.add(id)
+    }
+    this.selection = next
+    this.emitSelectionChange()
+    return this.selection.size
+  }
+
+  /**
+   * Count + bbox of the current selection in BACKEND coordinates (mesh-local,
+   * pre-flip) — matches the backend's selection_state so agent and human read
+   * the same numbers.
+   */
+  getSelectionSummary(): { count: number; bbox: { min: number[]; max: number[] } | null } {
+    const packed = this.splatMesh?.packedSplats
+    if (this.selection.size === 0 || !packed || !this.idMap) {
+      return { count: this.selection.size, bbox: null }
+    }
+    let minX = Infinity, minY = Infinity, minZ = Infinity
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    const n = packed.numSplats
+    let found = 0
+    for (let i = 0; i < n; i++) {
+      if (!this.selection.has(this.idMap.idAt(i))) continue
+      const c = packed.getSplat(i).center
+      if (c.x < minX) minX = c.x; if (c.y < minY) minY = c.y; if (c.z < minZ) minZ = c.z
+      if (c.x > maxX) maxX = c.x; if (c.y > maxY) maxY = c.y; if (c.z > maxZ) maxZ = c.z
+      found++
+    }
+    if (found === 0) return { count: this.selection.size, bbox: null }
+    return {
+      count: this.selection.size,
+      bbox: { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] },
+    }
+  }
+
+  /** Delete the selected splats locally. Returns the IDs that were deleted. */
+  deleteSelection(): Uint32Array {
+    const ids = this.getSelectionIds()
+    if (ids.length === 0) return ids
+    this.deleteByIds(ids)
+    this.clearSelection()
+    return ids
+  }
+
+  /** Keep only the selected splats locally. Returns the kept IDs. */
+  keepSelection(): Uint32Array {
+    const ids = this.getSelectionIds()
+    if (ids.length === 0) return ids
+    this.keepOnlyIds(ids)
+    this.clearSelection()
+    return ids
+  }
+
+  private emitSelectionChange(): void {
+    this.onSelectionChange?.(this.selection.size)
+  }
+
+  /* ---- SDF dim-preview for sphere/box volume selection (KTD5) ---- */
+
+  /**
+   * Live non-destructive preview: splats inside the volume dim to ~25%.
+   * The SplatEdit is parented to the SPLAT MESH so its coordinates are
+   * mesh-local (= backend space) and inherit the Y-flip — preview and CPU
+   * containment agree by construction. Never a substitute for the commit.
+   */
+  showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void {
+    const mesh = this.splatMesh
+    if (!mesh) return
+    if (!this.sdfPreviewEdit) {
+      const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY })
+      const sdf = new SplatEditSdf({
+        type: shape === 'sphere' ? SplatEditSdfType.SPHERE : SplatEditSdfType.BOX,
+        opacity: 0.25,
+        color: new THREE.Color(1.4, 1.4, 0.6),
+      })
+      edit.addSdf(sdf)
+      edit.add(sdf)
+      mesh.add(edit)
+      this.sdfPreviewEdit = edit
+      this.sdfPreviewSdf = sdf
+    }
+    const sdf = this.sdfPreviewSdf!
+    sdf.type = shape === 'sphere' ? SplatEditSdfType.SPHERE : SplatEditSdfType.BOX
+    sdf.position.set(center[0], center[1], center[2])
+    if (shape === 'sphere') {
+      sdf.radius = size[0]
+      sdf.scale.set(1, 1, 1)
+    } else {
+      sdf.radius = 0
+      sdf.scale.set(Math.max(size[0], 1e-4), Math.max(size[1], 1e-4), Math.max(size[2], 1e-4))
+    }
+  }
+
+  clearSelectionPreview(): void {
+    if (this.sdfPreviewEdit && this.splatMesh) {
+      this.splatMesh.remove(this.sdfPreviewEdit)
+    }
+    this.sdfPreviewEdit = null
+    this.sdfPreviewSdf = null
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  ViewerHandle – Stable-ID editing (v0.2, KTD2/KTD3)              */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Adopt the backend's alive original-ID list after a backend-driven reload
+   * (packed index i ↔ backend's i-th alive Gaussian). Without this, a reload
+   * would reset IDs to 0..M-1 and diverge from the backend's ID space.
+   */
+  setIdMapFromIds(ids: ArrayLike<number>): void {
+    this.idMap = new IdMap(ids)
+    this.selection.clear()
+    this.emitSelectionChange()
+  }
+
+  /** Original splat IDs currently alive (what the backend edit path consumes). */
+  getLiveIds(): Uint32Array {
+    return this.idMap?.liveIds() ?? new Uint32Array(0)
+  }
+
+  /** Delete splats by ORIGINAL id. Returns the number removed. */
+  deleteByIds(ids: Iterable<number>): number {
+    return this.compactByIds(new Set(ids), /* keepListed */ false, 'Delete selection')
+  }
+
+  /** Keep only splats with the given ORIGINAL ids (delete the inverse). */
+  keepOnlyIds(ids: Iterable<number>): number {
+    return this.compactByIds(new Set(ids), /* keepListed */ true, 'Keep selection')
+  }
+
+  private compactByIds(idSet: Set<number>, keepListed: boolean, label: string): number {
+    const packed = this.splatMesh?.packedSplats
+    if (!packed || !this.idMap) return 0
+    if (!keepListed && idSet.size === 0) return 0 // deleting nothing is a no-op
+
+    this.pushUndoSnapshot(label)
+
+    const total = packed.numSplats
+    let writeIdx = 0
+    for (let i = 0; i < total; i++) {
+      const listed = idSet.has(this.idMap.idAt(i))
+      if (listed === keepListed) {
+        if (writeIdx !== i) {
+          const splat = packed.getSplat(i)
+          packed.setSplat(writeIdx, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
+        }
+        this.idMap.retain(writeIdx, i)
+        writeIdx++
+      }
+    }
+
+    const removed = total - writeIdx
+    packed.numSplats = writeIdx
+    this.idMap.setLive(writeIdx)
+    this.markSplatDirty()
+    this.emitStateChange()
+    return removed
+  }
+
+  /**
+   * All live splat centers in WORLD space (matrixWorld applied — resolves the
+   * COLMAP Y-flip) plus their parallel original IDs. Full pass, not strided:
+   * selection containment needs every candidate.
+   */
+  getCentersWorld(): { centers: Float32Array; ids: Uint32Array } | null {
+    const packed = this.splatMesh?.packedSplats
+    const n = packed?.numSplats ?? 0
+    if (!packed || n === 0 || !this.idMap) return null
+
+    this.splatMesh!.updateMatrixWorld()
+    const local = new Float32Array(n * 3)
+    for (let i = 0; i < n; i++) {
+      const c = packed.getSplat(i).center
+      local[i * 3] = c.x
+      local[i * 3 + 1] = c.y
+      local[i * 3 + 2] = c.z
+    }
+    return {
+      centers: transformPoints(local, this.splatMesh!.matrixWorld.elements),
+      ids: this.idMap.liveIds(),
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -533,12 +961,14 @@ export class SceneManager implements ViewerHandle {
         if (writeIdx !== i) {
           packed.setSplat(writeIdx, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = total - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
@@ -578,12 +1008,14 @@ export class SceneManager implements ViewerHandle {
         if (writeIdx !== i) {
           packed.setSplat(writeIdx, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = total - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
@@ -665,12 +1097,14 @@ export class SceneManager implements ViewerHandle {
           const splat = packed.getSplat(i)
           packed.setSplat(writeIdx, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = total - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
@@ -694,12 +1128,14 @@ export class SceneManager implements ViewerHandle {
         if (writeIdx !== i) {
           packed.setSplat(writeIdx, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
         }
+        this.idMap?.retain(writeIdx, i)
         writeIdx++
       }
     }
 
     const removed = total - writeIdx
     packed.numSplats = writeIdx
+    this.idMap?.setLive(writeIdx)
     this.markSplatDirty()
     this.emitStateChange()
     return removed
@@ -816,6 +1252,11 @@ export class SceneManager implements ViewerHandle {
       packed.packedArray.set(entry.data)
     }
     packed.numSplats = entry.numSplats
+    // ID map restores with the buffer — a stale map would make later
+    // selections target the wrong splats (undo symmetry, KTD3).
+    if (entry.idMapSnap && this.idMap) {
+      this.idMap.restore(entry.idMapSnap)
+    }
     this.markSplatDirty()
     this.emitStateChange()
     return true
@@ -842,6 +1283,7 @@ export class SceneManager implements ViewerHandle {
 
   private disposeSplatMesh(): void {
     if (this.splatMesh) {
+      this.clearSelectionPreview()
       this.scene.remove(this.splatMesh)
       this.splatMesh.dispose()
       this.splatMesh = null
@@ -849,24 +1291,89 @@ export class SceneManager implements ViewerHandle {
   }
 
   /**
-   * After loading, move the camera to frame the entire scene.
+   * Strided sample of splat centers, transformed into world space.
+   *
+   * packedSplats centers are mesh-local and the mesh carries a Y-flip
+   * (rotation.x = π); the framing helpers assume world up = +Y, so we resolve
+   * the transform here. Strided so multi-million-splat scenes sample instantly.
+   * Returns null when there is nothing to sample.
+   */
+  private sampleWorldPoints(): Vec3[] | null {
+    const packed = this.splatMesh?.packedSplats
+    const n = packed?.numSplats ?? 0
+    if (!packed || n === 0) return null
+
+    this.splatMesh!.updateMatrixWorld()
+    const m = this.splatMesh!.matrixWorld
+    const stride = Math.max(1, Math.floor(n / 100_000))
+    const v = new THREE.Vector3()
+    const pts: Vec3[] = []
+    for (let i = 0; i < n; i += stride) {
+      const c = packed.getSplat(i).center
+      v.set(c.x, c.y, c.z).applyMatrix4(m)
+      pts.push({ x: v.x, y: v.y, z: v.z })
+    }
+    return pts
+  }
+
+  /**
+   * Robust core center + radius for view presets. Falls back to the raw
+   * bounding box when there are no packed splats to sample.
+   */
+  private coreBounds(): { center: [number, number, number]; radius: number } | null {
+    const pts = this.sampleWorldPoints()
+    if (pts) {
+      const bounds = computeCoreBounds(pts)
+      if (bounds) return bounds
+    }
+    const bbox = this.getBoundingBox()
+    if (!bbox) return null
+    const c = bbox.getCenter(new THREE.Vector3())
+    return { center: [c.x, c.y, c.z], radius: bbox.getSize(new THREE.Vector3()).length() * 0.6 || 3 }
+  }
+
+  /**
+   * After loading, place the camera at an aspect-aware default pose: a
+   * non-grazing elevation for wide/flat scenes, framed on the robust core so
+   * far floaters don't shrink or tilt the view. See framing.ts.
    */
   private frameScene(): void {
+    const pts = this.sampleWorldPoints()
+    if (pts) {
+      const framing = computeFraming(pts, this.camera.fov, this.camera.aspect || 1)
+      if (framing) {
+        this.camera.position.set(framing.position[0], framing.position[1], framing.position[2])
+        this.controls.target.set(framing.target[0], framing.target[1], framing.target[2])
+        this.controls.update()
+        // Derive near/far from the framed distance + scene radius so large
+        // outdoor scenes keep usable depth precision and aren't clipped.
+        const radius = computeCoreBounds(pts)?.radius ?? 0
+        this.updateNearFar(radius)
+        return
+      }
+    }
+    // Fallback: frame the bounding box.
     const bbox = this.getBoundingBox()
     if (!bbox) return
-
-    const center = new THREE.Vector3()
-    bbox.getCenter(center)
-    const size = bbox.getSize(new THREE.Vector3())
-    const radius = size.length() * 0.6
-
-    this.camera.position.set(
-      center.x + radius * 0.6,
-      center.y + radius * 0.4,
-      center.z + radius,
-    )
+    const center = bbox.getCenter(new THREE.Vector3())
+    const radius = bbox.getSize(new THREE.Vector3()).length() * 0.6 || 3
+    this.camera.position.set(center.x + radius * 0.6, center.y + radius * 0.6, center.z + radius)
     this.controls.target.copy(center)
     this.controls.update()
+    this.updateNearFar(radius)
+  }
+
+  /**
+   * Recompute camera near/far from the current camera-to-target distance and
+   * the given scene radius, then refresh the projection matrix. See BUG C in
+   * framing.ts (nearFarForDistance).
+   */
+  private updateNearFar(sceneRadius: number): void {
+    const distance = this.camera.position.distanceTo(this.controls.target)
+    const { near, far } = nearFarForDistance(distance, sceneRadius)
+    this.camera.near = near
+    this.camera.far = far
+    this.camera.updateProjectionMatrix()
   }
 
   /**
@@ -883,6 +1390,7 @@ export class SceneManager implements ViewerHandle {
       label,
       data: snapshot,
       numSplats: packed.numSplats,
+      idMapSnap: this.idMap?.snapshot() ?? null,
     })
   }
 

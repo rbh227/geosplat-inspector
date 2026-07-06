@@ -146,6 +146,46 @@ class EditingEngine:
         return self._apply_keep(keep)
 
     # ------------------------------------------------------------------ #
+    # ID-based deletion (v0.2) — the shared human/agent edit path
+    # ------------------------------------------------------------------ #
+
+    def delete_by_ids(self, ids: list[int]) -> dict:
+        """Delete Gaussians by original id. Unknown/dead ids are ignored;
+        an effectively-empty delete is a no-op that records no history."""
+        valid = resolve_selection(self.model, {"mode": "ids", "ids": ids})
+        before = int(self.model.alive.sum())
+        if valid.size == 0:
+            return self._counts(before, before)
+        keep = np.ones(self.model.alive.shape, dtype=bool)
+        keep[valid] = False
+        return self._apply_keep(keep)
+
+    def keep_only_ids(self, ids: list[int]) -> dict:
+        """Keep only the given original ids (delete the inverse). An empty
+        selection is a no-op — never an implicit delete-everything."""
+        valid = resolve_selection(self.model, {"mode": "ids", "ids": ids})
+        before = int(self.model.alive.sum())
+        if valid.size == 0:
+            return self._counts(before, before)
+        keep = np.zeros(self.model.alive.shape, dtype=bool)
+        keep[valid] = True
+        return self._apply_keep(keep)
+
+    def selection_state(self, ids: list[int]) -> dict:
+        """Count + bbox of the alive subset of ``ids`` (grounding for verify)."""
+        valid = resolve_selection(self.model, {"mode": "ids", "ids": ids})
+        if valid.size == 0:
+            return {"count": 0, "bbox": None}
+        pts = self.model.means[valid]
+        return {
+            "count": int(valid.size),
+            "bbox": {
+                "min": [float(v) for v in pts.min(axis=0)],
+                "max": [float(v) for v in pts.max(axis=0)],
+            },
+        }
+
+    # ------------------------------------------------------------------ #
     # attribute ops (no deletion) — return affected count
     # ------------------------------------------------------------------ #
 

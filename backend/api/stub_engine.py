@@ -177,6 +177,9 @@ class StubScene:
     def count(self) -> int:
         return int(self.alive.sum())
 
+    def alive_ids(self) -> list[int]:
+        return [int(i) for i in np.where(self.alive)[0]]
+
     # ---- activated accessors (alive-only) --------------------------------- #
     def _ai(self) -> np.ndarray:
         return np.where(self.alive)[0]

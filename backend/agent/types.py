@@ -24,6 +24,9 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
         "recolor",
         "adjust_opacity",
         "truncate_sh",
+        # v0.2 — selection edits go through the same snapshot + verify loop
+        "delete_selection",
+        "keep_selection",
     }
 )
 

@@ -85,6 +85,16 @@ def create_router(
             filename=f"{scene_id}.ply",
         )
 
+    # ---- GET /ids : alive original Gaussian ids (v0.2) ------------------- #
+    # After a backend-driven reload the frontend adopts these so its stable
+    # ID map matches the backend's ID space (packed index i <-> i-th entry).
+    @router.get("/ids")
+    async def get_alive_ids(scene_id: str = Query(...)):
+        state = _require(scene_id)
+        async with state.lock:
+            ids = state.scene.alive_ids()
+        return {"ids": ids}
+
     # ---- GET /metrics : compute metrics (optional region) ---------------- #
     @router.get("/metrics")
     async def get_metrics(
@@ -134,6 +144,14 @@ def create_router(
             metrics = state.scene.metrics()
         return HistoryResponse(ok=ok, count=state.scene.count(), metrics=metrics)
 
+    # ---- GET /agent/skills : the shared skills vocabulary (R10/R11) ------ #
+    @router.get("/agent/skills")
+    async def agent_skills(stage: str = Query("clean")):
+        from backend.agent.system_prompt import skills_for
+
+        resolved = "understand" if stage == "understand" else "clean"
+        return {"stage": resolved, "skills": skills_for(resolved)}
+
     # ---- POST /agent/run : kick off the loop (streams over WS) ----------- #
     @router.post("/agent/run", response_model=AgentRunResponse)
     async def agent_run(req: AgentRunRequest):
@@ -142,7 +160,7 @@ def create_router(
 
         async def _drive():
             try:
-                await runner.run(req.prompt, state.scene, channel)
+                await runner.run(req.prompt, state.scene, channel, stage=req.stage)
             except Exception as exc:  # surface failures as a trace event
                 await manager.emit_event(req.scene_id, "complete", {"error": str(exc)})
 

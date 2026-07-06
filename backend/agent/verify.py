@@ -61,15 +61,49 @@ def verify_edit(tool: str, before: Metrics, after: Metrics) -> VerifyResult:
     return VerifyResult(improved, path, b, a, detail)
 
 
-def silhouette_intact(before: Metrics, after: Metrics, max_drop: float = 0.5) -> bool:
-    """Cheap guard: an edit shouldn't delete more than `max_drop` of the scene
-    (a proxy for 'silhouette intact' until vision confirms). Used by the
-    flagship floater loop alongside the before/after capture check."""
+def solid_core(m: Metrics) -> float:
+    """Estimated count of SOLID (non-near-transparent) Gaussians — a proxy for
+    the dense subject, ignoring the mostly-transparent noise/floater halo."""
+    return m["gaussianCount"] * (1.0 - m["opacity"]["nearTransparentFraction"])
+
+
+def silhouette_intact(
+    before: Metrics,
+    after: Metrics,
+    min_core_retained: float = 0.5,
+    max_total_drop: float = 0.9,
+) -> bool:
+    """Subject-aware guard: an edit is fine as long as it keeps the dense
+    subject, even if it removes the majority of the *total* Gaussians (on messy
+    outdoor scenes the noise — floaters/needles — is often the majority).
+
+    Instead of judging by raw total count, judge by the SOLID core (the
+    non-near-transparent Gaussians, a proxy for the actual subject). Keep the
+    edit when the solid core is largely retained
+    (``core_after / core_before >= min_core_retained``), so correctly removing
+    transparent/noise Gaussians passes even when the total drop exceeds 50%,
+    while an edit that destroys the dense subject still reverts.
+
+    A catastrophic-total-drop backstop always reverts when the edit deletes more
+    than ``max_total_drop`` of the entire scene, regardless of the core ratio.
+
+    Used by the flagship floater loop alongside the before/after capture check.
+    """
     b = before["gaussianCount"]
     a = after["gaussianCount"]
     if b == 0:
         return True
-    return (b - a) / b <= max_drop
+
+    # Catastrophic backstop: never let a single edit wipe out almost everything.
+    if (b - a) / b > max_total_drop:
+        return False
+
+    core_before = solid_core(before)
+    core_after = solid_core(after)
+    if core_before <= 0:
+        # No solid subject to protect; fall back to total-count survival.
+        return (b - a) / b <= max_total_drop
+    return core_after / core_before >= min_core_retained
 
 
-__all__ = ["verify_edit", "VerifyResult", "silhouette_intact"]
+__all__ = ["verify_edit", "VerifyResult", "silhouette_intact", "solid_core"]

@@ -5,18 +5,150 @@
  * the trail. Captures go through the R1-hardened PNG path.
  */
 import * as THREE from 'three'
-import type { RendererBridge, ToolResult } from './types.ts'
-import { animateTo, poseForBox, rotateAround, sleep, vec3 } from './camera.ts'
+import type { MoveDirection, RendererBridge, ToolResult } from './types.ts'
+import { animateOrbit, animateTo, poseForBox, rotateAround, sleep, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
 import type { Overlay } from './overlay.ts'
+// Shared pure selection math — the SAME module the manual SelectionOverlay
+// uses, so agent and human selections resolve identically (R13 parity).
+import {
+  composeMatrices,
+  projectToScreen,
+  selectInBox,
+  selectInCircle,
+  selectInPolygon,
+  selectInSphere,
+} from '../../../src/viewer/selection.ts'
 
-function asVec3(v: unknown): THREE.Vector3 {
-  const a = v as number[]
-  return new THREE.Vector3(a[0], a[1], a[2])
-}
+const MOVE_DIRECTIONS = new Set<MoveDirection>(['forward', 'back', 'left', 'right', 'up', 'down'])
+const MAX_MOVE_MS = 8000
 
 export class FrontendExecutors {
   constructor(private bridge: RendererBridge, private overlay: Overlay) {}
+
+  // ── v0.2 editor tools: the agent drives the SAME action layer the manual
+  // tools use (bridge selection state + shared math) — R13 parity ──
+
+  /** Answer a backend get_selection pull with the current stable IDs. */
+  async get_selection(): Promise<Record<string, unknown>> {
+    const ids = this.bridge.getSelectionIds()
+    return { ok: true, ids: Array.from(ids), count: ids.length }
+  }
+
+  /** Project all live centers to renderer pixel space (screen-space tools). */
+  private projectCenters() {
+    const cw = this.bridge.getCentersWorld()
+    if (!cw) return null
+    const cam = this.bridge.getCamera()
+    cam.updateMatrixWorld()
+    const el = this.bridge.getRenderer().domElement
+    const w = el.clientWidth || el.width
+    const h = el.clientHeight || el.height
+    const viewProj = composeMatrices(
+      Array.from(cam.projectionMatrix.elements),
+      Array.from(cam.matrixWorldInverse.elements),
+    )
+    return { ...projectToScreen(cw.centers, viewProj, w, h), cw, w, h }
+  }
+
+  private commitHits(hits: Uint32Array, ids: Uint32Array, mode: 'add' | 'remove'): Record<string, unknown> {
+    const selected = new Array<number>(hits.length)
+    for (let i = 0; i < hits.length; i++) selected[i] = ids[hits[i]]
+    this.bridge.updateSelection(selected, mode)
+    const summary = this.bridge.getSelectionSummary()
+    return { ok: true, count: summary.count, bbox: summary.bbox, matched: hits.length }
+  }
+
+  async runSelectionTool(tool: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const mode: 'add' | 'remove' = args.mode === 'remove' ? 'remove' : 'add'
+
+    if (tool === 'clear_selection') {
+      this.bridge.clearSelection()
+      return { ok: true, count: 0 }
+    }
+    if (tool === 'invert_selection') {
+      const count = this.bridge.invertSelection()
+      return { ok: true, count, bbox: this.bridge.getSelectionSummary().bbox }
+    }
+    if (tool === 'get_selection_state') {
+      const summary = this.bridge.getSelectionSummary()
+      return { ok: true, count: summary.count, bbox: summary.bbox }
+    }
+
+    // World-space volume tools (backend coords → render space via the flip).
+    // The SDF preview flashes before the commit so the human can SEE what the
+    // agent is about to select (R13/SC2) — same visual the manual tools show.
+    if (tool === 'select_by_sphere' || tool === 'select_by_box') {
+      const cw = this.bridge.getCentersWorld()
+      if (!cw) return { ok: false, error: 'no scene loaded' }
+      if (tool === 'select_by_sphere') {
+        const r = Number(args.radius)
+        this.bridge.showSelectionPreview('sphere', args.center as number[], [r])
+      } else {
+        const mn = args.min as number[]
+        const mx = args.max as number[]
+        const center = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2]
+        const half = [(mx[0] - mn[0]) / 2, (mx[1] - mn[1]) / 2, (mx[2] - mn[2]) / 2]
+        this.bridge.showSelectionPreview('box', center, half)
+      }
+      await sleep(500)
+      this.bridge.clearSelectionPreview()
+      let hits: Uint32Array
+      if (tool === 'select_by_sphere') {
+        const c = toRenderSpace(args.center as number[])
+        hits = selectInSphere(cw.centers, [c.x, c.y, c.z], Number(args.radius))
+      } else {
+        // flipping corners can swap per-axis min/max — rebuild the box
+        const a = toRenderSpace(args.min as number[])
+        const b = toRenderSpace(args.max as number[])
+        const min = [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.min(a.z, b.z)]
+        const max = [Math.max(a.x, b.x), Math.max(a.y, b.y), Math.max(a.z, b.z)]
+        hits = selectInBox(cw.centers, min, max)
+      }
+      return this.commitHits(hits, cw.ids, mode)
+    }
+
+    // Screen-space tools (viewport-normalized coords per the tool contract).
+    // Paced at human-visible speed so the watching operator can follow (SC2).
+    if (tool === 'select_by_brush' || tool === 'select_by_lasso' || tool === 'select_by_polygon') {
+      await sleep(350)
+      const proj = this.projectCenters()
+      if (!proj) return { ok: false, error: 'no scene loaded' }
+      let hits: Uint32Array
+      if (tool === 'select_by_brush') {
+        const [u, v] = args.center_xy as [number, number]
+        hits = selectInCircle(proj.xy, proj.visible, u * proj.w, v * proj.h, Number(args.radius) * proj.h)
+      } else {
+        const pts = args.points_xy as Array<[number, number]>
+        if (!Array.isArray(pts) || pts.length < 3) {
+          return { ok: false, error: 'points_xy needs at least 3 [u,v] points' }
+        }
+        const polygon: number[] = []
+        for (const [u, v] of pts) polygon.push(u * proj.w, v * proj.h)
+        hits = selectInPolygon(proj.xy, proj.visible, polygon)
+      }
+      return this.commitHits(hits, proj.cw.ids, mode)
+    }
+
+    return { ok: false, error: `unknown selection tool ${tool}` }
+  }
+
+  /** Hold a fly-mode movement input — the pad lights up because this is the
+   *  same setMovementInput the keyboard and on-screen pad call (R13/SC2). */
+  async move_camera(args: { direction: string; duration_ms: number }): Promise<Record<string, unknown>> {
+    const direction = args.direction as MoveDirection
+    if (!MOVE_DIRECTIONS.has(direction)) {
+      return { ok: false, error: `unknown direction ${args.direction}` }
+    }
+    const holdMs = Math.max(0, Math.min(Number(args.duration_ms) || 0, MAX_MOVE_MS))
+    this.bridge.setMovementInput(direction, true)
+    try {
+      await sleep(holdMs)
+    } finally {
+      this.bridge.setMovementInput(direction, false)
+    }
+    return { ok: true, held_ms: holdMs }
+  }
 
   /** Record where the camera ended up after a move. */
   private breadcrumb(): void {
@@ -25,22 +157,20 @@ export class FrontendExecutors {
 
   async look_at(args: { target: number[]; duration_ms?: number }): Promise<ToolResult> {
     const { position } = this.bridge.getCameraPose()
-    await animateTo(this.bridge, position.clone(), asVec3(args.target), args.duration_ms)
+    await animateTo(this.bridge, position.clone(), toRenderSpace(args.target), args.duration_ms)
     this.breadcrumb()
     return { ok: true }
   }
 
   async set_view(args: { position: number[]; target: number[]; duration_ms?: number }): Promise<ToolResult> {
-    await animateTo(this.bridge, asVec3(args.position), asVec3(args.target), args.duration_ms)
+    await animateTo(this.bridge, toRenderSpace(args.position), toRenderSpace(args.target), args.duration_ms)
     this.breadcrumb()
     return { ok: true }
   }
 
   async orbit(args: { center: number[]; deg: number; axis: 'x' | 'y' | 'z'; duration_ms?: number }): Promise<ToolResult> {
-    const center = asVec3(args.center)
-    const { position } = this.bridge.getCameraPose()
-    const to = rotateAround(position, center, args.axis, args.deg)
-    await animateTo(this.bridge, to, center, args.duration_ms)
+    const center = toRenderSpace(args.center)
+    await animateOrbit(this.bridge, center, args.axis, args.deg, args.duration_ms)
     this.breadcrumb()
     return { ok: true }
   }
@@ -59,7 +189,12 @@ export class FrontendExecutors {
   }
 
   async frame_object(args: { bbox: { min: number[]; max: number[] }; duration_ms?: number }): Promise<ToolResult> {
-    const box = new THREE.Box3(vec3(args.bbox.min), vec3(args.bbox.max))
+    // Flipping each corner can swap which is min vs max per-axis, so build the
+    // box from the two flipped corners rather than passing them as (min, max).
+    const box = new THREE.Box3().setFromPoints([
+      toRenderSpace(args.bbox.min),
+      toRenderSpace(args.bbox.max),
+    ])
     const pose = poseForBox(this.bridge, box)
     await animateTo(this.bridge, pose.position, pose.target, args.duration_ms)
     this.breadcrumb()
@@ -89,7 +224,7 @@ export class FrontendExecutors {
   }
 
   async capture_orbit(args: { center: number[]; n: number; radius?: number }): Promise<ToolResult> {
-    const center = asVec3(args.center)
+    const center = toRenderSpace(args.center)
     const pose0 = this.bridge.getCameraPose()
     const radius = args.radius ?? pose0.position.clone().sub(center).length()
     const start = pose0.position.clone().sub(center)

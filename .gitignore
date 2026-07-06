@@ -39,3 +39,7 @@ __pycache__
 
 # Design artifacts (not source)
 *.zip
+
+# Large downloaded demo splats (re-fetch from Hugging Face, do not commit)
+public/demos/train.ply
+public/demos/playroom.ply

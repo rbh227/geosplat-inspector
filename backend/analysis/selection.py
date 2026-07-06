@@ -1,7 +1,10 @@
 """Selection model (ARCHITECTURE.md §6.5 selection schema).
 
 Resolves a selection spec into full-N Gaussian ids (always a subset of alive).
-Modes: ``all`` | ``bbox`` | ``sphere`` | ``predicate`` | ``region``.
+Modes: ``all`` | ``bbox`` | ``sphere`` | ``predicate`` | ``region`` | ``ids``.
+
+``ids`` (v0.2) carries explicit original Gaussian ids from the frontend's
+stable ID map; out-of-range and already-dead ids are ignored (idempotent).
 """
 
 from __future__ import annotations
@@ -60,6 +63,13 @@ def resolve_selection(model: SplatModel, selection: dict) -> np.ndarray:
         if sp.get("invert"):
             inside = ~inside
         return alive[inside]
+
+    if mode == "ids":
+        ids = np.asarray(selection["ids"], dtype=np.int64)
+        if ids.size == 0:
+            return ids
+        ids = ids[(ids >= 0) & (ids < model.alive.shape[0])]
+        return ids[model.alive[ids]]
 
     if mode == "predicate":
         pred = selection["predicate"]

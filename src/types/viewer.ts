@@ -1,4 +1,7 @@
 import type * as THREE from 'three'
+import type { MoveDirection } from '../viewer/flyController.ts'
+
+export type { MoveDirection }
 
 export interface CameraPose {
   position: THREE.Vector3
@@ -64,6 +67,31 @@ export interface ViewerHandle {
   filterByDensity(minNeighbors: number, radius: number): number
   filterByHeight(minY?: number, maxY?: number): number
 
+  // Fly navigation (v0.2 — KTD6)
+  getNavigationMode(): 'orbit' | 'fly'
+  setNavigationMode(mode: 'orbit' | 'fly'): void
+  setMovementInput(direction: MoveDirection, active: boolean): void
+  getActiveDirections(): MoveDirection[]
+
+  // Stable-ID editing (v0.2 — KTD2/KTD3)
+  getLiveIds(): Uint32Array
+  deleteByIds(ids: Iterable<number>): number
+  keepOnlyIds(ids: Iterable<number>): number
+  getCentersWorld(): { centers: Float32Array; ids: Uint32Array } | null
+  setIdMapFromIds(ids: ArrayLike<number>): void
+
+  // Selection (v0.2)
+  getSelectionIds(): Uint32Array
+  getSelectionCount(): number
+  updateSelection(ids: Iterable<number>, mode?: 'add' | 'remove'): number
+  clearSelection(): number
+  invertSelection(): number
+  getSelectionSummary(): { count: number; bbox: { min: number[]; max: number[] } | null }
+  deleteSelection(): Uint32Array
+  keepSelection(): Uint32Array
+  showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
+  clearSelectionPreview(): void
+
   // Analysis
   getSceneStats(): SceneStats | null
 
@@ -80,4 +108,5 @@ export interface ViewerState {
   fileName: string | null
   isLoading: boolean
   undoCount: number
+  navigationMode: 'orbit' | 'fly'
 }

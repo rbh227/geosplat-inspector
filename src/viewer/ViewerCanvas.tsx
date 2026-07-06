@@ -6,8 +6,9 @@ import {
   useState,
   useCallback,
 } from 'react'
-import type { ViewerHandle, ViewerState } from '../types/viewer.ts'
+import type { MoveDirection, ViewerHandle, ViewerState } from '../types/viewer.ts'
 import { SceneManager } from './SceneManager.ts'
+import { KEY_TO_DIRECTION } from './flyController.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                             */
@@ -15,6 +16,12 @@ import { SceneManager } from './SceneManager.ts'
 
 interface ViewerCanvasProps {
   onStateChange?: (state: ViewerState) => void
+  /** Active movement directions changed (any source: keys, pad, agent). */
+  onMovementChange?: (dirs: MoveDirection[]) => void
+  /** Selection count changed (any source: tools, agent, clear). */
+  onSelectionChange?: (count: number) => void
+  /** Fires on any manual viewport/keyboard input (agent pause trigger, R14). */
+  onManualInput?: () => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -22,7 +29,7 @@ interface ViewerCanvasProps {
 /* ------------------------------------------------------------------ */
 
 const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
-  function ViewerCanvas({ onStateChange }, ref) {
+  function ViewerCanvas({ onStateChange, onMovementChange, onSelectionChange, onManualInput }, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const managerRef = useRef<SceneManager | null>(null)
     const [isDragging, setIsDragging] = useState(false)
@@ -59,6 +66,25 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         filterByColor: (...a) => mgr().filterByColor(...a),
         filterByDensity: (...a) => mgr().filterByDensity(...a),
         filterByHeight: (...a) => mgr().filterByHeight(...a),
+        getNavigationMode: () => mgr().getNavigationMode(),
+        setNavigationMode: (m) => mgr().setNavigationMode(m),
+        setMovementInput: (d, a) => mgr().setMovementInput(d, a),
+        getActiveDirections: () => mgr().getActiveDirections(),
+        getLiveIds: () => mgr().getLiveIds(),
+        deleteByIds: (ids) => mgr().deleteByIds(ids),
+        keepOnlyIds: (ids) => mgr().keepOnlyIds(ids),
+        getCentersWorld: () => mgr().getCentersWorld(),
+        setIdMapFromIds: (ids) => mgr().setIdMapFromIds(ids),
+        getSelectionIds: () => mgr().getSelectionIds(),
+        getSelectionCount: () => mgr().getSelectionCount(),
+        updateSelection: (ids, mode) => mgr().updateSelection(ids, mode),
+        clearSelection: () => mgr().clearSelection(),
+        invertSelection: () => mgr().invertSelection(),
+        getSelectionSummary: () => mgr().getSelectionSummary(),
+        deleteSelection: () => mgr().deleteSelection(),
+        keepSelection: () => mgr().keepSelection(),
+        showSelectionPreview: (s, c, z) => mgr().showSelectionPreview(s, c, z),
+        clearSelectionPreview: () => mgr().clearSelectionPreview(),
         getSceneStats: () => mgr().getSceneStats(),
         undo: () => mgr().undo(),
         canUndo: () => mgr().canUndo(),
@@ -92,6 +118,44 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         managerRef.current.onStateChange = onStateChange ?? null
       }
     }, [onStateChange])
+
+    useEffect(() => {
+      if (managerRef.current) {
+        managerRef.current.onMovementChange = onMovementChange ?? null
+      }
+    }, [onMovementChange])
+
+    useEffect(() => {
+      if (managerRef.current) {
+        managerRef.current.onSelectionChange = onSelectionChange ?? null
+      }
+    }, [onSelectionChange])
+
+    /* WASD/QE keyboard → the same movement input the pad and agent use */
+    useEffect(() => {
+      const isTyping = (e: KeyboardEvent): boolean => {
+        const t = e.target as HTMLElement | null
+        return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      }
+      const down = (e: KeyboardEvent) => {
+        if (e.repeat || isTyping(e)) return
+        const dir = KEY_TO_DIRECTION[e.code]
+        if (!dir) return
+        onManualInput?.()
+        managerRef.current?.setMovementInput(dir, true)
+      }
+      const up = (e: KeyboardEvent) => {
+        const dir = KEY_TO_DIRECTION[e.code]
+        if (!dir || isTyping(e)) return
+        managerRef.current?.setMovementInput(dir, false)
+      }
+      window.addEventListener('keydown', down)
+      window.addEventListener('keyup', up)
+      return () => {
+        window.removeEventListener('keydown', down)
+        window.removeEventListener('keyup', up)
+      }
+    }, [onManualInput])
 
     /* ---- Drag-and-drop ---- */
 

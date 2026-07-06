@@ -22,8 +22,22 @@ class RateLimitError(ProviderError):
         self.retry_after = retry_after
 
 
+class QuotaExhaustedError(RateLimitError):
+    """A *hard* quota wall (e.g. free-tier daily limit) that backoff cannot clear.
+
+    Distinct from a transient per-minute 429: there is no point sleeping and
+    retrying the same model, so `with_retry` re-raises this immediately and the
+    caller can switch to a different model/provider instead.
+    """
+
+
 class ProviderConfigError(ProviderError):
     """Misconfiguration: missing SDK, missing API key, or unknown provider."""
 
 
-__all__ = ["ProviderError", "RateLimitError", "ProviderConfigError"]
+__all__ = [
+    "ProviderError",
+    "RateLimitError",
+    "QuotaExhaustedError",
+    "ProviderConfigError",
+]

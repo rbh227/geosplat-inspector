@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation — Agent: make a messy outdoor scene viewable</title>
+<style>
+  :root { --bg:#0d0f14; --panel:#161922; --line:#262b38; --fg:#e7e3d8; --dim:#9aa0ad; --cyan:#5fd0d6; --amber:#e8a33d; --green:#6bd28a; --red:#e86d6d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:26px; letter-spacing:-.01em; margin:0 0 6px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.14em; color:var(--dim); margin:38px 0 14px; border-bottom:1px solid var(--line); padding-bottom:8px; }
+  .sub { color:var(--dim); margin:0 0 4px; }
+  .meta { color:var(--dim); font-size:12.5px; font-family:ui-monospace,monospace; margin-top:10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin:14px 0; }
+  .card h3 { margin:0 0 4px; font-size:17px; }
+  .rank { color:var(--cyan); font-family:ui-monospace,monospace; font-size:13px; }
+  .tag { display:inline-block; font-size:10.5px; font-family:ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--dim); margin-left:8px; }
+  .tag.angles { color:var(--cyan); border-color:#2c4a4d; }
+  .tag.noise { color:var(--amber); border-color:#4a3a1e; }
+  .tag.both { color:var(--green); border-color:#234a2f; }
+  .card p { margin:8px 0; }
+  .label { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+  .basis { font-family:ui-monospace,monospace; font-size:12.5px; color:var(--dim); }
+  ul.cut { list-style:none; padding:0; }
+  ul.cut li { padding:8px 0; border-bottom:1px solid var(--line); }
+  ul.cut .why { color:var(--dim); }
+  .pill { color:var(--green); }
+  code { background:#1d212b; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Make a messy outdoor scene viewable</h1>
+  <p class="sub">Ideation for the SplatAgent agent: autonomously <b>find good angles</b> + <b>strip noise to the good splats</b> — not just classify.</p>
+  <p class="meta">2026-06-29 · repo-grounded · ce-ideate · next step → ce-brainstorm one idea</p>
+
+  <h2>The gap (grounding)</h2>
+  <div class="card">
+    <p>The agent already owns the right <b>tools</b> — navigation (<code>orbit</code>, <code>capture_orbit</code>, <code>frame_object</code>, <code>look_at</code>) and cleanup (<code>opacity_threshold</code>, <code>remove_outliers</code>, <code>remove_needles</code>, <code>prune_oversized</code>, <code>crop_*</code>) — but two things are missing:</p>
+    <p>1. <b>Navigation is a means, not a goal.</b> The system prompt uses camera moves only to grab frames for verification. There is no behavior that <i>searches</i> for, scores, and settles on the most legible view. "Find a good angle" is not a thing the agent tries to do.</p>
+    <p>2. <b>Cleanup uses fixed thresholds.</b> <code>FLOATER_ALPHA=0.05</code>, <code>NEEDLE_RATIO=10</code>, etc. are constants. On Train that left the agent with no scene-specific strategy for a capture that is <b>39% floaters + 32% needles</b> — measured this session; cleanup dropped both to 0% and removed ~60% of the Gaussians as junk.</p>
+    <p class="basis">basis: backend/agent/system_prompt.py · backend/contracts/constants.py · live metrics on public/demos/train.ply</p>
+  </div>
+
+  <h2>Top ideas (survivors)</h2>
+
+  <div class="card">
+    <h3><span class="rank">#1</span> Autonomous best-view search<span class="tag angles">angles</span></h3>
+    <p>Give the agent a real <b>“find the best angle” loop</b>: <code>capture_orbit</code> N candidate views around the cleaned core, score each frame for legibility (fraction of frame filled by high-opacity foreground, low sky/empty fraction, subject roughly centered), then park the camera at the winner and narrate why. Turns the camera from a verification tool into a deliverable.</p>
+    <p><span class="label">Why strong</span> Directly answers “find good angles,” and <code>capture_orbit</code> already exists — this is a scoring + selection step, not new rendering.</p>
+    <p class="basis">builds on: capture_orbit, set_view · new: a frame-legibility score</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#2</span> “Denoise to subject” pipeline<span class="tag noise">noise</span></h3>
+    <p>A named outdoor-tuned cleanup sequence whose goal is <b>“leave only the good splats”</b>: opacity-gate floaters → drop spatial outliers → strip needles → density-filter the sparse background haze, each verified and rolled back if it eats the subject. One coherent “make it clean” objective instead of the human guessing which buttons to press.</p>
+    <p><span class="label">Why strong</span> Answers “only good splats remain” head-on; composes tools the agent already has into the move outdoor scenes actually need.</p>
+    <p class="basis">builds on: opacity_threshold, remove_outliers, remove_needles, filterByDensity · verify via silhouette_intact</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#3</span> Clean-first, then frame (inversion)<span class="tag both">both</span></h3>
+    <p>Today the agent frames to inspect, then cleans. <b>Invert it:</b> strip the obvious noise <i>first</i>, so the framing math (and best-view search) sees only good splats — then compute the angle on a clean subject. This is the structural fix for “floaters throw off the framing,” which the new percentile-bounds framing only half-solves.</p>
+    <p><span class="label">Why strong</span> High-leverage glue: makes both #1 and the default load-framing robust on messy scenes for almost no new code.</p>
+    <p class="basis">builds on: this session's src/viewer/framing.ts + the cleanup tools</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#4</span> Adaptive thresholds from the histogram valley<span class="tag noise">noise</span></h3>
+    <p>Instead of fixed constants, the agent reads the <b>opacity / scale histograms</b> (now surfaced in the metrics panel) and sets each cutoff at the natural <b>valley between the noise mode and the signal mode</b>. A clean sphere and a 39%-floater outdoor capture get different, scene-appropriate cleaning strength.</p>
+    <p><span class="label">Why strong</span> Fixes the brittleness that makes outdoor scenes hard; grounded in the real metrics this session exposed.</p>
+    <p class="basis">builds on: Metrics.opacity.histogram / scale.histogram · replaces fixed FLOATER_ALPHA usage</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#5</span> Multi-view-consistency floater culling<span class="tag noise">noise</span></h3>
+    <p>True floaters are <b>view-inconsistent</b> — they appear from a few angles and vanish from others. Use <code>capture_orbit</code> to flag splats that flicker across views and cull them. Catches structured noise that a single opacity threshold can’t, and it’s reference-free — exactly the architecture’s “multi-view self-consistency” principle.</p>
+    <p><span class="label">Why strong</span> Novel capability aligned with the project’s stated quality philosophy; removes junk fixed thresholds miss.</p>
+    <p class="basis">builds on: capture_orbit, multi-view self-consistency (ARCHITECTURE §3)</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#6</span> “Scene legibility” as the agent’s objective<span class="tag both">both</span></h3>
+    <p>Define one <b>legibility score</b> (foreground fill + opacity concentration + silhouette clarity + view framing) and make the messy-scene loop <i>optimize it</i>: clean and reframe until legibility crosses a bar or stops improving. Gives the “make it viewable” goal a concrete, measurable target instead of vibes.</p>
+    <p><span class="label">Why strong</span> Unifies #1–#4 under a single objective; a natural fit for a metric-driven <code>ce-optimize</code> loop later.</p>
+    <p class="basis">composes: best-view score (#1) + cleanliness metrics (#2,#4)</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="rank">#7</span> Auto-clean + auto-frame on load<span class="tag both">both</span></h3>
+    <p>The moment a messy <code>.ply</code> registers, run a <b>conservative denoise + best-view pass automatically</b>, so the first thing the user sees is the cleaned subject at a good angle — not 60% garbage. Opt-out, reversible. Directly kills the “first impression looks terrible” problem you hit.</p>
+    <p><span class="label">Why keep (quick win)</span> Most direct fix for the pain that started this; product-level, leans on #2 + #3 once they exist.</p>
+    <p class="basis">builds on: registerScene in src/App.tsx + #2/#3</p>
+  </div>
+
+  <h2>Considered &amp; cut</h2>
+  <ul class="cut">
+    <li><b>Occluder “x-ray” culling</b> — <span class="why">remove splats between camera and subject. Risky: hard to tell an occluder from real foreground reference-free; high chance of deleting the subject. Partially absorbed into #2.</span></li>
+    <li><b>Rule-of-thirds / aesthetic composition scoring</b> — <span class="why">over-engineered; the legibility score in #1 captures the useful 80% without brittle photography heuristics.</span></li>
+    <li><b>Orbit “contact sheet” UI</b> — <span class="why">nice presentation, but it’s a UI feature, not the agent’s core navigate/clean ability. Defer; could be how #1 surfaces its candidates.</span></li>
+    <li><b>Cinematic guided tour of the cleaned scene</b> — <span class="why">polish, not “make it viewable.” Defer until the core loop lands.</span></li>
+    <li><b>Reframe-after-every-edit</b> — <span class="why">real, but an implementation detail of #1/#3 rather than a standalone idea; folded in.</span></li>
+  </ul>
+
+  <h2>How they map to your ask</h2>
+  <div class="card">
+    <p><b>Find good angles</b> → #1 (best-view search), enabled by #3 (clean-first).<br>
+    <b>Strip noise to good splats</b> → #2 (denoise-to-subject), sharpened by #4 (adaptive thresholds) and #5 (multi-view culling).<br>
+    <b>Tie it together</b> → #6 (legibility objective) gives the loop a target; #7 makes it the default first impression.</p>
+    <p class="pill">Recommended first brainstorm: <b>#1 Autonomous best-view search</b> — it’s the capability the agent most visibly lacks, it’s the half of your ask that isn’t cleanup, and it’s buildable on existing tools.</p>
+  </div>
+
+</div>
+</body>
+</html>

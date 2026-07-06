@@ -6,7 +6,7 @@ transport layer stays decoupled from the analysis engine's concrete types.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,8 @@ class HistoryResponse(BaseModel):
 class AgentRunRequest(BaseModel):
     scene_id: str
     prompt: str
+    # v0.2 (R12): operator-selected workflow stage; gates the agent's tool surface.
+    stage: Literal["clean", "understand"] = "clean"
 
 
 class AgentRunResponse(BaseModel):

@@ -27,11 +27,9 @@ const base = [
 ].join(' ')
 
 const variants: Record<ButtonVariant, string> = {
-  primary: [
-    'bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30',
-    'hover:bg-accent-cyan/25 hover:border-accent-cyan/50',
-    'active:bg-accent-cyan/30',
-  ].join(' '),
+  // Tactile amber phosphor key — gradient face, inset highlight, warm halo.
+  // All visual treatment lives in the .btn-phosphor utility (index.css).
+  primary: 'btn-phosphor font-semibold',
 
   secondary: [
     'bg-bg-elevated text-text-secondary border border-border-subtle',

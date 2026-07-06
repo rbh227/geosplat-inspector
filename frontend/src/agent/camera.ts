@@ -16,8 +16,17 @@ function easeOutCubic(t: number): number {
   return 1 - inv * inv * inv
 }
 
-export function vec3(a: ArrayLike<number>): THREE.Vector3 {
-  return new THREE.Vector3(a[0], a[1], a[2])
+/**
+ * Convert a backend-supplied splat coordinate into renderer/world space.
+ *
+ * The splat mesh is rendered with `rotation.x = Math.PI` (SceneManager), which
+ * negates BOTH Y and Z: a backend point (x,y,z) lands at world (x,-y,-z). The
+ * marker overlay compensates with the same flip (`markersGroup.rotation.x =
+ * Math.PI`). Camera aim points must be flipped identically so they target the
+ * Gaussians and not a mirrored, empty location.
+ */
+export function toRenderSpace(a: ArrayLike<number>): THREE.Vector3 {
+  return new THREE.Vector3(a[0], -a[1], -a[2])
 }
 
 /** Animate camera from its current pose to (toPos, toTarget). Resolves when done. */
@@ -52,6 +61,39 @@ export function animateTo(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, Math.max(0, ms)))
+}
+
+/**
+ * Orbit the camera around `center` by `deg` about a world axis, arcing along
+ * the circle. Unlike animateTo (a straight-line lerp from start to endpoint),
+ * this interpolates the ANGLE — so a 360° orbit sweeps the whole way round
+ * instead of lerping to the identical endpoint (= no motion), and partial
+ * angles trace the arc instead of cutting a chord through the scene.
+ */
+export function animateOrbit(
+  bridge: RendererBridge,
+  center: THREE.Vector3,
+  axis: 'x' | 'y' | 'z',
+  deg: number,
+  durationMs = DEFAULT_MOVE_MS,
+): Promise<void> {
+  const startPos = bridge.getCameraPose().position.clone()
+  const start = performance.now()
+
+  return new Promise<void>((resolve) => {
+    function tick() {
+      const raw = Math.min((performance.now() - start) / durationMs, 1)
+      const t = easeOutCubic(raw)
+      const pos = rotateAround(startPos, center, axis, deg * t)
+      bridge.setCameraPose(pos, center.clone(), false)
+      if (raw < 1) {
+        requestAnimationFrame(tick)
+      } else {
+        resolve()
+      }
+    }
+    requestAnimationFrame(tick)
+  })
 }
 
 /** Distance that frames a bounding sphere of `radius` in the current camera FOV. */

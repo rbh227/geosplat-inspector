@@ -30,11 +30,16 @@ class OpenAIProvider:
         model: str = DEFAULT_MODEL,
         api_key: str | None = None,
         *,
+        base_url: str | None = None,
         max_attempts: int = 5,
         system_instruction: str | None = None,
     ):
         self.model = model
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        # When base_url points at a local/self-hosted OpenAI-compatible server
+        # (vLLM, Ollama, LM Studio, ...), the same OpenAIProvider becomes a
+        # universal backend. Defaults to OPENAI_BASE_URL so it stays env-only.
+        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
         self.max_attempts = max_attempts
         self.system_instruction = system_instruction
         self._client: Any = None
@@ -48,9 +53,16 @@ class OpenAIProvider:
             raise ProviderConfigError(
                 "openai not installed; `pip install openai`"
             ) from exc
-        if not self.api_key:
-            raise ProviderConfigError("No OPENAI_API_KEY (env-only).")
-        self._client = openai.OpenAI(api_key=self.api_key)
+        # Local endpoints don't authenticate, but the SDK still needs a
+        # non-empty key, so fall back to a placeholder when a base_url is set.
+        # A real OpenAI call (no base_url) keeps the strict key requirement.
+        api_key = self.api_key
+        if not api_key:
+            if self.base_url:
+                api_key = "not-needed"
+            else:
+                raise ProviderConfigError("No OPENAI_API_KEY (env-only).")
+        self._client = openai.OpenAI(api_key=api_key, base_url=self.base_url)
         return self._client
 
     def _to_tools(self, tools: list[ToolSpec]) -> list[dict]:
@@ -71,7 +83,12 @@ class OpenAIProvider:
         if self.system_instruction:
             out.append({"role": "system", "content": self.system_instruction})
         for msg in messages:
-            role = "assistant" if msg.get("role") == "assistant" else "user"
+            # Preserve system/assistant; everything else (incl. the loop's
+            # synthetic [tool_result ...] turns) is a user turn. Keeping the
+            # system role lets tool-aware chat templates put it in the system
+            # block where the tool list is injected.
+            src = msg.get("role")
+            role = src if src in ("assistant", "system") else "user"
             out.append({"role": role, "content": str(msg.get("content", ""))})
         if images:
             parts: list[dict] = [

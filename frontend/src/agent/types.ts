@@ -10,6 +10,9 @@ import type { FrontendToolName } from '../contracts.ts'
 
 export type { FrontendToolName } from '../contracts.ts'
 
+/** Movement directions shared by keyboard, pad, and the agent (v0.2). */
+export type MoveDirection = 'forward' | 'back' | 'left' | 'right' | 'up' | 'down'
+
 /** The slice of the existing renderer the agent layer drives. */
 export interface RendererBridge {
   setCameraPose(position: THREE.Vector3, target: THREE.Vector3, animate?: boolean): void
@@ -22,6 +25,17 @@ export interface RendererBridge {
   renderOnce(): void
   loadSplat(url: string): Promise<void>
   isLoaded(): boolean
+
+  // v0.2 — the shared selection/movement action layer (R13 parity)
+  getCentersWorld(): { centers: Float32Array; ids: Uint32Array } | null
+  getSelectionIds(): Uint32Array
+  updateSelection(ids: Iterable<number>, mode?: 'add' | 'remove'): number
+  clearSelection(): number
+  invertSelection(): number
+  getSelectionSummary(): { count: number; bbox: { min: number[]; max: number[] } | null }
+  showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
+  clearSelectionPreview(): void
+  setMovementInput(direction: MoveDirection, active: boolean): void
 }
 
 /** Result returned by a frontend tool executor (JSON-serializable).

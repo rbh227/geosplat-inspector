@@ -1,19 +1,30 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, SendHorizonal } from 'lucide-react'
+import { X, SendHorizonal, Play } from 'lucide-react'
 import type { ChatMessage } from '../types/agent'
+import type { SkillInfo } from '../backend/client'
 import ActionCard from './ActionCard'
 import Button from './Button'
 
 interface ChatPanelProps {
   isOpen: boolean
+  stage: 'clean' | 'understand'
+  /** The shared skills vocabulary (R11) — clickable entries, not chat bubbles. */
+  skills: SkillInfo[]
   messages: ChatMessage[]
   isThinking: boolean
   onSend: (text: string) => void
   onClose: () => void
 }
 
+const EMPTY_HINTS: Record<'clean' | 'understand', string> = {
+  clean: 'Load a .ply, then describe what to clean — e.g. "clean this scene".',
+  understand: 'Ask a question about the scene — e.g. "how many damaged buildings?"',
+}
+
 export default function ChatPanel({
   isOpen,
+  stage,
+  skills,
   messages,
   isThinking,
   onSend,
@@ -56,11 +67,7 @@ export default function ChatPanel({
 
   return (
     <div
-      className={`
-        absolute top-0 right-0 z-20 h-full w-[380px]
-        panel flex flex-col
-        animate-slide-in-right
-      `}
+      className="h-full w-[380px] flex-none panel flex flex-col animate-slide-in-right"
       style={{ borderRadius: '0' }}
     >
       {/* Header */}
@@ -74,11 +81,37 @@ export default function ChatPanel({
         </Button>
       </div>
 
+      {/* Skills: compact pills in a dedicated strip — the same routines the
+          agent composes; clicking one runs it (AE5). */}
+      {skills.length > 0 && (
+        <div className="shrink-0 flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-border-subtle">
+          {skills.map((s) => (
+            <button
+              key={s.name}
+              type="button"
+              title={`${s.description}\n${s.recipe}`}
+              disabled={isThinking}
+              onClick={() => onSend(`Run the ${s.name} skill.`)}
+              className="inline-flex items-center gap-1 rounded-full border border-border-active bg-bg-elevated px-2.5 py-1 font-mono text-[10.5px] text-text-secondary hover:text-text-primary hover:border-accent-cyan/50 transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-default"
+            >
+              <Play size={9} />
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Messages */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3"
       >
+        {/* Empty state: one stage-appropriate hint, nothing else (DL6) */}
+        {messages.length === 0 && !isThinking && (
+          <div className="flex-1 flex items-center justify-center px-6 text-center">
+            <span className="text-sm text-text-dim leading-relaxed">{EMPTY_HINTS[stage]}</span>
+          </div>
+        )}
         {messages.map((msg) => (
           <div
             key={msg.id}

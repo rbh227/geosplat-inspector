@@ -23,6 +23,8 @@ import type { Transport } from './transport.ts'
 
 const COMMAND_TYPES = new Set([
   'camera_move', 'capture_request', 'drop_marker', 'clear_markers', 'narrate', 'reload_scene',
+  // v0.2 — selection pull + agent-driven editor tools
+  'get_selection', 'selection_tool', 'movement_input',
 ])
 
 function isCommand(m: { type?: string }): m is WSCommand {
@@ -104,6 +106,25 @@ export class AgentWSClient {
           // loadSplat is on the bridge via executors' bridge; reload via overlay-free path
           await this.reloadScene(url)
           this.reply(cmd.id, { ok: true })
+          break
+        }
+        // v0.2 — wired by the editor-tool executors (U8); explicit replies so
+        // the backend's correlation future never hangs to timeout meanwhile.
+        case 'get_selection': {
+          const result = await this.executors.get_selection()
+          this.transport.send({ type: 'selection', id: cmd.id, payload: result } as WSResponse)
+          break
+        }
+        case 'selection_tool': {
+          const { tool, args } = p as unknown as { tool: string; args: Record<string, unknown> }
+          const result = await this.executors.runSelectionTool(tool, args ?? {})
+          this.transport.send({ type: 'tool_result', id: cmd.id, payload: result } as WSResponse)
+          break
+        }
+        case 'movement_input': {
+          const { direction, duration_ms } = p as { direction: string; duration_ms: number }
+          const result = await this.executors.move_camera({ direction, duration_ms })
+          this.transport.send({ type: 'tool_result', id: cmd.id, payload: result } as WSResponse)
           break
         }
       }

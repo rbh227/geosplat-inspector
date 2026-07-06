@@ -13,7 +13,7 @@ from backend.contracts import FrontendChannel
 
 
 class StubAgentRunner:
-    async def run(self, prompt: str, scene: Scene, channel: FrontendChannel) -> None:
+    async def run(self, prompt: str, scene: Scene, channel: FrontendChannel, stage: str = "clean") -> None:
         await channel.emit_event({"type": "thought", "payload": {"text": f"Received: {prompt}"}})
 
         # measure (backend-local) — legible trace of a tool call
