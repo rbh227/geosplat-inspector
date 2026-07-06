@@ -21,6 +21,9 @@ const FIRST_POINT_SNAP_PX = 10
 const MIN_POLYGON_VERTICES = 3
 const STROKE_STYLE = 'rgba(130, 190, 255, 0.85)'
 const FILL_STYLE = 'rgba(130, 190, 255, 0.25)'
+// Erase mode paints destructive red so an erase gesture never reads as a select (R1).
+const ERASE_STROKE_STYLE = 'rgba(255, 110, 100, 0.85)'
+const ERASE_FILL_STYLE = 'rgba(255, 110, 100, 0.25)'
 
 interface SelectionOverlayProps {
   viewerRef: React.RefObject<ViewerHandle | null>
@@ -31,9 +34,18 @@ interface SelectionOverlayProps {
   onManualInput?: () => void
   /** Escape with no gesture in progress exits to pointer mode (R6/KTD5). */
   onExitTool?: () => void
+  /** Erase mode (R1/KTD2): gestures always add, and each commit fires onGestureCommit. */
+  eraseMode?: boolean
+  /** Fired after a gesture commits while eraseMode is on — the app deletes the selection. */
+  onGestureCommit?: () => void
 }
 
-export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, onManualInput, onExitTool }: SelectionOverlayProps) {
+export default function SelectionOverlay({
+  viewerRef, tool, onSelectionChange, onManualInput, onExitTool,
+  eraseMode = false, onGestureCommit,
+}: SelectionOverlayProps) {
+  const strokeStyle = eraseMode ? ERASE_STROKE_STYLE : STROKE_STYLE
+  const fillStyle = eraseMode ? ERASE_FILL_STYLE : FILL_STYLE
   const displayRef = useRef<HTMLCanvasElement>(null)
   const maskRef = useRef<HTMLCanvasElement | null>(null) // offscreen, brush only
   const brushRadius = useRef(24)
@@ -105,14 +117,19 @@ export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, o
     return { ...projectToScreen(cw.centers, viewProj, display.width, display.height), cw }
   }, [viewerRef])
 
+  // Every tool's gesture (brush stroke, lasso close, both polygon close paths,
+  // sphere/box commit) funnels through here exactly once, so this is the one
+  // seam erase mode needs (KTD2). Alt-remove is forced off while erasing —
+  // the selection is transient, so there is nothing to remove from (KTD3).
   const commitIndices = useCallback((indices: Uint32Array, ids: Uint32Array, remove: boolean) => {
     const viewer = viewerRef.current
     if (!viewer) return
     const selected = new Array<number>(indices.length)
     for (let i = 0; i < indices.length; i++) selected[i] = ids[indices[i]]
-    const count = viewer.updateSelection(selected, remove ? 'remove' : 'add')
+    const count = viewer.updateSelection(selected, remove && !eraseMode ? 'remove' : 'add')
     onSelectionChange?.(count)
-  }, [viewerRef, onSelectionChange])
+    if (eraseMode) onGestureCommit?.()
+  }, [viewerRef, onSelectionChange, eraseMode, onGestureCommit])
 
   /** World-space point on the plane through the look-target, from pixel coords. */
   const pointOnTargetPlane = useCallback((px: number, py: number): THREE.Vector3 | null => {
@@ -142,7 +159,7 @@ export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, o
     if (tool === 'brush') {
       if (maskRef.current) ctx.drawImage(maskRef.current, 0, 0)
       if (cursor.current) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+        ctx.strokeStyle = eraseMode ? 'rgba(255,120,110,0.8)' : 'rgba(255,255,255,0.5)'
         ctx.lineWidth = 1.5
         ctx.beginPath()
         ctx.arc(cursor.current.x, cursor.current.y, brushRadius.current, 0, Math.PI * 2)
@@ -154,8 +171,8 @@ export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, o
     // lasso / polygon: in-progress outline
     const path = tool === 'lasso' ? lassoPath.current : polygonVerts.current
     if ((tool === 'lasso' || tool === 'polygon') && path.length >= 2) {
-      ctx.strokeStyle = STROKE_STYLE
-      ctx.fillStyle = FILL_STYLE
+      ctx.strokeStyle = strokeStyle
+      ctx.fillStyle = fillStyle
       ctx.lineWidth = 1.5
       ctx.beginPath()
       ctx.moveTo(path[0], path[1])
@@ -169,18 +186,18 @@ export default function SelectionOverlay({ viewerRef, tool, onSelectionChange, o
         ctx.stroke()
       }
     }
-  }, [tool])
+  }, [tool, eraseMode, strokeStyle, fillStyle])
 
   /* ---- resolve helpers (declared before the pointer handlers use them) --- */
 
   const paintBrushDot = useCallback((x: number, y: number) => {
     const ctx = maskRef.current?.getContext('2d')
     if (!ctx) return
-    ctx.fillStyle = FILL_STYLE
+    ctx.fillStyle = fillStyle
     ctx.beginPath()
     ctx.arc(x, y, brushRadius.current, 0, Math.PI * 2)
     ctx.fill()
-  }, [])
+  }, [fillStyle])
 
   const resolveBrush = useCallback((remove: boolean) => {
     const proj = projectAll()

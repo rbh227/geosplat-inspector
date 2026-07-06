@@ -45,6 +45,7 @@ export default function App() {
   const [stage, setStage] = useState<Stage>('clean')
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [activeTool, setActiveTool] = useState<SelectionTool | null>(null)
+  const [eraseMode, setEraseMode] = useState(false)
   const [selectionCount, setSelectionCount] = useState(0)
   const [activeDirections, setActiveDirections] = useState<ReadonlySet<MoveDirection>>(new Set())
   const [status, setStatus] = useState<string | null>(null)
@@ -184,6 +185,14 @@ export default function App() {
     const ids = viewerRef.current?.deleteSelection() ?? new Uint32Array(0)
     commitEdit('delete_by_ids', ids)
   }, [commitEdit])
+
+  /** Entering erase mode clears the selection so each gesture deletes only
+   *  its own hits — one gesture, one undo step (KTD3). */
+  const handleEraseModeChange = useCallback((on: boolean) => {
+    setEraseMode(on)
+    if (on) setSelectionCount(viewerRef.current?.clearSelection() ?? 0)
+  }, [])
+
 
   const handleKeepSelection = useCallback(() => {
     const ids = viewerRef.current?.keepSelection() ?? new Uint32Array(0)
@@ -401,6 +410,7 @@ export default function App() {
     if (isThinking) return // switcher is disabled during a run (AE2 guard)
     if (next === 'understand') {
       setActiveTool(null)
+      setEraseMode(false)
       viewerRef.current?.clearSelection()
       setSelectionCount(0)
     }
@@ -458,6 +468,8 @@ export default function App() {
                 onSelectionChange={handleSelectionChange}
                 onManualInput={handleManualInput}
                 onExitTool={handleExitTool}
+                eraseMode={eraseMode}
+                onGestureCommit={handleDeleteSelection}
               />
             )}
 
@@ -466,6 +478,8 @@ export default function App() {
               <EditorToolbar
                 activeTool={activeTool}
                 onToolChange={setActiveTool}
+                eraseMode={eraseMode}
+                onEraseModeChange={handleEraseModeChange}
                 selectionCount={selectionCount}
                 onDeleteSelection={handleDeleteSelection}
                 onKeepSelection={handleKeepSelection}

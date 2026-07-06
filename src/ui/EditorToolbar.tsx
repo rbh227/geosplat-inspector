@@ -3,6 +3,7 @@ import {
   Brush,
   CircleDashed,
   Hexagon,
+  Eraser,
   Lasso,
   MousePointer2,
   Redo2,
@@ -22,6 +23,8 @@ import type { SelectionTool } from '../viewer/SelectionOverlay.tsx'
 interface EditorToolbarProps {
   activeTool: SelectionTool | null
   onToolChange: (tool: SelectionTool | null) => void
+  eraseMode: boolean
+  onEraseModeChange: (on: boolean) => void
   selectionCount: number
   onDeleteSelection: () => void
   onKeepSelection: () => void
@@ -41,12 +44,14 @@ const TOOLS: Array<{ tool: SelectionTool; icon: typeof Brush; title: string }> =
 ]
 
 function RailButton({
-  title, onClick, active = false, disabled = false, children,
+  title, onClick, active = false, disabled = false, activeClass = 'bg-accent-cyan/90 text-white', children,
 }: {
   title: string
   onClick: () => void
   active?: boolean
   disabled?: boolean
+  /** Override for destructive modes (erase) so their active state never reads as tool selection. */
+  activeClass?: string
   children: React.ReactNode
 }) {
   return (
@@ -58,7 +63,7 @@ function RailButton({
       className={[
         'flex h-7 w-7 items-center justify-center rounded-[2px] transition-colors duration-75',
         active
-          ? 'bg-accent-cyan/90 text-white'
+          ? activeClass
           : 'text-text-dim hover:bg-bg-hover hover:text-text-primary',
         disabled ? 'opacity-35 cursor-default' : 'cursor-pointer',
       ].join(' ')}
@@ -71,6 +76,8 @@ function RailButton({
 export default function EditorToolbar({
   activeTool,
   onToolChange,
+  eraseMode,
+  onEraseModeChange,
   selectionCount,
   onDeleteSelection,
   onKeepSelection,
@@ -106,6 +113,17 @@ export default function EditorToolbar({
           <Icon size={15} />
         </RailButton>
       ))}
+
+      {/* Erase mode: a modifier on the tools above — gestures delete on commit (R1) */}
+      <RailButton
+        title={eraseMode ? 'Erase mode ON — selections delete immediately (click to turn off)' : 'Erase mode — selections delete immediately'}
+        active={eraseMode}
+        activeClass="bg-red-500/85 text-white"
+        disabled={disabled}
+        onClick={() => onEraseModeChange(!eraseMode)}
+      >
+        <Eraser size={15} />
+      </RailButton>
 
       <div className="my-1 h-px w-5 bg-border-mid" />
 
