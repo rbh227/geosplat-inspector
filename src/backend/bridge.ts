@@ -14,6 +14,7 @@ export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
     setCameraPose: (p, t, animate) => viewer.setCameraPose(p, t, animate),
     getCameraPose: () => viewer.getCameraPose(),
     getBoundingBox: () => viewer.getBoundingBox(),
+    getSceneCore: () => viewer.getSceneCore(),
     getCamera: () => viewer.getCamera(),
     getRenderer: () => viewer.getRenderer(),
     getOverlayGroup: () => viewer.getOverlayGroup(),
@@ -33,5 +34,6 @@ export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
     showSelectionPreview: (s, c, z) => viewer.showSelectionPreview(s, c, z),
     clearSelectionPreview: () => viewer.clearSelectionPreview(),
     setMovementInput: (d, a) => viewer.setMovementInput(d, a),
+    setRotationInput: (d, a) => viewer.setRotationInput(d, a),
   }
 }

@@ -58,6 +58,7 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         renderOnce: () => mgr().renderOnce(),
         getSplatCount: () => mgr().getSplatCount(),
         getBoundingBox: () => mgr().getBoundingBox(),
+        getSceneCore: () => mgr().getSceneCore(),
         isLoaded: () => mgr().isLoaded(),
         loadSplat: (url) => mgr().loadSplat(url),
         loadSplatFile: (file) => mgr().loadSplatFile(file),

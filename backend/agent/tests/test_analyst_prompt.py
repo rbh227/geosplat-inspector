@@ -10,7 +10,13 @@ import asyncio
 from backend.agent.config import AgentConfig
 from backend.agent.dispatch import ToolDispatcher
 from backend.agent.loop import AgentLoop
-from backend.agent.mocks import MockBackendExecutor, MockFrontendChannel, MockProvider, tool_turn
+from backend.agent.mocks import (
+    MockBackendExecutor,
+    MockFrontendChannel,
+    MockProvider,
+    text_then_tools,
+    tool_turn,
+)
 from backend.agent.system_prompt import system_prompt_for
 from backend.agent.types import DESTRUCTIVE_TOOLS
 
@@ -32,7 +38,12 @@ def _run_analyst(script) -> tuple:
 
 def test_count_question_is_answered_capture_first_with_no_edits():
     result, channel, executor = _run_analyst([
-        tool_turn(("capture_orbit", {"center": [0, 0, 0], "n": 4})),
+        text_then_tools(
+            "Looking around from the operator's view.",
+            ("move_camera", {"direction": "forward", "duration_ms": 400}),
+            ("turn", {"direction": "left", "duration_ms": 300}),
+            ("capture_frame", {}),
+        ),
         tool_turn(("answer", {"text": "I count 3 damaged buildings: two collapsed roofs near the center and one leaning facade on the east side."})),
     ])
     assert result.status == "answered"

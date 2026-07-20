@@ -85,6 +85,11 @@ export class SceneManager implements ViewerHandle {
   private clock = new THREE.Clock()
   private flyDistance = 3        // carried look-target distance across mode switches
   private flySpeed = 3           // world units/sec, scaled to scene radius on entry
+  // Cached world-space scene core for cheap per-frame near/far tracking. Set on
+  // load/frame and after every edit; lets the frustum follow the camera without
+  // re-sampling all centers every frame.
+  private sceneCenter = new THREE.Vector3()
+  private sceneRadius = 0
   private lookActive = false     // drag-to-look pointer state
   private lookLast = { x: 0, y: 0 }
   private restoreFlyAfterTween = false
@@ -213,6 +218,7 @@ export class SceneManager implements ViewerHandle {
       this.controls.update()
     }
     this.stepRotate(dt)
+    this.refreshNearFar()  // frustum follows the camera (agent flies far from load pose)
     this.spark.render(this.scene, this.camera)
 
     // FPS
@@ -641,6 +647,17 @@ export class SceneManager implements ViewerHandle {
   getBoundingBox(): THREE.Box3 | null {
     if (!this.splatMesh) return null
     return this.splatMesh.getBoundingBox()
+  }
+
+  /**
+   * World-space robust scene center + radius (the same framing core the view
+   * presets use). Public so the agent's camera tools can aim at the real
+   * scene: `getBoundingBox()` is mesh-LOCAL (packedSplats carry a rotation.x=π
+   * Y/Z flip), so its center is mirrored for any off-origin scene. This is
+   * world-space and safe to hand a camera pose.
+   */
+  getSceneCore(): { center: [number, number, number]; radius: number } | null {
+    return this.coreBounds()
   }
 
   isLoaded(): boolean {
@@ -1469,6 +1486,7 @@ export class SceneManager implements ViewerHandle {
    * far floaters don't shrink or tilt the view. See framing.ts.
    */
   private frameScene(): void {
+    this.cacheSceneCore()  // seed the frustum-tracking cache for this scene
     const pts = this.sampleWorldPoints()
     if (pts) {
       const framing = computeFraming(pts, this.camera.fov, this.camera.aspect || 1)
@@ -1508,6 +1526,37 @@ export class SceneManager implements ViewerHandle {
   }
 
   /**
+   * Cache the world-space scene core (center + radius) so `refreshNearFar` can
+   * track the frustum cheaply every frame. Called on load/frame and after every
+   * edit (via markSplatDirty).
+   */
+  private cacheSceneCore(): void {
+    const core = this.coreBounds()
+    if (!core) return
+    this.sceneCenter.set(core.center[0], core.center[1], core.center[2])
+    this.sceneRadius = core.radius
+  }
+
+  /**
+   * Keep the frustum bracketing the scene as the camera moves. The agent's
+   * camera flights leave the load pose far behind; without this the splat
+   * crosses the STALE far plane (near/far were only set once, on load) and gets
+   * clipped — the "blank / glitch" on agent navigation. Cheap: one distance +
+   * a matrix rebuild only when the planes actually change. Based on distance to
+   * the scene CENTER (not the orbit target, which drifts in fly mode).
+   */
+  private refreshNearFar(): void {
+    if (this.sceneRadius <= 0) return
+    const dist = this.camera.position.distanceTo(this.sceneCenter)
+    const { near, far } = nearFarForDistance(dist, this.sceneRadius)
+    if (near !== this.camera.near || far !== this.camera.far) {
+      this.camera.near = near
+      this.camera.far = far
+      this.camera.updateProjectionMatrix()
+    }
+  }
+
+  /**
    * Push a copy of the current PackedSplats data onto the undo stack.
    */
   private pushUndoSnapshot(label: string): void {
@@ -1532,5 +1581,8 @@ export class SceneManager implements ViewerHandle {
     if (!this.splatMesh?.packedSplats) return
     this.splatMesh.packedSplats.needsUpdate = true
     this.splatMesh.updateVersion()
+    // Edits can move the scene's extent; refresh the cached core so near/far
+    // tracking and agent framing stay accurate.
+    this.cacheSceneCore()
   }
 }

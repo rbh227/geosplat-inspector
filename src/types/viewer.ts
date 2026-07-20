@@ -52,6 +52,8 @@ export interface ViewerHandle {
   // Scene info
   getSplatCount(): number
   getBoundingBox(): THREE.Box3 | null
+  /** World-space robust scene center + radius (agent camera aim; see SceneManager). */
+  getSceneCore(): { center: [number, number, number]; radius: number } | null
   isLoaded(): boolean
 
   // Loading

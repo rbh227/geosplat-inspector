@@ -118,4 +118,18 @@ describe('nearFarForDistance', () => {
       expect(Number.isFinite(far)).toBe(true)
     }
   })
+
+  it('keeps the scene inside the frustum after an agent camera flies far off (A1)', () => {
+    // The bug: near/far were set once on load, so when the agent flew the camera
+    // far from the scene the splat crossed the stale far plane and was clipped.
+    // refreshNearFar() recomputes from the current distance; this asserts the
+    // property it relies on — far clears the scene, near stays ahead of it.
+    const r = 15_000                 // large core radius (real capture)
+    for (const d of [r * 0.5, r * 2, r * 6]) {
+      const { near, far } = nearFarForDistance(d, r)
+      expect(far).toBeGreaterThan(d + r)   // scene not clipped by the far plane
+      expect(near).toBeGreaterThan(0)
+      expect(near).toBeLessThan(d + r)     // near plane doesn't swallow the scene
+    }
+  })
 })

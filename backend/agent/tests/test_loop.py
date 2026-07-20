@@ -34,7 +34,7 @@ def _floater_script():
         tool_turn(("get_metrics", {})),
         text_then_tools(
             "Flying to the worst region to scan it.",
-            ("look_at", {"target": [0.75, 0.75, 0.75]}),
+            ("move_camera", {"direction": "forward", "duration_ms": 400}),
             ("drop_marker", {"position": [0.75, 0.75, 0.75], "label": "floaters"}),
             ("scan_pause", {"ms": 800}),
         ),
@@ -82,8 +82,8 @@ def test_floater_cleanup_cycle_produces_correct_trace():
     assert executor.state["outlier"] < 0.12
     # a snapshot was auto-taken before the destructive edit
     assert dispatcher_snapshots(channel) or executor  # engine recorded a snapshot
-    # frontend received paced camera + marker commands
-    assert "look_at" in channel.command_tools()
+    # frontend received paced camera + marker commands (button-only nav)
+    assert "move_camera" in channel.command_tools()
     assert "drop_marker" in channel.command_tools()
 
 

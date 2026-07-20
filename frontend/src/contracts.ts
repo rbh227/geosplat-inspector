@@ -93,6 +93,8 @@ export const FRONTEND_TOOLS = [
   "invert_selection", "clear_selection", "get_selection_state",
   // v0.2 — movement
   "move_camera",
+  // v0.3 — look/turn (rotate pad; button-only relative nav)
+  "turn",
 ] as const;
 
 export const BACKEND_TOOLS = [

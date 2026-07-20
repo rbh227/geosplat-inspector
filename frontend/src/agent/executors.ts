@@ -5,8 +5,8 @@
  * the trail. Captures go through the R1-hardened PNG path.
  */
 import * as THREE from 'three'
-import type { MoveDirection, RendererBridge, ToolResult } from './types.ts'
-import { animateOrbit, animateTo, poseForBox, rotateAround, sleep, toRenderSpace } from './camera.ts'
+import type { MoveDirection, RendererBridge, RotateDirection, ToolResult } from './types.ts'
+import { animateOrbit, animateTo, poseForBox, resolveAimPoint, rotateAround, sleep, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
 import type { Overlay } from './overlay.ts'
 // Shared pure selection math — the SAME module the manual SelectionOverlay
@@ -150,14 +150,39 @@ export class FrontendExecutors {
     return { ok: true, held_ms: holdMs }
   }
 
+  /** Hold a rotate-pad look input (yaw/pitch) — the SAME setRotationInput the
+   *  on-screen rotate pad calls, so the pad lights for the agent too (R8). The
+   *  tool speaks in operator terms (left/right/up/down); we map to the pad's
+   *  yaw/pitch vocabulary. Relative, button-only — no coordinates. */
+  async turn(args: { direction: string; duration_ms: number }): Promise<Record<string, unknown>> {
+    const MAP: Record<string, RotateDirection> = {
+      left: 'yaw-left', right: 'yaw-right', up: 'pitch-up', down: 'pitch-down',
+    }
+    const dir = MAP[args.direction as string]
+    if (!dir) return { ok: false, error: `unknown turn direction ${args.direction}` }
+    const holdMs = Math.max(0, Math.min(Number(args.duration_ms) || 0, MAX_MOVE_MS))
+    this.bridge.setRotationInput(dir, true)
+    try {
+      await sleep(holdMs)
+    } finally {
+      this.bridge.setRotationInput(dir, false)
+    }
+    return { ok: true, held_ms: holdMs }
+  }
+
   /** Record where the camera ended up after a move. */
   private breadcrumb(): void {
     this.overlay.pushTrailPoint(this.bridge.getCameraPose().position)
   }
 
+  /** World-space aim point with the origin-default backstop (see camera.ts). */
+  private resolveAimPoint(raw: number[] | undefined): THREE.Vector3 {
+    return resolveAimPoint(raw, this.bridge.getSceneCore())
+  }
+
   async look_at(args: { target: number[]; duration_ms?: number }): Promise<ToolResult> {
     const { position } = this.bridge.getCameraPose()
-    await animateTo(this.bridge, position.clone(), toRenderSpace(args.target), args.duration_ms)
+    await animateTo(this.bridge, position.clone(), this.resolveAimPoint(args.target), args.duration_ms)
     this.breadcrumb()
     return { ok: true }
   }
@@ -169,7 +194,7 @@ export class FrontendExecutors {
   }
 
   async orbit(args: { center: number[]; deg: number; axis: 'x' | 'y' | 'z'; duration_ms?: number }): Promise<ToolResult> {
-    const center = toRenderSpace(args.center)
+    const center = this.resolveAimPoint(args.center)
     await animateOrbit(this.bridge, center, args.axis, args.deg, args.duration_ms)
     this.breadcrumb()
     return { ok: true }
@@ -203,12 +228,26 @@ export class FrontendExecutors {
 
   async reset_view(_args: Record<string, never>): Promise<ToolResult> {
     void _args
-    const box = this.bridge.getBoundingBox()
-    if (box) {
+    // Prefer the world-space scene core: getBoundingBox() is mesh-local (Y/Z
+    // flipped), so its center is mirrored for any off-origin scene and would
+    // frame empty space. Fall back to the local bbox, then a fixed default.
+    const core = this.bridge.getSceneCore()
+    if (core) {
+      const c = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+      const box = new THREE.Box3().setFromCenterAndSize(
+        c,
+        new THREE.Vector3(core.radius * 2, core.radius * 2, core.radius * 2),
+      )
       const pose = poseForBox(this.bridge, box)
       await animateTo(this.bridge, pose.position, pose.target)
     } else {
-      await animateTo(this.bridge, new THREE.Vector3(0, 1.5, 3), new THREE.Vector3(0, 0, 0))
+      const box = this.bridge.getBoundingBox()
+      if (box) {
+        const pose = poseForBox(this.bridge, box)
+        await animateTo(this.bridge, pose.position, pose.target)
+      } else {
+        await animateTo(this.bridge, new THREE.Vector3(0, 1.5, 3), new THREE.Vector3(0, 0, 0))
+      }
     }
     this.breadcrumb()
     return { ok: true }
@@ -224,7 +263,7 @@ export class FrontendExecutors {
   }
 
   async capture_orbit(args: { center: number[]; n: number; radius?: number }): Promise<ToolResult> {
-    const center = toRenderSpace(args.center)
+    const center = this.resolveAimPoint(args.center)
     const pose0 = this.bridge.getCameraPose()
     const radius = args.radius ?? pose0.position.clone().sub(center).length()
     const start = pose0.position.clone().sub(center)

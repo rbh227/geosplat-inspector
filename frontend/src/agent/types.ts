@@ -13,11 +13,17 @@ export type { FrontendToolName } from '../contracts.ts'
 /** Movement directions shared by keyboard, pad, and the agent (v0.2). */
 export type MoveDirection = 'forward' | 'back' | 'left' | 'right' | 'up' | 'down'
 
+/** Look/turn directions driven by the rotate pad and the agent `turn` tool. */
+export type RotateDirection = 'yaw-left' | 'yaw-right' | 'pitch-up' | 'pitch-down'
+
 /** The slice of the existing renderer the agent layer drives. */
 export interface RendererBridge {
   setCameraPose(position: THREE.Vector3, target: THREE.Vector3, animate?: boolean): void
   getCameraPose(): { position: THREE.Vector3; target: THREE.Vector3 }
   getBoundingBox(): THREE.Box3 | null
+  /** World-space robust scene center + radius. The agent aims camera tools here
+   *  because getBoundingBox() is mesh-local (mirrored for off-origin scenes). */
+  getSceneCore(): { center: [number, number, number]; radius: number } | null
   getCamera(): THREE.PerspectiveCamera
   getRenderer(): THREE.WebGLRenderer
   getOverlayGroup(): THREE.Group
@@ -36,6 +42,8 @@ export interface RendererBridge {
   showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
   clearSelectionPreview(): void
   setMovementInput(direction: MoveDirection, active: boolean): void
+  /** Hold a rotate-pad look input (yaw/pitch) — the agent `turn` tool. */
+  setRotationInput(direction: RotateDirection, active: boolean): void
 }
 
 /** Result returned by a frontend tool executor (JSON-serializable).

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from typing import Any
 
 from backend.contracts import FrontendChannel, ModelProvider, ToolCall
@@ -79,6 +80,8 @@ class AgentLoop:
         self._last_metrics = None
         self._result = LoopResult(status="running")
 
+        await self._seed_grounding()
+
         for step in range(1, self.config.max_steps + 1):
             self._result.steps = step
             try:
@@ -118,6 +121,56 @@ class AgentLoop:
                     return await self._finish_status(verdict)
 
         return await self._finish_status("max_steps")
+
+    # -- spatial grounding (real scenes are NOT at the origin) -------------
+    async def _seed_grounding(self) -> None:
+        """Inject the scene's real center / bbox / scale before the model acts.
+
+        Test scenes sit at the origin at unit scale, so a model with no spatial
+        context defaults every camera and selection coordinate to [0,0,0] and
+        gets away with it. Real captures are centered thousands of units away
+        with a huge extent — there, origin-relative aiming stares into empty
+        space (blank frames) and origin-relative selection grabs the whole
+        scene. We read the bounds the engine already computes (get_metrics) and
+        hand the model the real coordinates. Best-effort: never abort a run.
+
+        Reads a CHEAP bounds-only accessor (single min/max pass, no k-NN) rather
+        than full get_metrics — the seed runs on every request (incl. look-only
+        Understand), so it must never trigger the expensive metrics pass. The
+        call is internal (no tool_call event, no ledger write), so it does not
+        count as a model tool call — Understand stays look-only and the grounding
+        ledger keeps policing only what the model itself measured.
+        """
+        get_bounds = getattr(getattr(self.dispatcher, "executor", None), "get_bounds", None)
+        if not callable(get_bounds):
+            return
+        try:
+            bounds = get_bounds()
+        except Exception:  # noqa: BLE001 — grounding is optional, never fatal
+            return
+        if not isinstance(bounds, dict):
+            return
+        mn, mx = bounds.get("min"), bounds.get("max")
+        if not (
+            isinstance(mn, (list, tuple)) and isinstance(mx, (list, tuple))
+            and len(mn) == 3 and len(mx) == 3
+        ):
+            return
+        mn, mx = list(mn), list(mx)
+        center = [round((a + b) / 2, 3) for a, b in zip(mn, mx)]
+        radius = round(0.5 * math.dist(mn, mx), 3)
+        msg = (
+            "[scene] The loaded scene is NOT centered at the origin. Real world "
+            "coordinates, for SELECTION and marker placement (navigate with the "
+            "buttons — move_camera / turn / dolly — not coordinates):\n"
+            f"- center: {center}\n"
+            f"- bounding box: min {[round(v, 3) for v in mn]} max {[round(v, 3) for v in mx]}\n"
+            f"- radius (half-diagonal): {radius}\n"
+            "Selection spheres/boxes must sit inside the bounding box; a radius "
+            "near the scene radius covers everything, so use a small fraction of "
+            "it to target a region."
+        )
+        self._messages.insert(1, {"role": "user", "content": msg})
 
     # -- pause / takeover (KTD9, R14) --------------------------------------
     async def _pause_checkpoint(self) -> str | None:

@@ -24,7 +24,7 @@ import type { Transport } from './transport.ts'
 const COMMAND_TYPES = new Set([
   'camera_move', 'capture_request', 'drop_marker', 'clear_markers', 'narrate', 'reload_scene',
   // v0.2 — selection pull + agent-driven editor tools
-  'get_selection', 'selection_tool', 'movement_input',
+  'get_selection', 'selection_tool', 'movement_input', 'rotation_input',
 ])
 
 function isCommand(m: { type?: string }): m is WSCommand {
@@ -122,8 +122,17 @@ export class AgentWSClient {
           break
         }
         case 'movement_input': {
-          const { direction, duration_ms } = p as { direction: string; duration_ms: number }
-          const result = await this.executors.move_camera({ direction, duration_ms })
+          // The dispatcher packages every frontend command as {tool, args};
+          // WSChannel forwards that as the payload, so the real fields live in
+          // p.args (reading p directly gave undefined -> move_camera no-op'd).
+          const { args } = p as unknown as { args: { direction: string; duration_ms: number } }
+          const result = await this.executors.move_camera(args ?? { direction: '', duration_ms: 0 })
+          this.transport.send({ type: 'tool_result', id: cmd.id, payload: result } as WSResponse)
+          break
+        }
+        case 'rotation_input': {
+          const { args } = p as unknown as { args: { direction: string; duration_ms: number } }
+          const result = await this.executors.turn(args ?? { direction: '', duration_ms: 0 })
           this.transport.send({ type: 'tool_result', id: cmd.id, payload: result } as WSResponse)
           break
         }

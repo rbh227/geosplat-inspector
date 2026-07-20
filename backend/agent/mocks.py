@@ -150,6 +150,10 @@ class MockBackendExecutor:
             "region": region,
         }
 
+    def get_bounds(self) -> dict:
+        # Matches the bounds get_metrics reports, so grounding is consistent.
+        return {"min": [-1.0, -1.0, -1.0], "max": [1.0, 1.0, 1.0]}
+
     def list_problem_regions(self) -> list[dict]:
         return [
             {

@@ -28,7 +28,7 @@ from backend.contracts import FrontendChannel
 COMMAND_TYPES = {
     "camera_move", "capture_request", "drop_marker",
     "clear_markers", "narrate", "reload_scene",
-    "get_selection", "selection_tool", "movement_input",
+    "get_selection", "selection_tool", "movement_input", "rotation_input",
 }
 TRACE_TYPES = {"thought", "tool_call", "tool_result", "complete"}
 REPLY_TYPES = {"frame", "user_interrupt", "selection", "tool_result", "agent_pause", "agent_resume"}

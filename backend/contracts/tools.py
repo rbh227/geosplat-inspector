@@ -2,8 +2,9 @@
 
 v0.2 — editor phase. The contract freezes per phase: v0.1 froze the Phase-0
 build; v0.2 adds spatial selection, movement, and selection-edit tools for the
-editor-first rework (docs/plans/2026-07-05-001). Additions only — nothing is
-removed or renamed.
+editor-first rework (docs/plans/2026-07-05-001). v0.3 adds the `turn` look tool
+(rotate pad) for button-only relative navigation (docs/plans/2026-07-20-001).
+Additions only — nothing is removed or renamed.
 """
 
 from __future__ import annotations
@@ -178,6 +179,16 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "properties": {
             "direction": {"type": "string", "enum": ["forward", "back", "left", "right", "up", "down"],
                           "description": "Fly-mode movement direction (W/S/A/D/up/down)"},
+            "duration_ms": {"type": "number", "description": "How long to hold the input"},
+        },
+        "required": ["direction", "duration_ms"],
+    }, "ok"),
+    # ── frontend (look/turn) — v0.3 (rotate pad; button-only relative nav) ──
+    ToolEntry("turn", "frontend", {
+        "type": "object",
+        "properties": {
+            "direction": {"type": "string", "enum": ["left", "right", "up", "down"],
+                          "description": "Look direction (yaw left/right, pitch up/down) — the rotate pad"},
             "duration_ms": {"type": "number", "description": "How long to hold the input"},
         },
         "required": ["direction", "duration_ms"],

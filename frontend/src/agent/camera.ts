@@ -10,6 +10,11 @@ import type { RendererBridge } from './types.ts'
 
 const DEFAULT_MOVE_MS = 900
 const DEFAULT_FRAME_MARGIN = 1.6
+// Cap framing distance to a multiple of the scene radius so reset_view/frame
+// never fling the camera to the far edge of a large scene (which, with a
+// scene-tracking frustum, still reads as "zoomed to a dot"). Typical framing is
+// ~3.8·radius; this only bites on very narrow FOV / extreme aspect.
+const MAX_FRAME_FACTOR = 5
 
 function easeOutCubic(t: number): number {
   const inv = 1 - t
@@ -27,6 +32,26 @@ function easeOutCubic(t: number): number {
  */
 export function toRenderSpace(a: ArrayLike<number>): THREE.Vector3 {
   return new THREE.Vector3(a[0], -a[1], -a[2])
+}
+
+/**
+ * World-space point to aim a camera tool at, with the origin-default backstop.
+ *
+ * The model tends to send [0,0,0] for look_at/orbit/capture_orbit centers,
+ * which is empty space on a real (off-origin) capture. When it does — and the
+ * scene really sits away from the origin — substitute the world-space scene
+ * `core.center` (already render-space; returned as-is). Explicit non-origin
+ * coordinates are respected and flipped to render space like any backend coord.
+ */
+export function resolveAimPoint(
+  raw: number[] | undefined,
+  core: { center: [number, number, number]; radius: number } | null,
+): THREE.Vector3 {
+  const isOrigin = !raw || (Number(raw[0]) === 0 && Number(raw[1]) === 0 && Number(raw[2]) === 0)
+  if (isOrigin && core && Math.hypot(...core.center) > core.radius * 0.05) {
+    return new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+  }
+  return toRenderSpace(raw ?? [0, 0, 0])
 }
 
 /** Animate camera from its current pose to (toPos, toTarget). Resolves when done. */
@@ -101,7 +126,8 @@ function framingDistance(camera: THREE.PerspectiveCamera, radius: number): numbe
   const vFov = (camera.fov * Math.PI) / 180
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect)
   const fit = Math.min(vFov, hFov)
-  return (radius * DEFAULT_FRAME_MARGIN) / Math.sin(fit / 2)
+  const dist = (radius * DEFAULT_FRAME_MARGIN) / Math.sin(fit / 2)
+  return Math.min(dist, radius * MAX_FRAME_FACTOR)
 }
 
 /** Compute a pose that frames the given box, viewed from the current direction. */

@@ -35,6 +35,9 @@ class BackendExecutor(Protocol):
     # analysis
     def get_metrics(self, region: dict | None = None) -> dict: ...
     def list_problem_regions(self) -> list[dict]: ...
+    # cheap axis-aligned scene bounds (min/max only, no k-NN) — used by the
+    # loop's internal spatial-grounding seed so it never pays for full metrics.
+    def get_bounds(self) -> dict: ...
     # editing (each returns before/after counts)
     def opacity_threshold(self, min_alpha: float) -> dict: ...
     def remove_outliers(self, k: int, std_ratio: float) -> dict: ...
@@ -80,6 +83,7 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
     "clear_selection": "selection_tool",
     "get_selection_state": "selection_tool",
     "move_camera": "movement_input",
+    "turn": "rotation_input",
 }
 
 # Backend tools that operate on the CURRENT frontend selection: dispatch pulls

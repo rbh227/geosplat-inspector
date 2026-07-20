@@ -12,6 +12,7 @@ from backend.agent.mocks import MockBackendExecutor, MockFrontendChannel, MockPr
 from backend.agent.dispatch import ToolDispatcher
 from backend.agent.system_prompt import (
     SKILLS,
+    TELEPORT_TOOLS,
     UNDERSTAND_TOOLS,
     build_tool_specs,
     skills_for,
@@ -35,9 +36,13 @@ def test_understand_specs_contain_zero_mutating_tools():
     assert names == UNDERSTAND_TOOLS
 
 
-def test_clean_specs_contain_the_full_registry():
+def test_clean_specs_contain_the_full_registry_minus_teleports():
+    # Button-only nav (docs/plans/2026-07-20-001): the teleport/absolute camera
+    # tools are removed from BOTH stages' offered sets; everything else remains.
     names = {spec.name for spec in build_tool_specs("clean")}
-    assert names == {t.name for t in TOOL_REGISTRY}
+    assert names == {t.name for t in TOOL_REGISTRY} - TELEPORT_TOOLS
+    assert names.isdisjoint(TELEPORT_TOOLS)
+    assert {"move_camera", "turn", "dolly"} <= names
 
 
 def test_understand_loop_rejects_edit_calls_without_dispatching():
@@ -62,6 +67,29 @@ def test_understand_loop_rejects_edit_calls_without_dispatching():
         and "not available in the understand stage" in str(e.get("result", {}))
     ]
     assert rejections, "expected a stage rejection in the trace"
+
+
+def test_clean_loop_rejects_teleport_calls_without_dispatching():
+    """Button-only nav: a hallucinated reset_view/orbit bounces at the loop
+    boundary even in Clean — the agent cannot fling away from the operator's view."""
+    executor = MockBackendExecutor()
+    channel = MockFrontendChannel()
+    provider = MockProvider(script=[
+        tool_turn(("reset_view", {})),
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    loop = AgentLoop(provider, ToolDispatcher(executor, channel), channel,
+                     config=AgentConfig(enforce_grounding=False), stage="clean")
+    result = asyncio.run(loop.run("look around"))
+
+    assert result.status == "answered"
+    # reset_view never reached the frontend as a camera_move command
+    assert all(c.get("type") != "camera_move" for c in channel.commands)
+    rejections = [
+        e for e in result.trace
+        if e.get("type") == "tool_result" and "not available in the clean stage" in str(e.get("result", {}))
+    ]
+    assert rejections, "expected a teleport rejection in the trace"
 
 
 def test_skills_split_by_stage_and_render_into_prompts():

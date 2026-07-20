@@ -116,6 +116,11 @@ class RealBackendExecutor:
     def list_problem_regions(self) -> list[dict]:
         return list_problem_regions(self._s.model)
 
+    def get_bounds(self) -> dict:
+        """Cheap AABB of alive Gaussians (single min/max pass, no k-NN)."""
+        mn, mx = self._s.model.bounds()
+        return {"min": [float(v) for v in mn], "max": [float(v) for v in mx]}
+
     # editing (delegate to the shared EditingEngine; each returns count dicts)
     def opacity_threshold(self, min_alpha: float) -> dict:
         return self._s.editing.opacity_threshold(min_alpha)

@@ -4,9 +4,14 @@ import { BACKEND_TOOLS, FRONTEND_TOOLS } from '../contracts.ts'
 // Mirror-drift guard: these counts and names must match the Python registry
 // (backend/contracts/tools.py, asserted in backend/contracts/tests/test_tools.py).
 describe('contracts v0.2 mirror', () => {
-  it('matches the Python registry counts (22 frontend / 18 backend)', () => {
-    expect(FRONTEND_TOOLS.length).toBe(22)
+  it('matches the Python registry counts (23 frontend / 18 backend)', () => {
+    // v0.3 added `turn` (frontend): 22 -> 23.
+    expect(FRONTEND_TOOLS.length).toBe(23)
     expect(BACKEND_TOOLS.length).toBe(18)
+  })
+
+  it('carries the v0.3 turn tool', () => {
+    expect(new Set<string>(FRONTEND_TOOLS).has('turn')).toBe(true)
   })
 
   it('carries the v0.2 selection, movement, and selection-edit tools', () => {

@@ -29,13 +29,21 @@ Stage = Literal["clean", "understand"]
 # edits, history, export — is not offered and is rejected at dispatch.
 # ---------------------------------------------------------------------------
 
+# Teleport / absolute-coordinate camera tools. REMOVED from BOTH stages' offered
+# sets (button-only relative nav, docs/plans/2026-07-20-001) so the agent starts
+# at the operator's current view and cannot fling itself to a computed
+# coordinate. Kept in the registry (the contract is additive); the loop backstop
+# rejects any hallucinated call to one.
+TELEPORT_TOOLS: frozenset[str] = frozenset(
+    {"look_at", "set_view", "orbit", "frame_object", "reset_view", "capture_orbit"}
+)
+
 UNDERSTAND_TOOLS: frozenset[str] = frozenset(
     {
-        "look_at", "set_view", "orbit", "dolly", "scan_pause",
-        "frame_object", "reset_view", "reset_trail",
-        "capture_frame", "capture_orbit",
-        "drop_marker", "clear_markers", "narrate",
-        "move_camera",
+        # button-only relative navigation (move pad / rotate pad / zoom)
+        "move_camera", "turn", "dolly", "scan_pause",
+        "capture_frame",
+        "drop_marker", "clear_markers", "reset_trail", "narrate",
         "answer",
     }
 )
@@ -45,7 +53,8 @@ def stage_tools(stage: Stage) -> frozenset[str]:
     """Tool names offered to the model in a stage."""
     if stage == "understand":
         return UNDERSTAND_TOOLS
-    return frozenset(TOOL_BY_NAME)
+    # Clean: the full editor surface MINUS the teleport tools (button-only nav).
+    return frozenset(TOOL_BY_NAME) - TELEPORT_TOOLS
 
 
 # ---------------------------------------------------------------------------
@@ -63,26 +72,26 @@ SKILLS: list[Skill] = [
     {
         "name": "survey_scene",
         "stage": "both",
-        "description": "Fly an overview orbit and capture what the scene contains.",
-        "recipe": "reset_view, then capture_orbit (4-6 frames) around the scene center; narrate what you saw.",
+        "description": "Look around the scene from where you are and capture what it contains.",
+        "recipe": "From the operator's current view, alternate move_camera and turn to sweep the view; capture_frame every couple of moves; narrate what you see.",
     },
     {
         "name": "hover_around",
         "stage": "both",
-        "description": "Slow, watchable flight around a point of interest.",
-        "recipe": "Alternate move_camera holds (400-800 ms) with scan_pause and look_at; narrate what you notice as you move.",
+        "description": "Slow, watchable flight around what you're looking at.",
+        "recipe": "Alternate move_camera holds (400-800 ms) and turn with scan_pause; capture_frame to check; narrate what you notice as you move.",
     },
     {
         "name": "frame_and_capture",
         "stage": "both",
-        "description": "Frame a region and capture one good view of it.",
-        "recipe": "frame_object on the region's bbox, scan_pause ~500 ms, capture_frame.",
+        "description": "Get a good look at a region and capture one clear view of it.",
+        "recipe": "move_camera and turn until the region fills the view (dolly to zoom in), scan_pause ~500 ms, capture_frame.",
     },
     {
         "name": "clean_floaters",
         "stage": "clean",
         "description": "Find floaters and erase them with the selection tools.",
-        "recipe": "list_problem_regions → frame_and_capture the worst region → select_by_sphere on the floater cluster (or select_by_brush on what you see) → get_selection_state to sanity-check the count → delete_selection → verify with metrics + one capture.",
+        "recipe": "list_problem_regions -> move_camera/turn until the worst region is in view -> capture_frame -> select_by_brush on the floaters you SEE (or select_by_sphere on a tight cluster) -> get_selection_state to sanity-check the count -> delete_selection -> verify with get_metrics + capture_frame.",
     },
     {
         "name": "trim_background",
@@ -106,7 +115,7 @@ SKILLS: list[Skill] = [
         "name": "count_objects",
         "stage": "understand",
         "description": "Count visible things (buildings, cars, ...) from multiple views.",
-        "recipe": "Capture 3-4 views from different angles (capture_orbit, or move_camera + capture_frame), count what is visible across the views, answer with the count and what you saw.",
+        "recipe": "Capture 3-4 views from different angles (move_camera + turn + capture_frame between each), count what is visible across the views, answer with the count and what you saw.",
     },
 ]
 
@@ -135,6 +144,18 @@ SKILLS — prefer composing these named routines over improvising:
 {skills}
 
 Operating rules:
+- NAVIGATION (buttons only): you START at the operator's current view — the zoom
+  and angle they chose. You have NO teleport and cannot jump to a coordinate.
+  Move and look with the buttons: move_camera (forward/back/left/right/up/down),
+  turn (look — left/right yaw, up/down pitch), dolly (zoom). Chain a few button
+  moves, then capture_frame to see where you are. Work outward from where the
+  operator put you.
+- SELECT WHAT YOU SEE: prefer select_by_brush / select_by_lasso on the floaters
+  visible in your captured frame over world-coordinate volumes — a sphere/box
+  radius near the scene size grabs everything. If you do use select_by_sphere /
+  select_by_box, keep it tight and confirm the count with get_selection_state
+  before deleting. The [scene] message's bbox is for sizing selections, not for
+  aiming the camera.
 - PERCEIVE -> ACT -> VERIFY. Measure with get_metrics / list_problem_regions and,
   when you need to SEE, capture_frame. Only then act.
 - PREFER the selection grammar for targeted removal: select_by_sphere /
@@ -167,6 +188,12 @@ SKILLS — prefer composing these named routines over improvising:
 {skills}
 
 Operating rules:
+- NAVIGATION (buttons only): you START at the operator's current view — the zoom
+  and angle they chose. You have NO teleport and cannot jump to a coordinate.
+  Move and look with the buttons: move_camera (forward/back/left/right/up/down),
+  turn (look — left/right yaw, up/down pitch), dolly (zoom). Chain a few button
+  moves, then capture_frame to check what you see. Work from the view the
+  operator gave you.
 - ANSWER FROM PIXELS: your evidence is captured frames. Capture views from
   enough angles before answering; describe what the frames show.
 - Never answer a content question with Gaussian counts or metrics — say what
@@ -232,6 +259,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "delete_selection": "Delete the currently selected splats (undoable; verified).",
     "keep_selection": "Keep ONLY the selected splats, delete everything else (undoable; verified).",
     "move_camera": "Hold a fly-movement input (forward/back/left/right/up/down) for duration_ms — lights the on-screen pad.",
+    "turn": "Hold a look input to turn the view (left/right = yaw, up/down = pitch) for duration_ms — the rotate pad. Relative; no coordinates.",
 }
 
 
