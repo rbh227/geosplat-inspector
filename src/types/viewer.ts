@@ -56,6 +56,9 @@ export interface ViewerHandle {
   getSceneCore(): { center: [number, number, number]; radius: number } | null
   /** Monotonic scene revision — bumps on every edit; tags captured percepts. */
   getSceneRevision(): number
+  /** The operator's start-of-run view; the agent's `reframe` home. */
+  setHomePose(pose: { position: THREE.Vector3; target: THREE.Vector3 }): void
+  getHomePose(): { position: THREE.Vector3; target: THREE.Vector3 } | null
   isLoaded(): boolean
 
   // Loading

@@ -18,10 +18,11 @@ def test_no_duplicate_names():
 
 
 def test_v02_counts():
-    # v0.3 added `turn` (frontend): 22 -> 23 frontend, 40 -> 41 total.
-    assert len(FRONTEND_TOOLS) == 23
+    # v0.3 added `turn`, v0.4 added `reframe` (both frontend): 22 -> 24 frontend,
+    # 40 -> 42 total.
+    assert len(FRONTEND_TOOLS) == 24
     assert len(BACKEND_TOOLS) == 18
-    assert len(TOOL_REGISTRY) == 41
+    assert len(TOOL_REGISTRY) == 42
 
 
 def test_v03_turn_tool_present_and_routed():
@@ -29,6 +30,12 @@ def test_v03_turn_tool_present_and_routed():
     assert "turn" in TOOL_BY_NAME
     assert TOOL_BY_NAME["turn"].runs_on == "frontend"
     assert "rotation_input" in COMMAND_TYPES
+
+
+def test_v04_reframe_tool_present_and_routed():
+    assert "reframe" in FRONTEND_TOOLS
+    assert "reframe" in TOOL_BY_NAME
+    assert TOOL_BY_NAME["reframe"].runs_on == "frontend"
 
 
 def test_v02_tools_present_and_routed():

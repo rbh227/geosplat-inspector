@@ -4,7 +4,8 @@ v0.2 — editor phase. The contract freezes per phase: v0.1 froze the Phase-0
 build; v0.2 adds spatial selection, movement, and selection-edit tools for the
 editor-first rework (docs/plans/2026-07-05-001). v0.3 adds the `turn` look tool
 (rotate pad) for button-only relative navigation (docs/plans/2026-07-20-001).
-Additions only — nothing is removed or renamed.
+v0.4 adds `reframe` — an app-owned "return to the operator's start view" recovery
+op (docs/plans/2026-07-20-002). Additions only — nothing is removed or renamed.
 """
 
 from __future__ import annotations
@@ -74,6 +75,10 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "required": ["bbox"],
     }, "ok"),
     ToolEntry("reset_view", "frontend", {
+        "type": "object", "properties": {},
+    }, "ok"),
+    # v0.4 — app-owned recovery: return to the operator's start-of-run view.
+    ToolEntry("reframe", "frontend", {
         "type": "object", "properties": {},
     }, "ok"),
 

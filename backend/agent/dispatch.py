@@ -67,6 +67,7 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
     "scan_pause": "camera_move",
     "frame_object": "camera_move",
     "reset_view": "camera_move",
+    "reframe": "camera_move",
     "reset_trail": "camera_move",
     "capture_frame": "capture_request",
     "capture_orbit": "capture_request",

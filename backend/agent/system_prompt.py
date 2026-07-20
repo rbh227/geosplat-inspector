@@ -42,6 +42,7 @@ UNDERSTAND_TOOLS: frozenset[str] = frozenset(
     {
         # button-only relative navigation (move pad / rotate pad / zoom)
         "move_camera", "turn", "dolly", "scan_pause",
+        "reframe",  # app-owned recovery: back to the operator's start view
         "capture_frame",
         "drop_marker", "clear_markers", "reset_trail", "narrate",
         "answer",
@@ -152,6 +153,8 @@ Operating rules:
   operator put you. Each capture reports `coverage` (0-1, how much of the view
   the scene fills): aim for ~0.4-0.7; below ~0.15 you are too far (move closer),
   above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
+  If you get lost or the view goes empty, call `reframe` to return to the
+  operator's starting view, then continue from there.
 - SELECT WHAT YOU SEE: prefer select_by_brush / select_by_lasso on the floaters
   visible in your captured frame over world-coordinate volumes — a sphere/box
   radius near the scene size grabs everything. If you do use select_by_sphere /
@@ -198,6 +201,8 @@ Operating rules:
   operator gave you. Each capture reports `coverage` (0-1, how much of the view
   the scene fills): aim for ~0.4-0.7; below ~0.15 you are too far (move closer),
   above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
+  If you get lost or the view goes empty, call `reframe` to return to the
+  operator's starting view, then continue from there.
 - ANSWER FROM PIXELS: your evidence is captured frames. Capture views from
   enough angles before answering; describe what the frames show.
 - Never answer a content question with Gaussian counts or metrics — say what
@@ -229,6 +234,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "scan_pause": "Hold still for `ms` to let the human read the scene.",
     "frame_object": "Frame a bounding box so it fills the view.",
     "reset_view": "Return the camera to the default framing of the whole scene.",
+    "reframe": "Return the camera to the operator's starting view. Use to RECOVER when lost or badly framed — the app frames it for you, no coordinates.",
     "capture_frame": "Capture the current canvas as a PNG for visual analysis.",
     "capture_orbit": "Capture `n` PNGs orbiting a center for multi-view checks.",
     "drop_marker": "Place a labeled marker at a world position.",

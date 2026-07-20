@@ -26,6 +26,8 @@ export interface RendererBridge {
   getSceneCore(): { center: [number, number, number]; radius: number } | null
   /** Monotonic scene revision — bumps on every edit; tags captured percepts. */
   getSceneRevision(): number
+  /** The operator's start-of-run view; `reframe` returns the camera here. */
+  getHomePose(): { position: THREE.Vector3; target: THREE.Vector3 } | null
   getCamera(): THREE.PerspectiveCamera
   getRenderer(): THREE.WebGLRenderer
   getOverlayGroup(): THREE.Group

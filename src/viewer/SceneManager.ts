@@ -1594,4 +1594,17 @@ export class SceneManager implements ViewerHandle {
   getSceneRevision(): number {
     return this.revision
   }
+
+  // The operator's view at the start of an agent run — the home the agent can
+  // always return to (reframe). Captured on run start; null before the first run.
+  private homePose: { position: THREE.Vector3; target: THREE.Vector3 } | null = null
+
+  setHomePose(pose: { position: THREE.Vector3; target: THREE.Vector3 }): void {
+    this.homePose = { position: pose.position.clone(), target: pose.target.clone() }
+  }
+
+  getHomePose(): { position: THREE.Vector3; target: THREE.Vector3 } | null {
+    if (!this.homePose) return null
+    return { position: this.homePose.position.clone(), target: this.homePose.target.clone() }
+  }
 }

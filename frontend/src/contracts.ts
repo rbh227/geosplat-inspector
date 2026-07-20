@@ -95,6 +95,8 @@ export const FRONTEND_TOOLS = [
   "move_camera",
   // v0.3 — look/turn (rotate pad; button-only relative nav)
   "turn",
+  // v0.4 — app-owned recovery: return to the operator's start view
+  "reframe",
 ] as const;
 
 export const BACKEND_TOOLS = [

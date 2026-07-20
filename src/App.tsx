@@ -528,6 +528,9 @@ export default function App() {
     const sceneId = sceneIdRef.current
     runActionsRef.current = []
     setIsThinking(true)
+    // Snapshot the operator's current view as the run's "home" — the agent can
+    // return here (reframe) if it gets lost. Captured now, before it moves.
+    viewerRef.current?.setHomePose(viewerRef.current.getCameraPose())
     ensureAgent()
       .then(() => runAgent(sceneId, text, stageRef.current))
       .catch((err) => {

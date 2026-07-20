@@ -91,7 +91,7 @@ export default function ChatPanel({
               type="button"
               title={`${s.description}\n${s.recipe}`}
               disabled={isThinking}
-              onClick={() => onSend(`Run the ${s.name} skill.`)}
+              onClick={() => onSend(s.description)}
               className="inline-flex items-center gap-1 rounded-full border border-border-active bg-bg-elevated px-2.5 py-1 font-mono text-[10.5px] text-text-secondary hover:text-text-primary hover:border-accent-cyan/50 transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-default"
             >
               <Play size={9} />

@@ -255,6 +255,31 @@ export class FrontendExecutors {
     return { ok: true }
   }
 
+  /** Return the camera to the operator's start-of-run view (the home pose the
+   *  app snapshotted). App-owned recovery — the model calls it when it's lost or
+   *  badly framed; no coordinates involved. Falls back to framing the detected
+   *  core if there is no home pose. */
+  async reframe(_args: Record<string, never>): Promise<ToolResult> {
+    void _args
+    const home = this.bridge.getHomePose()
+    if (home) {
+      await animateTo(this.bridge, home.position.clone(), home.target.clone())
+    } else {
+      const core = this.bridge.getSceneCore()
+      if (core) {
+        const c = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+        const box = new THREE.Box3().setFromCenterAndSize(
+          c,
+          new THREE.Vector3(core.radius * 2, core.radius * 2, core.radius * 2),
+        )
+        const pose = poseForBox(this.bridge, box)
+        await animateTo(this.bridge, pose.position, pose.target)
+      }
+    }
+    this.breadcrumb()
+    return { ok: true }
+  }
+
   async scan_pause(args: { ms: number }): Promise<ToolResult> {
     await sleep(args.ms)
     return { ok: true }
@@ -298,7 +323,7 @@ export class FrontendExecutors {
 }
 
 export type CameraTool =
-  | 'look_at' | 'set_view' | 'orbit' | 'dolly' | 'frame_object' | 'reset_view' | 'scan_pause'
+  | 'look_at' | 'set_view' | 'orbit' | 'dolly' | 'frame_object' | 'reset_view' | 'scan_pause' | 'reframe'
 
 /** Dispatch a `camera_move` tool by name. */
 export function runCameraTool(
@@ -313,6 +338,7 @@ export function runCameraTool(
     case 'dolly': return ex.dolly(args as never)
     case 'frame_object': return ex.frame_object(args as never)
     case 'reset_view': return ex.reset_view(args as never)
+    case 'reframe': return ex.reframe(args as never)
     case 'scan_pause': return ex.scan_pause(args as never)
   }
 }
