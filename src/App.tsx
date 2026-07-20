@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as THREE from 'three'
 import type { MoveDirection, RotateDirection, ViewerState, ViewerHandle } from './types/viewer'
 import type { ChatMessage, AgentAction } from './types/agent'
 import { createAgent, WebSocketTransport, PanelBus } from '@agent'
@@ -6,15 +7,20 @@ import type { Agent, TraceEntry } from '@agent'
 import {
   uploadScene, runAgent, sceneWsUrl, scenePlyUrl, isBackendLoadable,
   editByIds, historyOp, getAliveIds, getSkills, type SkillInfo,
+  getModelConfig, type ModelConfig,
 } from './backend/client'
 import { makeRendererBridge } from './backend/bridge'
 import { classifyAction, completeContent } from './backend/trace'
+import {
+  savePersistedScene, loadPersistedScene, clearPersistedScene, updatePersistedCamera,
+} from './persistence'
 import ViewerCanvas from './viewer/ViewerCanvas'
 import SelectionOverlay, { type SelectionTool } from './viewer/SelectionOverlay'
 import ViewerErrorBoundary from './ui/ViewerErrorBoundary'
 import TopBar, { type Stage } from './ui/TopBar'
 import NarrationBar from './ui/NarrationBar'
 import ChatPanel from './ui/ChatPanel'
+import SettingsPanel from './ui/SettingsPanel'
 import EditorToolbar from './ui/EditorToolbar'
 import MovePad from './ui/MovePad'
 import RotatePad from './ui/RotatePad'
@@ -40,11 +46,16 @@ export default function App() {
   const [isThinking, setIsThinking] = useState(false)
   const [narration, setNarration] = useState('')
   const [agentStep, setAgentStep] = useState(0)
-  const [hasScene, setHasScene] = useState(false)
+  // Start "has scene" true when a persisted record exists so the restore effect
+  // shows the viewport (not the empty state) without a synchronous setState.
+  const [hasScene, setHasScene] = useState(() => loadPersistedScene() !== null)
 
   // ── Editor state (v0.2) ──
   const [stage, setStage] = useState<Stage>('clean')
   const [skills, setSkills] = useState<SkillInfo[]>([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null)
+  const [settingsAttention, setSettingsAttention] = useState(false)
   const [activeTool, setActiveTool] = useState<SelectionTool | null>(null)
   const [eraseMode, setEraseMode] = useState(false)
   const [selectionCount, setSelectionCount] = useState(0)
@@ -92,6 +103,59 @@ export default function App() {
   useEffect(() => disposeAgent, [disposeAgent])
   useEffect(() => { hasSceneRef.current = hasScene }, [hasScene])
 
+  // ── Refresh persistence (Bug 1) ──
+  // On mount, restore the last backend scene if it still exists. Probe /ids
+  // first (cheap JSON, 404s when the backend has lost the scene) so a stale
+  // record falls back to the empty state instead of a hung load.
+  useEffect(() => {
+    const rec = loadPersistedScene()
+    if (!rec) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const ids = await getAliveIds(rec.sceneId)
+        if (cancelled) return
+        await viewerRef.current?.loadSplat(scenePlyUrl(rec.sceneId))
+        viewerRef.current?.setIdMapFromIds(ids)
+        sceneIdRef.current = rec.sceneId
+        setBackendSceneId(rec.sceneId)
+        setBaselineCount(rec.baseline)
+        if (rec.camera) {
+          viewerRef.current?.setCameraPose(
+            new THREE.Vector3(...rec.camera.position),
+            new THREE.Vector3(...rec.camera.target),
+            false, // no tween: land exactly where the user left off, over auto-framing
+          )
+        }
+      } catch (err) {
+        console.warn('[persistence] scene restore failed; starting fresh:', err)
+        clearPersistedScene()
+        if (!cancelled) {
+          setHasScene(false)
+          setBackendSceneId(null)
+          sceneIdRef.current = null
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Persist the latest camera pose as the page unloads, so a refresh lands the
+  // user exactly where they were (pagehide is more bfcache-friendly than unload).
+  useEffect(() => {
+    const onHide = () => {
+      if (!sceneIdRef.current) return
+      const pose = viewerRef.current?.getCameraPose()
+      if (!pose) return
+      updatePersistedCamera({
+        position: [pose.position.x, pose.position.y, pose.position.z],
+        target: [pose.target.x, pose.target.y, pose.target.z],
+      })
+    }
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [])
+
   // One skills vocabulary, two invokers (R11): fetched per stage, shown as
   // clickable entries, and rendered into the agent's system prompt backend-side.
   useEffect(() => {
@@ -101,6 +165,22 @@ export default function App() {
     }).catch(() => {})
     return () => { cancelled = true }
   }, [stage])
+
+  // Model picker (in-app settings): fetch the current selection once on mount
+  // and nudge the gear icon if nothing usable is configured yet. The app is
+  // fully usable without a model — this is a hint, not a gate.
+  useEffect(() => {
+    let cancelled = false
+    void getModelConfig().then((cfg) => {
+      if (cancelled) return
+      setModelConfig(cfg)
+      if (cfg && !cfg.key_set) {
+        setSettingsAttention(true)
+        showStatus('No AI model set up yet — click the gear to choose one')
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [showStatus])
 
   const handleStateChange = useCallback((state: ViewerState) => {
     setViewerState(state)
@@ -174,13 +254,25 @@ export default function App() {
     disposeAgent()
     sceneIdRef.current = null
     setBackendSceneId(null)
-    if (!isBackendLoadable(file.name)) return
+    if (!isBackendLoadable(file.name)) {
+      clearPersistedScene() // view-only scene: nothing restorable, drop any stale record
+      return
+    }
     try {
       const { id } = await uploadScene(file)
       sceneIdRef.current = id
       setBackendSceneId(id)
+      // Persist for refresh-restore (Bug 1). Baseline = the just-loaded count,
+      // captured from the handle (no edits yet), so the export badge stays right.
+      savePersistedScene({
+        sceneId: id,
+        fileName: file.name,
+        baseline: viewerRef.current?.getSplatCount() ?? 0,
+        camera: null,
+      })
     } catch (err) {
       console.warn('[backend] scene upload failed; agent disabled for this scene:', err)
+      clearPersistedScene()
     }
   }, [disposeAgent])
 
@@ -301,6 +393,7 @@ export default function App() {
     disposeAgent()
     sceneIdRef.current = null
     setBackendSceneId(null)
+    clearPersistedScene() // view-only: not restorable across refresh
     void (async () => {
       try {
         await viewerRef.current?.loadSplat(url)
@@ -474,6 +567,12 @@ export default function App() {
         onToggleNavMode={handleNavModeToggle}
         rightOpen={rightOpen}
         onToggleRight={() => setRightOpen((p) => !p)}
+        settingsOpen={settingsOpen}
+        onToggleSettings={() => {
+          setSettingsOpen((p) => !p)
+          setSettingsAttention(false)
+        }}
+        settingsAttention={settingsAttention}
         onImport={handleImport}
         onLoadDemo={handleLoadDemo}
         onResetView={handleResetView}
@@ -597,8 +696,19 @@ export default function App() {
           />
         </div>
 
-        {/* Right: Agent chat (skills land here in the agent phase) */}
-        {rightOpen && (
+        {/* Right: settings takes priority over chat when both would show
+            (same 380px slot — settings is a modal-like task, not a second panel). */}
+        {settingsOpen ? (
+          <SettingsPanel
+            isOpen={settingsOpen}
+            config={modelConfig}
+            onClose={() => setSettingsOpen(false)}
+            onSaved={(cfg) => {
+              setModelConfig(cfg)
+              setSettingsAttention(!cfg.key_set)
+            }}
+          />
+        ) : rightOpen && (
           <ChatPanel
             isOpen={rightOpen}
             stage={stage}

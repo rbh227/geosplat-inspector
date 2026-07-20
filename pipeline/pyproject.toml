@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "splatagent-pipeline"
 version = "0.1.0"
 description = "Generate 3D Gaussian Splats from images or video"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.1.0",

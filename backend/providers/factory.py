@@ -30,10 +30,14 @@ def get_provider(
     model: str | None = None,
     *,
     system_instruction: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> ModelProvider:
     """Construct the configured ModelProvider.
 
-    Resolution order: explicit arg -> env -> default.
+    Resolution order: explicit arg -> env -> default. `api_key`/`base_url` are
+    forwarded to the adapter when given (each adapter falls back to its own
+    env var when omitted, so passing None here preserves today's behavior).
     """
     name = (name or os.environ.get("MODEL_PROVIDER") or DEFAULT_PROVIDER).lower()
     model = model or os.environ.get("MODEL_NAME")
@@ -45,6 +49,15 @@ def get_provider(
     kwargs: dict = {"system_instruction": system_instruction}
     if model:
         kwargs["model"] = model
+    if api_key:
+        kwargs["api_key"] = api_key
+    if base_url:
+        if name != "openai":
+            raise ProviderConfigError(
+                f"base_url is only supported for the openai provider "
+                f"(OpenAI-compatible self-hosted endpoints), not {name!r}"
+            )
+        kwargs["base_url"] = base_url
     return cls(**kwargs)
 
 

@@ -209,6 +209,7 @@ export class SceneManager implements ViewerHandle {
     if (this.navigationMode === 'fly') {
       this.stepFly(dt)
     } else {
+      this.stepOrbitMove(dt)
       this.controls.update()
     }
     this.stepRotate(dt)
@@ -368,11 +369,12 @@ export class SceneManager implements ViewerHandle {
   /**
    * Velocity-style movement input — the ONE entry point shared by keyboard,
    * the on-screen pad, and the agent's move_camera tool (R13: any source
-   * lights the pad). Activating a direction while in orbit auto-switches to
-   * fly, which is what the agent movement path requires.
+   * lights the pad). Movement works in BOTH nav modes and never forces a
+   * switch: in orbit it translates the camera and its target together so the
+   * mouse keeps orbiting (Bug 2 fix — no fly-mode trap); in fly it drives
+   * free flight.
    */
   setMovementInput(direction: MoveDirection, active: boolean): void {
-    if (active && this.navigationMode !== 'fly') this.setNavigationMode('fly')
     const had = this.activeDirections.has(direction)
     if (active === had) return
     if (active) this.activeDirections.add(direction)
@@ -403,6 +405,34 @@ export class SceneManager implements ViewerHandle {
     this.camera.position.x += dx
     this.camera.position.y += dy
     this.camera.position.z += dz
+  }
+
+  /**
+   * Orbit-mode movement (Bug 2): translate the camera AND its orbit target by
+   * the same per-frame delta, so free WASD/pad motion never disables or fights
+   * OrbitControls — the mouse keeps orbiting before, during, and after a move.
+   * Speed scales with orbit distance so it feels consistent at any zoom.
+   */
+  private stepOrbitMove(dt: number): void {
+    if (this.activeDirections.size === 0) return
+    const fwd = this.camera.getWorldDirection(new THREE.Vector3())
+    const right = new THREE.Vector3().crossVectors(fwd, this.camera.up).normalize()
+    const dist = this.camera.position.distanceTo(this.controls.target)
+    const speed = Math.max(dist * 0.6, 0.5)
+    const [dx, dy, dz] = composeMove(
+      this.activeDirections,
+      [fwd.x, fwd.y, fwd.z],
+      [right.x, right.y, right.z],
+      [0, 1, 0],
+      speed,
+      dt,
+    )
+    this.camera.position.x += dx
+    this.camera.position.y += dy
+    this.camera.position.z += dz
+    this.controls.target.x += dx
+    this.controls.target.y += dy
+    this.controls.target.z += dz
   }
 
   /* Rotate control (R7/R8) — button-based direction changes, both nav modes */

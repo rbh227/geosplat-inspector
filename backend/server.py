@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.engine import AgentRunner, SceneBackend
 from backend.api.routes import create_router
+from backend.api.settings import get_store
 from backend.api.state import SceneStore
 from backend.api.stub_agent import StubAgentRunner
 from backend.api.stub_engine import StubBackend
@@ -48,10 +49,14 @@ def _select_runner() -> AgentRunner:
 def create_app() -> FastAPI:
     app = FastAPI(title="GeoSplat Inspector", version="0.1.0")
 
-    # local-only tool: permissive CORS so the Vite dev server can call the API
+    # local-only tool, but /config/model can now accept a pasted API key, so
+    # CORS is scoped to the known dev-server origins rather than "*".
+    dev_origins = os.environ.get(
+        "SPLATAGENT_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=dev_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -59,22 +64,25 @@ def create_app() -> FastAPI:
     store = SceneStore(_select_backend())
     manager = ConnectionManager()
     runner = _select_runner()
+    settings = get_store()
 
     # shared singletons (handy for tests / future wiring)
     app.state.store = store
     app.state.manager = manager
     app.state.runner = runner
+    app.state.settings = settings
 
     @app.get("/health")
     async def health():
+        cfg = settings.resolve()
         return {
             "status": "ok",
             "scenes": len(store),
-            "provider": os.environ.get("MODEL_PROVIDER", "gemini"),
-            "model": os.environ.get("MODEL_NAME", "gemini-2.5-flash"),
+            "provider": cfg.provider,
+            "model": cfg.model,
         }
 
-    app.include_router(create_router(store, manager, runner))
+    app.include_router(create_router(store, manager, runner, settings))
 
     # serve the built frontend if present (co-run a single `docker compose up`)
     _mount_frontend(app)

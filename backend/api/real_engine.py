@@ -175,10 +175,11 @@ class RealBackendExecutor:
 class RealAgentRunner:
     """`engine.AgentRunner`: builds Agent 3's loop over a RealScene and runs it.
 
-    Provider/model come from env (`MODEL_PROVIDER`/`MODEL_NAME`); the API key is
-    read by the provider from env only. Built per-run so a key/dep change is
-    picked up without restarting, and so a provider/config error surfaces as a
-    `complete{error}` trace event (routes._drive) rather than at import time.
+    Provider/model/key/base_url resolve from the settings store (a UI-saved
+    override, falling back to env — see `backend.api.settings.SettingsStore`).
+    Built per-run so a settings change is picked up without restarting, and so
+    a provider/config error surfaces as a `complete{error}` trace event
+    (routes._drive) rather than at import time.
     """
 
     async def run(self, prompt: str, scene, channel, stage: str = "clean") -> None:  # scene: RealScene
@@ -186,12 +187,20 @@ class RealAgentRunner:
         # installed (the loop only needs it at run time).
         from backend.agent import AgentLoop, ToolDispatcher
         from backend.agent.system_prompt import Stage, system_prompt_for
+        from backend.api.settings import get_store
         from backend.providers import get_provider
 
         resolved: Stage = "understand" if stage == "understand" else "clean"
         executor = RealBackendExecutor(scene)
         dispatcher = ToolDispatcher(executor, channel)
-        provider = get_provider(system_instruction=system_prompt_for(resolved))
+        cfg = get_store().resolve()
+        provider = get_provider(
+            cfg.provider,
+            cfg.model,
+            api_key=cfg.api_key,
+            base_url=cfg.base_url,
+            system_instruction=system_prompt_for(resolved),
+        )
         loop = AgentLoop(provider, dispatcher, channel, stage=resolved)
         await loop.run(prompt)
 

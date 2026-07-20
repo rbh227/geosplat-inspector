@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, FolderOpen, Orbit, PanelRight, Plane, RotateCcw, Upload } from 'lucide-react'
+import { ChevronDown, Download, FolderOpen, Orbit, PanelRight, Plane, RotateCcw, Settings, Upload } from 'lucide-react'
 import { DEMO_SPLATS, type DemoSplat } from '../demos'
 import { isBackendLoadable } from '../backend/client'
 
@@ -15,6 +15,10 @@ interface TopBarProps {
   onToggleNavMode: () => void
   rightOpen: boolean
   onToggleRight: () => void
+  settingsOpen: boolean
+  onToggleSettings: () => void
+  /** True until the user has a usable model configured — draws attention to the gear. */
+  settingsAttention: boolean
   onImport: () => void
   onLoadDemo: (demo: DemoSplat) => void
   onResetView: () => void
@@ -33,7 +37,8 @@ interface TopBarProps {
 export default function TopBar({
   stage, onStageChange, stageLocked,
   navigationMode, onToggleNavMode,
-  rightOpen, onToggleRight, onImport, onLoadDemo, onResetView,
+  rightOpen, onToggleRight, settingsOpen, onToggleSettings, settingsAttention,
+  onImport, onLoadDemo, onResetView,
   canExport, removedCount, onExport,
 }: TopBarProps) {
   const [samplesOpen, setSamplesOpen] = useState(false)
@@ -144,8 +149,18 @@ export default function TopBar({
         ))}
       </div>
 
-      {/* Right: panel toggle + wordmark (Postshot puts the brand here) */}
+      {/* Right: settings + panel toggle + wordmark (Postshot puts the brand here) */}
       <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleSettings}
+          className={`topbar-icon-btn relative ${settingsOpen ? 'text-text-primary' : ''}`}
+          title="AI model settings"
+        >
+          <Settings size={13} />
+          {settingsAttention && (
+            <span className="absolute top-[3px] right-[3px] w-[6px] h-[6px] rounded-full bg-amber-400" />
+          )}
+        </button>
         <button
           onClick={onToggleRight}
           className={`topbar-icon-btn ${rightOpen ? 'text-text-primary' : ''}`}

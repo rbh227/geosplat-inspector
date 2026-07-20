@@ -51,6 +51,40 @@ class AgentRunResponse(BaseModel):
     status: str
 
 
+# ---- Model settings (in-app model picker) ---------------------------------
+# NOTE: no request/response model here ever carries a bare `api_key` field in
+# a *response* — ModelConfigResponse only reports whether one is set.
+
+class ModelConfigRequest(BaseModel):
+    preset: str
+    model: str | None = None
+    api_key: str | None = None  # omit to keep the existing key; "" clears it
+    base_url: str | None = None
+
+
+class ModelConfigResponse(BaseModel):
+    preset: str
+    provider: str
+    model: str | None
+    base_url: str | None
+    key_set: bool
+    key_source: str | None
+    source: str
+
+
+class TestConnectionRequest(BaseModel):
+    preset: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+
+
+class TestConnectionResponse(BaseModel):
+    ok: bool
+    model: str | None = None
+    error: str | None = None
+
+
 __all__ = [
     "UploadResponse",
     "EditRequest",
@@ -59,4 +93,8 @@ __all__ = [
     "HistoryResponse",
     "AgentRunRequest",
     "AgentRunResponse",
+    "ModelConfigRequest",
+    "ModelConfigResponse",
+    "TestConnectionRequest",
+    "TestConnectionResponse",
 ]

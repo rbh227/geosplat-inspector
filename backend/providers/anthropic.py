@@ -22,7 +22,7 @@ from backend.contracts import ModelResponse, ToolCall, ToolSpec
 from .errors import ProviderConfigError, RateLimitError
 from .retry import with_retry
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "claude-sonnet-5"
 
 
 class AnthropicProvider:

@@ -1,6 +1,11 @@
 {#-
   Qwen2.5-VL + tool-calling chat template.
 
+  Derived from the Qwen2.5-VL and Qwen2.5 chat templates published by the Qwen
+  team, Alibaba Cloud (https://github.com/QwenLM/Qwen2.5-VL), licensed Apache
+  License 2.0. This file merges pieces of both; see the Apache-2.0 license
+  text for redistribution terms.
+
   Qwen2.5-VL's stock template renders vision tokens but has NO tool support, so
   vLLM never shows the model its tools and it answers in prose. Qwen2.5's *text*
   template has the hermes-style <tool_call> machinery but no vision handling.

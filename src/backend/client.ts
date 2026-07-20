@@ -153,4 +153,89 @@ export async function getSkills(stage: 'clean' | 'understand'): Promise<SkillInf
   return body.skills ?? []
 }
 
+// ---- Model picker (in-app model settings) ---------------------------------
+
+export interface ProviderInfo {
+  id: string
+  label: string
+  provider: string
+  default_model: string
+  needs_key: boolean
+  supports_base_url: boolean
+  key_env_vars?: string[]
+  key_help_url?: string
+  default_base_url?: string
+  blurb: string
+  key_in_env: boolean
+}
+
+export interface ModelConfig {
+  preset: string
+  provider: string
+  model: string | null
+  base_url: string | null
+  key_set: boolean
+  key_source: 'ui' | 'env' | null
+  source: 'ui' | 'env' | 'default'
+}
+
+export interface ModelConfigInput {
+  preset: string
+  model?: string | null
+  /** Omit to keep the currently-saved key; pass "" to clear it. */
+  api_key?: string | null
+  base_url?: string | null
+}
+
+export interface TestConnectionResult {
+  ok: boolean
+  model?: string | null
+  error?: string | null
+}
+
+/** GET /config/providers — the model picker's registry (never carries key values). */
+export async function getProviders(): Promise<ProviderInfo[]> {
+  const res = await fetch(`${BACKEND_URL}/config/providers`)
+  if (!res.ok) return []
+  const body = (await res.json()) as { providers: ProviderInfo[] }
+  return body.providers ?? []
+}
+
+/** GET /config/model — the current selection. Degrades to null so the UI can
+ *  still render (e.g. offline backend) without blocking on model config. */
+export async function getModelConfig(): Promise<ModelConfig | null> {
+  const res = await fetch(`${BACKEND_URL}/config/model`)
+  if (!res.ok) return null
+  return (await res.json()) as ModelConfig
+}
+
+/** POST /config/model — save a selection. The response never contains a key. */
+export async function saveModelConfig(req: ModelConfigInput): Promise<ModelConfig> {
+  const res = await fetch(`${BACKEND_URL}/config/model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`save model config failed (${res.status}): ${detail}`)
+  }
+  return (await res.json()) as ModelConfig
+}
+
+/** POST /config/test — cheap live round-trip so the "Test connection" button
+ *  can confirm a key/endpoint works before Save. */
+export async function testModelConfig(req?: Partial<ModelConfigInput>): Promise<TestConnectionResult> {
+  const res = await fetch(`${BACKEND_URL}/config/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req ?? {}),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    return { ok: false, error: `test request failed (${res.status}): ${detail}` }
+  }
+  return (await res.json()) as TestConnectionResult
+}
+
 export { BACKEND_URL }

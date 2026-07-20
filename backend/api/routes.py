@@ -31,19 +31,42 @@ from backend.api.schemas import (
     EditRequest,
     EditResponse,
     HistoryResponse,
+    ModelConfigRequest,
+    ModelConfigResponse,
     SceneRequest,
+    TestConnectionRequest,
+    TestConnectionResponse,
     UploadResponse,
+)
+from backend.api.settings import (
+    UNSET,
+    SettingsStore,
+    UnknownPresetError,
+    providers_public,
+    registry_entry,
 )
 from backend.api.state import SceneStore
 from backend.api.ws import ConnectionManager, WSChannel
 
 _UPLOAD_CHUNK = 1024 * 1024  # 1 MiB streaming copy
+_TEST_TIMEOUT_S = 20
+
+
+def _redact(text: str, *candidates: str | None) -> str:
+    """Strip any candidate secret (e.g. an API key) out of provider error text
+    before it reaches the client. Vendor SDKs sometimes echo the key/base_url
+    they were given inside an exception message."""
+    for candidate in candidates:
+        if candidate and len(candidate) >= 6:
+            text = text.replace(candidate, "•••")
+    return text
 
 
 def create_router(
     store: SceneStore,
     manager: ConnectionManager,
     runner: AgentRunner,
+    settings: SettingsStore,
 ) -> APIRouter:
     router = APIRouter()
     _runs: set[asyncio.Task] = set()  # keep background runs from being GC'd
@@ -151,6 +174,64 @@ def create_router(
 
         resolved = "understand" if stage == "understand" else "clean"
         return {"stage": resolved, "skills": skills_for(resolved)}
+
+    # ---- GET /config/providers : the model picker's registry (R-modelpicker) #
+    @router.get("/config/providers")
+    async def config_providers():
+        return {"providers": providers_public()}
+
+    # ---- GET/POST /config/model : current selection / save a new one ----- #
+    @router.get("/config/model", response_model=ModelConfigResponse)
+    async def get_model_config():
+        return ModelConfigResponse(**settings.public())
+
+    @router.post("/config/model", response_model=ModelConfigResponse)
+    async def set_model_config(req: ModelConfigRequest):
+        try:
+            settings.update(
+                preset=req.preset,
+                model=req.model,
+                api_key=req.api_key if req.api_key is not None else UNSET,
+                base_url=req.base_url,
+            )
+        except UnknownPresetError:
+            raise HTTPException(status_code=400, detail=f"unknown preset {req.preset!r}")
+        return ModelConfigResponse(**settings.public())
+
+    # ---- POST /config/test : cheap live round-trip for the "Test" button - #
+    @router.post("/config/test", response_model=TestConnectionResponse)
+    async def test_model_config(req: TestConnectionRequest):
+        from backend.providers import get_provider
+        from backend.providers.errors import ProviderConfigError
+
+        cfg = settings.resolve()
+        preset = req.preset or cfg.preset
+        entry = registry_entry(preset)
+        if entry is None:
+            return TestConnectionResponse(ok=False, error=f"unknown preset {preset!r}")
+
+        provider_name = entry["provider"]
+        model = req.model or cfg.model
+        api_key = req.api_key if req.api_key else cfg.api_key
+        base_url = req.base_url if req.base_url is not None else cfg.base_url
+
+        try:
+            provider = get_provider(provider_name, model, api_key=api_key, base_url=base_url)
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    provider.generate,
+                    [{"role": "user", "content": "Reply with the single word OK."}],
+                    [],
+                ),
+                timeout=_TEST_TIMEOUT_S,
+            )
+            return TestConnectionResponse(ok=True, model=model)
+        except ProviderConfigError as exc:
+            return TestConnectionResponse(ok=False, error=_redact(str(exc), api_key))
+        except TimeoutError:
+            return TestConnectionResponse(ok=False, error="Timed out waiting for a response.")
+        except Exception as exc:  # noqa: BLE001 - surface as a friendly test failure, not a 500
+            return TestConnectionResponse(ok=False, error=_redact(str(exc)[:300], api_key))
 
     # ---- POST /agent/run : kick off the loop (streams over WS) ----------- #
     @router.post("/agent/run", response_model=AgentRunResponse)
