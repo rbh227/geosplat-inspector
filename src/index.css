@@ -1,0 +1,215 @@
+/* Workbench Gray — flat, dense, classic DCC-tool chrome (Postshot mold).
+   Neutral dark grays, one muted blue accent, square corners, no decoration. */
+@import "tailwindcss";
+
+@theme inline {
+  /* ── Surfaces — flat neutral grays, panel seams nearly black ── */
+  --color-bg-deep: #151515;     /* viewport backdrop */
+  --color-bg-surface: #1E1E1E;  /* docked panels */
+  --color-bg-elevated: #272727; /* inputs, buttons, rows */
+  --color-bg-hover: #313131;
+  --color-bg-topbar: #1A1A1A;
+  --color-border-subtle: #2D2D2D;
+  --color-border-mid: #383838;
+  --color-border-active: #474747;
+  --color-border-panel: #111111; /* seams between docked panels */
+  /* ── Type — plain grays, small and dense ── */
+  --color-text-primary: #D6D6D6;
+  --color-text-secondary: #A9A9A9;
+  --color-text-dim: #7E7E7E;
+  --color-text-muted: #5D5D5D;
+  --color-text-faint: #484848;
+  /* ── Accent — muted steel blue (token keeps the historical `-cyan` name
+     so every component reskins from here without churn) ── */
+  --color-accent-cyan: #5B87C7;
+  --color-accent-cyan-dim: rgba(91, 135, 199, 0.15);
+  --color-accent-cyan-soft: #7BA3DD;
+  --color-accent-cyan-muted: #6B7F9B;
+  --color-accent-cyan-border: rgba(91, 135, 199, 0.5);
+  /* ── Status ── */
+  --color-accent-amber: #C9A227;
+  --color-accent-amber-bright: #DDBA45;
+  --color-accent-amber-dim: rgba(201, 162, 39, 0.16);
+  --color-accent-red: #C05B4D;
+  --color-accent-green: #7A9A4E;
+  --color-accent-green-bg: #5E7A3A;
+  --color-focus-ring: rgba(91, 135, 199, 0.5);
+  /* One plain UI sans everywhere — no display serif. */
+  --font-display: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+}
+
+/* ── Base ────────────────────────────────────────────── */
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-deep); /* flat — no wash, no gradient */
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+.font-display { font-family: var(--font-sans); letter-spacing: 0; }
+
+/* Film grain retired — kept as a no-op so stray class usage renders nothing. */
+.film-grain::after { content: none; }
+
+/* ── Panels — flat, opaque, square. Docked chrome, not floating glass. ── */
+
+.panel {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-panel);
+  border-radius: 0;
+}
+
+.panel-dense {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-panel);
+  border-radius: var(--radius-sm);
+}
+
+/* Primary action button — flat muted blue (the one accent in the chrome). */
+.btn-phosphor {
+  background: #3D6FB4;
+  color: #F0F4FA;
+  border: 1px solid #2C5188;
+  border-radius: var(--radius-md);
+  transition: background 120ms ease;
+}
+.btn-phosphor:hover { background: #4A7DC4; }
+.btn-phosphor:active { background: #35619E; }
+
+/* Flat dark control — toolbar/icon buttons. */
+.btn-emboss {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.btn-emboss:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-active);
+}
+
+/* ── Scrollbar ───────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-active); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-dim); }
+
+/* ── Animations ──────────────────────────────────────── */
+
+@keyframes scan-ring {
+  0% { transform: translate(-50%,-50%) scale(0.45); opacity: 0.85; }
+  100% { transform: translate(-50%,-50%) scale(2.6); opacity: 0; }
+}
+
+@keyframes agent-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@keyframes wave {
+  0%, 100% { transform: scaleY(0.28); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes core-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(232,163,61,0.6); }
+  70% { box-shadow: 0 0 0 7px rgba(232,163,61,0); }
+  100% { box-shadow: 0 0 0 0 rgba(232,163,61,0); }
+}
+
+@keyframes dash-flow {
+  to { stroke-dashoffset: -24; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-up-fade {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes expand-in {
+  from { transform: scaleY(0.8) scaleX(0.95); opacity: 0; transform-origin: top; }
+  to { transform: scaleY(1) scaleX(1); opacity: 1; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-accent-cyan-dim); }
+  50% { box-shadow: 0 0 12px 4px var(--color-accent-cyan-dim); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes badge-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dot-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* ── Utility classes ─────────────────────────────────── */
+
+.animate-slide-in-right { animation: slide-in-right 350ms cubic-bezier(0.16,1,0.3,1) forwards; }
+.animate-slide-up { animation: slide-up-fade 300ms cubic-bezier(0.16,1,0.3,1) forwards; }
+.animate-expand { animation: expand-in 250ms cubic-bezier(0.34,1.56,0.64,1) forwards; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-badge-pop { animation: badge-pop 300ms cubic-bezier(0.34,1.56,0.64,1); }
+.animate-fade-in { animation: fade-in 200ms ease-out forwards; }
+.animate-core-pulse { animation: core-pulse 1.8s ease-out infinite; }
+.animate-agent-blink { animation: agent-blink 1.3s ease-in-out infinite; }
+.animate-caret { animation: caret-blink 1s step-end infinite; }
+.animate-title-gradient { background-size: 200% 200%; animation: title-gradient-shift 4s ease-in-out infinite; }
+.animate-text-reveal { opacity: 0; animation: text-reveal 800ms cubic-bezier(0.16,1,0.3,1) forwards; }
+.animate-subtle-pulse { animation: subtle-pulse 3s ease-in-out infinite; }
+
+.thinking-dots span { display: inline-block; animation: dot-pulse 1.4s infinite ease-in-out both; }
+.thinking-dots span:nth-child(2) { animation-delay: 0.16s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+.loading-shimmer {
+  background: linear-gradient(90deg, var(--color-bg-elevated) 0%, var(--color-bg-hover) 50%, var(--color-bg-elevated) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.wave-bar { transform-origin: bottom; }
+
+/* ── Focus / transitions ─────────────────────────────── */
+
+.focus-ring:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+.btn-ghost { transition: background 150ms ease, color 150ms ease; cursor: pointer; }
+.btn-ghost:hover { background: var(--color-bg-hover); }
+
+canvas { display: block; outline: none; }
+.drop-zone-active { outline: 2px dashed var(--color-accent-cyan); outline-offset: -8px; }

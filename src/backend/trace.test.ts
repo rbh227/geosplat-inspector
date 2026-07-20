@@ -1,0 +1,35 @@
+import { describe, it, expect } from 'vitest'
+import { classifyAction, completeContent } from './trace'
+
+describe('classifyAction', () => {
+  it('maps camera tools', () => {
+    for (const n of ['look_at', 'set_view', 'orbit', 'dolly', 'scan_pause', 'frame_object', 'reset_view']) {
+      expect(classifyAction(n)).toBe('camera_move')
+    }
+  })
+  it('maps capture tools', () => {
+    expect(classifyAction('capture_frame')).toBe('capture')
+    expect(classifyAction('capture_orbit')).toBe('capture')
+  })
+  it('maps answer', () => {
+    expect(classifyAction('answer')).toBe('answer')
+  })
+  it('defaults backend/edit tools to cleanup', () => {
+    expect(classifyAction('remove_outliers')).toBe('cleanup')
+    expect(classifyAction('crop_bbox')).toBe('cleanup')
+    expect(classifyAction('totally_unknown')).toBe('cleanup')
+  })
+})
+
+describe('completeContent', () => {
+  it('error wins over answer', () => {
+    expect(completeContent({ error: 'boom', answer: 'ignored' })).toBe('Error: boom')
+  })
+  it('uses answer when no error', () => {
+    expect(completeContent({ answer: 'scene cleaned' })).toBe('scene cleaned')
+  })
+  it('falls back to Done', () => {
+    expect(completeContent({})).toBe('Done.')
+    expect(completeContent(undefined)).toBe('Done.')
+  })
+})

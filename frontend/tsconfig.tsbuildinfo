@@ -1,0 +1,1 @@
+{"root":["./src/contracts.ts","./src/agent/camera.ts","./src/agent/capture.ts","./src/agent/executors.ts","./src/agent/index.ts","./src/agent/mock-backend.ts","./src/agent/overlay.ts","./src/agent/panels.ts","./src/agent/transport.ts","./src/agent/types.ts","./src/agent/ws-client.ts"],"version":"6.0.3"}

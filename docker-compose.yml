@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: .
+    platform: linux/amd64   # open3d has no linux/arm64 wheel; see Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"   # API + frontend at http://localhost:8000 (host-only bind)
+    environment:
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-gemini}
+      - MODEL_NAME=${MODEL_NAME:-gemini-2.5-flash}
+      # API keys are read from the host env at runtime — never baked into the image.
+      # The in-app model picker (gear icon) can also save a key without any of this.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+    volumes:
+      - ./examples:/app/examples   # live example scenes (overrides the baked copy)
+      - splatagent-settings:/app/backend/.data   # persists a saved model choice across restarts
+
+volumes:
+  splatagent-settings:
