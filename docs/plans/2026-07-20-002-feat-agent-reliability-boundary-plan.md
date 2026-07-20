@@ -159,4 +159,18 @@ model to the app and proves it before the next.
 ## Deferred
 - Full stateful navigation controller (waypoints, path planning) — only if the
   incremental boundary moves prove insufficient.
-- Contract v0.4 groups R2.2 + R4.1 additions in one bump.
+- Contract v0.4 already added `reframe`; group any further R4 additions there.
+
+## Deferred cleanups (fold into R3/R4 — reviewed 2026-07-20, base is otherwise clean)
+- **Remove the dead teleport tools** (`look_at`, `set_view`, `orbit`,
+  `frame_object`, `capture_orbit`, `reset_view`). Dead at runtime (not offered,
+  rejected if hallucinated) but still wired through the frozen contract
+  (`tools.py` + `contracts.ts` + drift counts), dispatch, `trace.ts`
+  classification, and `closed_loops.py`. A ~10-file contract-narrowing — do it
+  as R3/R4 reworks the tool surface, not as a standalone sweep. `reframe`
+  already replaces the recovery use of `reset_view`.
+- **`closed_loops.py`** (`flagship_floater_cleanup`, `run_fix_verify`) — a
+  Tier-4 detect→fix→verify module built + tested but NEVER wired into the app
+  (only its own tests call it; references the gated `look_at`). Either delete it
+  (+ its test + `__init__` exports) OR reuse its detect→fix→verify pattern for
+  R4's good-cube cleanup. Decide when building R4.
