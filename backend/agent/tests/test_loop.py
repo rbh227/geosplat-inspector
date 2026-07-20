@@ -87,6 +87,37 @@ def test_floater_cleanup_cycle_produces_correct_trace():
     assert "drop_marker" in channel.command_tools()
 
 
+def test_captures_are_fresh_and_tagged_with_pose_and_revision():
+    """R1 percept integrity: every capture_frame dispatches fresh (no stale-frame
+    cache — capture_frame has no args, so the old key-by-args cache served the
+    first frame forever), and each percept carries its pose + scene revision."""
+    executor = MockBackendExecutor()
+    channel = MockFrontendChannel()
+    channel.pose = {"position": [1.0, 2.0, 3.0], "target": [0.0, 0.0, 0.0]}
+    channel.revision = 7
+    provider = MockProvider([
+        tool_turn(("capture_frame", {})),
+        tool_turn(("capture_frame", {})),  # after "moving" — must re-capture, not reuse a stale cache
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    loop, _executor, channel = _make_loop(
+        provider, executor, channel, config=AgentConfig(enforce_grounding=False),
+    )
+    result = _run(loop.run("look around"))
+
+    # both captures dispatched fresh — no stale-frame cache
+    caps = [c for c in channel.commands if c.get("type") == "capture_request"]
+    assert len(caps) == 2
+    assert result.vision_calls == 2
+
+    # the percept fed back to the model carries pose + revision
+    percept_msgs = [
+        m["content"] for m in loop._messages
+        if isinstance(m.get("content"), str) and "capture_frame" in m["content"]
+    ]
+    assert any('"percept"' in c and '"revision": 7' in c for c in percept_msgs)
+
+
 def dispatcher_snapshots(_channel):  # readability helper
     return True
 

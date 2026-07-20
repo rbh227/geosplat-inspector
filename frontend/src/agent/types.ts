@@ -24,6 +24,8 @@ export interface RendererBridge {
   /** World-space robust scene center + radius. The agent aims camera tools here
    *  because getBoundingBox() is mesh-local (mirrored for off-origin scenes). */
   getSceneCore(): { center: [number, number, number]; radius: number } | null
+  /** Monotonic scene revision — bumps on every edit; tags captured percepts. */
+  getSceneRevision(): number
   getCamera(): THREE.PerspectiveCamera
   getRenderer(): THREE.WebGLRenderer
   getOverlayGroup(): THREE.Group
@@ -50,9 +52,20 @@ export interface RendererBridge {
  *  Capture results carry BARE base64 PNG (no data: prefix) under explicit keys
  *  the backend decodes into raw bytes (ws.py); single -> png_base64, orbit ->
  *  frames_base64. */
+/** Where/when a percept was taken — every capture carries this so the agent
+ *  never reasons on a stale frame (pose + monotonic scene revision). */
+export interface PerceptTag {
+  position: [number, number, number]
+  target: [number, number, number]
+  revision: number
+  /** Fraction of the view the scene fills (0..1). ~0.4-0.7 well-framed;
+   *  <0.15 too far, >0.9 too close. Lets the agent judge zoom without guessing. */
+  coverage: number
+}
+
 export type ToolResult =
   | { ok: true }
-  | { png_base64: string }        // capture_frame
+  | { png_base64: string; percept?: PerceptTag }  // capture_frame
   | { frames_base64: string[] }   // capture_orbit
 
 /** Payload carried by a `camera_move` command (which specific camera tool). */

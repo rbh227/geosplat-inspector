@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three'
 import type { MoveDirection, RendererBridge, RotateDirection, ToolResult } from './types.ts'
-import { animateOrbit, animateTo, poseForBox, resolveAimPoint, rotateAround, sleep, toRenderSpace } from './camera.ts'
+import { animateOrbit, animateTo, clampToCore, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
 import type { Overlay } from './overlay.ts'
 // Shared pure selection math — the SAME module the manual SelectionOverlay
@@ -207,7 +207,9 @@ export class FrontendExecutors {
     dir.normalize()
     // positive distance = move toward target (in), negative = out
     const newLen = Math.max(0.05, len - args.distance)
-    const to = target.clone().add(dir.multiplyScalar(newLen))
+    const rawTo = target.clone().add(dir.multiplyScalar(newLen))
+    // App-owned safety limit: never zoom past a sane band around the scene core.
+    const to = clampToCore(rawTo, this.bridge.getSceneCore())
     await animateTo(this.bridge, to, target.clone(), args.duration_ms)
     this.breadcrumb()
     return { ok: true }
@@ -259,7 +261,20 @@ export class FrontendExecutors {
   }
 
   async capture_frame(): Promise<ToolResult> {
-    return { png_base64: dataUrlToBase64(await capturePNG(this.bridge)) }
+    // Capture first, THEN read the pose/revision, so the tag matches exactly the
+    // frame that was rendered (Codex boundary — every percept tied to state).
+    const png_base64 = dataUrlToBase64(await capturePNG(this.bridge))
+    const { position, target } = this.bridge.getCameraPose()
+    const coverage = sceneCoverage(position.clone(), this.bridge.getCamera().fov, this.bridge.getSceneCore())
+    return {
+      png_base64,
+      percept: {
+        position: [position.x, position.y, position.z],
+        target: [target.x, target.y, target.z],
+        revision: this.bridge.getSceneRevision(),
+        coverage: Math.round(coverage * 100) / 100,
+      },
+    }
   }
 
   async capture_orbit(args: { center: number[]; n: number; radius?: number }): Promise<ToolResult> {

@@ -149,7 +149,9 @@ Operating rules:
   Move and look with the buttons: move_camera (forward/back/left/right/up/down),
   turn (look — left/right yaw, up/down pitch), dolly (zoom). Chain a few button
   moves, then capture_frame to see where you are. Work outward from where the
-  operator put you.
+  operator put you. Each capture reports `coverage` (0-1, how much of the view
+  the scene fills): aim for ~0.4-0.7; below ~0.15 you are too far (move closer),
+  above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
 - SELECT WHAT YOU SEE: prefer select_by_brush / select_by_lasso on the floaters
   visible in your captured frame over world-coordinate volumes — a sphere/box
   radius near the scene size grabs everything. If you do use select_by_sphere /
@@ -193,7 +195,9 @@ Operating rules:
   Move and look with the buttons: move_camera (forward/back/left/right/up/down),
   turn (look — left/right yaw, up/down pitch), dolly (zoom). Chain a few button
   moves, then capture_frame to check what you see. Work from the view the
-  operator gave you.
+  operator gave you. Each capture reports `coverage` (0-1, how much of the view
+  the scene fills): aim for ~0.4-0.7; below ~0.15 you are too far (move closer),
+  above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
 - ANSWER FROM PIXELS: your evidence is captured frames. Capture views from
   enough angles before answering; describe what the frames show.
 - Never answer a content question with Gaussian counts or metrics — say what

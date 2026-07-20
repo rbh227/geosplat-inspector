@@ -15,6 +15,7 @@ export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
     getCameraPose: () => viewer.getCameraPose(),
     getBoundingBox: () => viewer.getBoundingBox(),
     getSceneCore: () => viewer.getSceneCore(),
+    getSceneRevision: () => viewer.getSceneRevision(),
     getCamera: () => viewer.getCamera(),
     getRenderer: () => viewer.getRenderer(),
     getOverlayGroup: () => viewer.getOverlayGroup(),

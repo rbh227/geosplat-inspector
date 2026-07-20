@@ -61,6 +61,10 @@ class MockFrontendChannel:
         self.frame = frame
         self.commands: list[dict] = []
         self.events: list[dict] = []
+        # Percept state a test can mutate between captures to simulate movement /
+        # an edit, so freshness + pose/revision tagging are exercisable.
+        self.pose = {"position": [0.0, 0.0, 0.0], "target": [0.0, 0.0, 0.0]}
+        self.revision = 0
 
     async def send_command(self, cmd: dict) -> dict:
         self.commands.append(cmd)
@@ -69,7 +73,8 @@ class MockFrontendChannel:
             if tool == "capture_orbit":
                 n = int(cmd.get("args", {}).get("n", 1))
                 return {"ok": True, "frames": [self.frame] * n}
-            return {"ok": True, "frame": self.frame}
+            percept = {**self.pose, "revision": self.revision}
+            return {"ok": True, "frame": self.frame, "percept": percept}
         return {"ok": True}
 
     async def emit_event(self, event: dict) -> None:

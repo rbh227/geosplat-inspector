@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { poseForBox, resolveAimPoint, toRenderSpace } from './camera.ts'
+import { clampToCore, poseForBox, resolveAimPoint, sceneCoverage, toRenderSpace } from './camera.ts'
 import type { RendererBridge } from './types.ts'
 
 describe('toRenderSpace', () => {
@@ -69,6 +69,52 @@ describe('resolveAimPoint (origin-default backstop)', () => {
   it('falls back to the flipped raw point when no core is available', () => {
     const v = resolveAimPoint([0, 0, 0], null)
     expect(v.equals(new THREE.Vector3(0, 0, 0))).toBe(true)
+  })
+})
+
+describe('sceneCoverage (R2 framing signal)', () => {
+  const core = { center: [0, 0, 0] as [number, number, number], radius: 5 }
+
+  it('is ~0.5 when the core radius is half the view half-height (fov 90)', () => {
+    // fov 90 -> tan(45)=1, halfHeight = dist; at dist 10, coverage = r/dist = 0.5
+    const c = sceneCoverage(new THREE.Vector3(0, 0, 10), 90, core)
+    expect(c).toBeCloseTo(0.5, 5)
+  })
+
+  it('reports too-far as a small fraction', () => {
+    expect(sceneCoverage(new THREE.Vector3(0, 0, 100), 90, core)).toBeCloseTo(0.05, 5)
+  })
+
+  it('clamps to 1 when very close', () => {
+    expect(sceneCoverage(new THREE.Vector3(0, 0, 2), 90, core)).toBe(1)
+  })
+
+  it('is 0 with no core', () => {
+    expect(sceneCoverage(new THREE.Vector3(0, 0, 10), 90, null)).toBe(0)
+  })
+})
+
+describe('clampToCore (R2 dolly safety limit)', () => {
+  const core = { center: [0, 0, 0] as [number, number, number], radius: 10 }
+
+  it('pulls a too-close destination out to minFactor·radius', () => {
+    const v = clampToCore(new THREE.Vector3(0, 0, 1), core) // dist 1, min = 5
+    expect(v.length()).toBeCloseTo(5, 5)
+  })
+
+  it('pushes a too-far destination in to maxFactor·radius', () => {
+    const v = clampToCore(new THREE.Vector3(0, 0, 1000), core) // dist 1000, max = 120
+    expect(v.length()).toBeCloseTo(120, 5)
+  })
+
+  it('leaves an in-band destination unchanged', () => {
+    const inBand = new THREE.Vector3(0, 0, 40)
+    expect(clampToCore(inBand, core)).toBe(inBand)
+  })
+
+  it('is a no-op with no core', () => {
+    const p = new THREE.Vector3(0, 0, 1)
+    expect(clampToCore(p, null)).toBe(p)
   })
 })
 

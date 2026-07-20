@@ -121,6 +121,50 @@ export function animateOrbit(
   })
 }
 
+/**
+ * How much of the vertical view the scene core fills, as a fraction (0..1).
+ *
+ * A framing signal for the agent so it stops guessing zoom (Codex boundary):
+ * ~0.4-0.7 is well-framed, <~0.15 too far (a few floaters in the void),
+ * >~0.9 too close. Pure geometry: the core is a sphere (center, radius); its
+ * diameter over the world-space view height at the core's distance.
+ */
+export function sceneCoverage(
+  cameraPos: THREE.Vector3,
+  fovYDeg: number,
+  core: { center: [number, number, number]; radius: number } | null,
+): number {
+  if (!core || core.radius <= 0) return 0
+  const center = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+  const dist = cameraPos.distanceTo(center)
+  if (dist <= 1e-6) return 1
+  const halfHeight = Math.tan((fovYDeg * Math.PI) / 360) * dist // tan(fov/2)·d
+  if (halfHeight <= 0) return 1
+  return Math.min(1, core.radius / halfHeight)
+}
+
+/**
+ * Clamp a camera destination to a sane distance band around the scene core —
+ * an app-owned safety limit so a dolly can't bury the camera in a few floaters
+ * (too close) or fling it into the void (too far), regardless of what distance
+ * the model asked for. Returns the (possibly pulled-in/pushed-out) position.
+ */
+export function clampToCore(
+  to: THREE.Vector3,
+  core: { center: [number, number, number]; radius: number } | null,
+  minFactor = 0.5,
+  maxFactor = 12,
+): THREE.Vector3 {
+  if (!core || core.radius <= 0) return to
+  const center = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+  const dir = to.clone().sub(center)
+  const dist = dir.length()
+  if (dist <= 1e-6) return to
+  const clamped = Math.min(Math.max(dist, core.radius * minFactor), core.radius * maxFactor)
+  if (clamped === dist) return to
+  return center.add(dir.multiplyScalar(clamped / dist))
+}
+
 /** Distance that frames a bounding sphere of `radius` in the current camera FOV. */
 function framingDistance(camera: THREE.PerspectiveCamera, radius: number): number {
   const vFov = (camera.fov * Math.PI) / 180

@@ -90,6 +90,9 @@ export class SceneManager implements ViewerHandle {
   // re-sampling all centers every frame.
   private sceneCenter = new THREE.Vector3()
   private sceneRadius = 0
+  // Monotonic scene revision — bumps on every edit (markSplatDirty). A captured
+  // percept is tagged with this so the agent never reasons on a stale frame.
+  private revision = 0
   private lookActive = false     // drag-to-look pointer state
   private lookLast = { x: 0, y: 0 }
   private restoreFlyAfterTween = false
@@ -1581,8 +1584,14 @@ export class SceneManager implements ViewerHandle {
     if (!this.splatMesh?.packedSplats) return
     this.splatMesh.packedSplats.needsUpdate = true
     this.splatMesh.updateVersion()
+    this.revision++  // percepts taken before this edit are now stale
     // Edits can move the scene's extent; refresh the cached core so near/far
     // tracking and agent framing stay accurate.
     this.cacheSceneCore()
+  }
+
+  /** Monotonic scene revision (bumps on every edit). Tags captured percepts. */
+  getSceneRevision(): number {
+    return this.revision
   }
 }

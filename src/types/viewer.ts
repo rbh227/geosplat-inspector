@@ -54,6 +54,8 @@ export interface ViewerHandle {
   getBoundingBox(): THREE.Box3 | null
   /** World-space robust scene center + radius (agent camera aim; see SceneManager). */
   getSceneCore(): { center: [number, number, number]; radius: number } | null
+  /** Monotonic scene revision — bumps on every edit; tags captured percepts. */
+  getSceneRevision(): number
   isLoaded(): boolean
 
   // Loading

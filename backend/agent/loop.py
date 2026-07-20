@@ -63,7 +63,6 @@ class AgentLoop:
         # per-run state (reset in run())
         self._messages: list[dict] = []
         self._pending_frames: list[bytes] = []
-        self._frame_cache: dict[str, list[bytes]] = {}
         self._ledger = GroundingLedger()
         self._last_metrics: dict | None = None
         self._result = LoopResult(status="init")
@@ -75,7 +74,6 @@ class AgentLoop:
             {"role": "user", "content": prompt},
         ]
         self._pending_frames = []
-        self._frame_cache = {}
         self._ledger = GroundingLedger()
         self._last_metrics = None
         self._result = LoopResult(status="running")
@@ -235,20 +233,23 @@ class AgentLoop:
             await self._emit(ev_tool_result(call.name, note, step))
             self._feed_back(call.name, note)
             return
-        key = call.name + json.dumps(call.args, sort_keys=True, default=str)
-        if key in self._frame_cache:
-            frames = self._frame_cache[key]
-            result: dict[str, Any] = {"ok": True, "cached": True, "n_frames": len(frames)}
-        else:
-            result = await self.dispatcher.dispatch(call)
-            frames = result.get("frames", [])
-            self._frame_cache[key] = frames
-            self._result.vision_calls += 1
+        # Captures are ALWAYS fresh: a percept only means anything at the pose and
+        # scene revision it was taken at (Codex boundary — capture freshness). The
+        # old key-by-args cache served capture_frame (args={}) a stale first frame
+        # forever, so the model never saw where it had moved.
+        result = await self.dispatcher.dispatch(call)
+        frames = result.get("frames", [])
+        self._result.vision_calls += 1
+        resp = result.get("result")
+        percept = resp.get("percept") if isinstance(resp, dict) else None
         if frames:
             self._pending_frames.extend(frames)
             self._ledger.record_frame()
         await self._emit(ev_tool_result(call.name, {"n_frames": len(frames)}, step))
-        self._feed_back(call.name, {"captured": len(frames)})
+        note: dict[str, Any] = {"captured": len(frames)}
+        if percept is not None:
+            note["percept"] = percept  # where/when this frame was taken
+        self._feed_back(call.name, note)
 
     async def _handle_destructive(self, call: ToolCall, step: int) -> None:
         before = await self._ensure_metrics()
