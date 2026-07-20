@@ -40,8 +40,12 @@ npx tsc --noEmit              # type-check only
 ```
 
 ### Backend
+Needs **Python 3.12** — `open3d` (used by the splat data layer) has no wheel
+for newer Pythons yet. If your system Python is newer, use the Docker path
+below instead, or install 3.12 via `pyenv`/`uv`/homebrew.
 ```bash
-cd backend && pip install -e ".[dev]"    # or: pip install -r requirements.txt
+python3.12 -m venv .venv-api && source .venv-api/bin/activate
+pip install -r backend/requirements.txt pytest mypy
 pytest                                    # run all backend tests
 pytest backend/splat/tests/              # run splat layer tests only
 pytest -x -v                             # stop on first failure, verbose

@@ -2,13 +2,23 @@
 
 ## Quick start
 
+The fastest path — one command, no Python version juggling:
+
+```bash
+GEMINI_API_KEY=... docker compose up   # http://localhost:8000
+```
+
+Or run frontend/backend natively (backend needs **Python 3.12** — `open3d`
+has no wheel for newer Pythons yet):
+
 ```bash
 # Frontend
 npm install
 npm run dev                # http://localhost:5173
 
-# Backend (separate terminal)
-cd backend && pip install -e ".[dev]"
+# Backend (separate terminal, Python 3.12)
+python3.12 -m venv backend/.venv-api && source backend/.venv-api/bin/activate
+pip install -r backend/requirements.txt
 uvicorn backend.server:app --reload
 ```
 
@@ -17,9 +27,6 @@ icon** in the top bar, choose a provider, and paste an API key — no `.env`
 editing required. Google Gemini has a free tier and is the recommended first
 pick; see [Model backends](#model-backends) below for the full menu, including
 a fully free/local option.
-
-Or with Docker (`docker compose up`, with `GEMINI_API_KEY` set in your shell —
-see `docker-compose.yml`) if you'd rather not install anything locally.
 
 ---
 
