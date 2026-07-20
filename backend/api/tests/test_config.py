@@ -223,6 +223,32 @@ def test_resolution_precedence_ui_beats_env_beats_default(tmp_path, monkeypatch)
     assert cfg2.api_key == "ui-key-value"
 
 
+def test_resolve_honors_model_provider_env_when_nothing_saved(tmp_path, monkeypatch):
+    """Regression: before the picker existed, MODEL_PROVIDER/MODEL_NAME/
+    OPENAI_BASE_URL alone fully configured a non-Gemini provider (e.g. a local
+    vLLM server). resolve() must keep honoring that until a UI preset is saved
+    — it must NOT silently default to gemini just because no preset was ever
+    chosen in the settings panel."""
+    monkeypatch.setenv("MODEL_PROVIDER", "openai")
+    monkeypatch.setenv("MODEL_NAME", "Qwen/Qwen3-VL-8B-Instruct-FP8")
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://localhost:8001/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "not-needed")
+    s = SettingsStore(tmp_path / "s.json")
+
+    cfg = s.resolve()
+    assert cfg.provider == "openai"
+    assert cfg.model == "Qwen/Qwen3-VL-8B-Instruct-FP8"
+    assert cfg.base_url == "http://localhost:8001/v1"
+    assert cfg.key_set is True  # "local" preset needs no key
+    assert cfg.source == "env"
+
+    # A saved UI preset still wins outright over the env vars.
+    s.update(preset="gemini", api_key="ui-key")
+    cfg2 = s.resolve()
+    assert cfg2.provider == "gemini"
+    assert cfg2.api_key == "ui-key"
+
+
 def test_update_unknown_preset_raises():
     import tempfile
     from pathlib import Path

@@ -85,6 +85,10 @@ export default function App() {
   const panelsRef = useRef<PanelBus | null>(null)
   const sceneIdRef = useRef<string | null>(null)
   const hasSceneRef = useRef(false) // mirrors hasScene for stale-closure-free reads
+  // Large real-world scenes can take up to ~60s to upload+parse on the backend
+  // (confirmed: 675MB/3M-gaussian scene ≈ 60s). Without this, a prompt typed
+  // during that window sees sceneId===null and wrongly reports "view-only".
+  const registeringSceneRef = useRef(false)
   const stageRef = useRef<Stage>('clean') // mirrors stage for stable handleSend
   const unsubsRef = useRef<Array<() => void>>([])
   const processedTraceRef = useRef(0)
@@ -258,6 +262,8 @@ export default function App() {
       clearPersistedScene() // view-only scene: nothing restorable, drop any stale record
       return
     }
+    registeringSceneRef.current = true
+    setStatus('Uploading scene to backend…')
     try {
       const { id } = await uploadScene(file)
       sceneIdRef.current = id
@@ -270,11 +276,15 @@ export default function App() {
         baseline: viewerRef.current?.getSplatCount() ?? 0,
         camera: null,
       })
+      setStatus(null)
     } catch (err) {
       console.warn('[backend] scene upload failed; agent disabled for this scene:', err)
       clearPersistedScene()
+      showStatus('Scene upload failed — this scene is view-only until reloaded')
+    } finally {
+      registeringSceneRef.current = false
     }
-  }, [disposeAgent])
+  }, [disposeAgent, showStatus])
 
   // ── Selection actions: optimistic local apply + backend record (KTD2) ──
   // The backend is the source of truth; a failed call reloads its scene.
@@ -501,9 +511,11 @@ export default function App() {
     setAgentStep(0)
 
     if (!sceneIdRef.current) {
-      const content = hasSceneRef.current
-        ? "This scene is view-only — it's a .splat the renderer can show but the backend can't edit. The agent works on .ply scenes; load the Clean or Messy sphere demo to use it."
-        : 'Load a .ply scene first — the agent inspects and cleans .ply splats.'
+      const content = registeringSceneRef.current
+        ? "Still uploading this scene to the backend — large scenes can take up to a minute. Try again in a moment."
+        : hasSceneRef.current
+          ? "This scene is view-only — it's a .splat the renderer can show but the backend can't edit. The agent works on .ply scenes; load a .ply from Samples or drag one in."
+          : 'Load a .ply scene first — the agent inspects and cleans .ply splats.'
       setMessages((prev) => [...prev, {
         id: `msg-${Date.now()}-assistant`,
         role: 'assistant',

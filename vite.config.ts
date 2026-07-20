@@ -28,6 +28,7 @@ export default defineConfig({
       '/undo': BACKEND_PROXY_TARGET,
       '/redo': BACKEND_PROXY_TARGET,
       '/agent': BACKEND_PROXY_TARGET,
+      '/config': BACKEND_PROXY_TARGET,
       '/health': BACKEND_PROXY_TARGET,
       '/ws': { target: BACKEND_PROXY_TARGET.replace(/^http/, 'ws'), ws: true },
     },

@@ -207,15 +207,49 @@ class SettingsStore:
         }
 
     def resolve(self) -> ResolvedConfig:
-        """Precedence: saved UI override -> provider's env var(s) -> hard default."""
-        s = self._settings
-        preset = s.preset or "gemini"
-        entry = _REGISTRY_BY_ID.get(preset, _REGISTRY_BY_ID["gemini"])
-        provider = entry["provider"]
-        model = s.model or entry["default_model"]
-        base_url = s.base_url or entry.get("default_base_url")
+        """Precedence: saved UI override -> MODEL_PROVIDER/MODEL_NAME/OPENAI_BASE_URL
+        env (today's pre-picker behavior) -> hard default (gemini).
 
-        user_customized = bool(s.preset or s.model or s.base_url)
+        A UI-saved preset wins outright once one exists. Until then, this must
+        reproduce exactly what `get_provider()` used to do when called bare —
+        including a non-default `MODEL_PROVIDER` (e.g. "openai" pointed at a
+        local vLLM via `OPENAI_BASE_URL`) — so setting env vars keeps working
+        for anyone who hasn't touched the in-app settings panel.
+        """
+        s = self._settings
+
+        if s.preset:
+            entry = _REGISTRY_BY_ID.get(s.preset, _REGISTRY_BY_ID["gemini"])
+            preset = s.preset
+            provider = entry["provider"]
+            model = s.model or entry["default_model"]
+            base_url = s.base_url or entry.get("default_base_url")
+            is_ui = True
+            env_active = False  # unused on this branch; source is always "ui" below
+        else:
+            raw_provider = os.environ.get("MODEL_PROVIDER")
+            env_provider = (raw_provider or "gemini").lower()
+            env_model_name = os.environ.get("MODEL_NAME")
+            env_base_url = os.environ.get("OPENAI_BASE_URL") if env_provider == "openai" else None
+            # Map back to a registry entry for default_model/key_env_vars/UI display.
+            # "openai provider + a base_url" reads as the "local" preset card;
+            # otherwise match by provider name (gemini/anthropic/openai all have
+            # a same-named registry id).
+            if env_provider == "openai" and env_base_url:
+                entry = _REGISTRY_BY_ID["local"]
+            else:
+                entry = next(
+                    (e for e in PROVIDER_REGISTRY if e["provider"] == env_provider),
+                    _REGISTRY_BY_ID["gemini"],
+                )
+            preset = entry["id"]
+            provider = env_provider
+            model = env_model_name or entry["default_model"]
+            base_url = env_base_url or entry.get("default_base_url")
+            is_ui = False
+            # Did MODEL_PROVIDER/MODEL_NAME/OPENAI_BASE_URL actually say anything,
+            # or are we just falling all the way through to the hard default?
+            env_active = bool(raw_provider or env_model_name or env_base_url)
 
         if s.api_key:
             return ResolvedConfig(
@@ -226,12 +260,12 @@ class SettingsStore:
             return ResolvedConfig(
                 provider=provider, model=model, api_key=None, base_url=base_url,
                 key_set=True, key_source="env",
-                source="ui" if user_customized else "env", preset=preset,
+                source="ui" if is_ui else "env", preset=preset,
             )
         return ResolvedConfig(
             provider=provider, model=model, api_key=None, base_url=base_url,
             key_set=not entry["needs_key"], key_source=None,
-            source="ui" if user_customized else "default",
+            source="ui" if is_ui else ("env" if env_active else "default"),
             preset=preset,
         )
 
