@@ -40,6 +40,10 @@ __pycache__
 # Design artifacts (not source)
 *.zip
 
-# Large downloaded demo splats (re-fetch from Hugging Face, do not commit)
-public/demos/train.ply
-public/demos/playroom.ply
+# Large demo splats (local copies of Desktop scenes, do not commit)
+public/demos/*.ply
+.raphflow/
+scripts/local-model.env
+
+# User-saved model settings (may contain a pasted API key)
+backend/.data/
