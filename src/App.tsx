@@ -539,6 +539,16 @@ export default function App() {
     setNarration(text)
     setAgentStep(0)
 
+    // While a proposal is parked, the run is blocked on the operator's verdict.
+    // Typing in chat during review IS adjustment feedback — resolve the parked
+    // proposal with it instead of starting a SECOND run. A concurrent run's
+    // first proposal would overwrite the parked one and leave the first run's
+    // no-timeout future hanging forever.
+    if (proposalPendingRef.current) {
+      panelsRef.current?.proposal.get()?.resolve('adjusted', text)
+      return
+    }
+
     if (!sceneIdRef.current) {
       const content = registeringSceneRef.current
         ? "Still uploading this scene to the backend — large scenes can take up to a minute. Try again in a moment."
