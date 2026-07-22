@@ -1120,6 +1120,56 @@ export class SceneManager implements ViewerHandle {
     this.sdfPreviewSdf = null
   }
 
+  /* ---- Persistent proposal box (v0.5, agent-cleanup-proposals) ---- */
+  private proposalEdit: SplatEdit | null = null
+  private proposalSdf: SplatEditSdf | null = null
+  private proposalWire: THREE.LineSegments | null = null
+  private proposalBoxState: { min: number[]; max: number[] } | null = null
+
+  /** Persistent SDF dim + crisp wireframe, parented to the splat mesh so both
+   *  live in backend coords and appear in captures. Stays until cleared. */
+  showProposalBox(min: number[], max: number[]): void {
+    const mesh = this.splatMesh
+    if (!mesh) return
+    this.clearProposalBox()
+    const center = [(min[0]+max[0])/2, (min[1]+max[1])/2, (min[2]+max[2])/2]
+    const half = [(max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2]
+    const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY })
+    const sdf = new SplatEditSdf({
+      type: SplatEditSdfType.BOX,
+      opacity: 0.25,
+      color: new THREE.Color(1.4, 1.4, 0.6),
+    })
+    edit.addSdf(sdf); edit.add(sdf); mesh.add(edit)
+    sdf.position.set(center[0], center[1], center[2])
+    sdf.radius = 0
+    sdf.scale.set(Math.max(half[0], 1e-4), Math.max(half[1], 1e-4), Math.max(half[2], 1e-4))
+    const geom = new THREE.BoxGeometry(max[0]-min[0], max[1]-min[1], max[2]-min[2])
+    const wire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geom),
+      new THREE.LineBasicMaterial({ color: 0xffcc44 }),
+    )
+    geom.dispose()
+    wire.position.set(center[0], center[1], center[2])
+    mesh.add(wire)
+    this.proposalEdit = edit; this.proposalSdf = sdf; this.proposalWire = wire
+    this.proposalBoxState = { min: [...min], max: [...max] }
+  }
+
+  clearProposalBox(): void {
+    if (this.splatMesh) {
+      if (this.proposalEdit) this.splatMesh.remove(this.proposalEdit)
+      if (this.proposalWire) this.splatMesh.remove(this.proposalWire)
+    }
+    this.proposalWire?.geometry.dispose()
+    this.proposalEdit = null; this.proposalSdf = null; this.proposalWire = null
+    this.proposalBoxState = null
+  }
+
+  getProposalBox(): { min: number[]; max: number[] } | null {
+    return this.proposalBoxState
+  }
+
   /* ---------------------------------------------------------------- */
   /*  ViewerHandle – Stable-ID editing (v0.2, KTD2/KTD3)              */
   /* ---------------------------------------------------------------- */
@@ -1552,6 +1602,7 @@ export class SceneManager implements ViewerHandle {
   private disposeSplatMesh(): void {
     if (this.splatMesh) {
       this.clearSelectionPreview()
+      this.clearProposalBox()
       // Drop remembered tint colors — they belong to the buffer being torn
       // down; a fresh scene reuses the same original-ID space.
       this.tint.clear()

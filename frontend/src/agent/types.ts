@@ -48,6 +48,11 @@ export interface RendererBridge {
   getCoreBoundsBox(): { min: number[]; max: number[]; count: number } | null
   showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
   clearSelectionPreview(): void
+  /** Persistent "good cube" crop proposal — SDF dim + wireframe in BACKEND
+   *  coords, visible in the viewport and the agent's captures until cleared. */
+  showProposalBox(min: number[], max: number[]): void
+  clearProposalBox(): void
+  getProposalBox(): { min: number[]; max: number[] } | null
   setMovementInput(direction: MoveDirection, active: boolean): void
   /** Hold a rotate-pad look input (yaw/pitch) — the agent `turn` tool. */
   setRotationInput(direction: RotateDirection, active: boolean): void

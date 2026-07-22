@@ -104,6 +104,11 @@ export interface ViewerHandle {
   keepSelection(): Uint32Array
   showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
   clearSelectionPreview(): void
+  /** Persistent "good cube" crop proposal — SDF dim + wireframe in BACKEND
+   *  coords, visible in the viewport and the agent's captures until cleared. */
+  showProposalBox(min: number[], max: number[]): void
+  clearProposalBox(): void
+  getProposalBox(): { min: number[]; max: number[] } | null
 
   // Analysis
   getSceneStats(): SceneStats | null
