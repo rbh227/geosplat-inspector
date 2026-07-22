@@ -14,6 +14,7 @@ import { computeFraming, computeCoreBounds, computeCoreBox, nearFarForDistance, 
 import { IdMap } from './idMap.ts'
 import { transformPoints } from './selection.ts'
 import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
+import { TintStore, tintedColor } from './selectionTint.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -75,6 +76,12 @@ export class SceneManager implements ViewerHandle {
   private selection = new Set<number>()
   private sdfPreviewEdit: SplatEdit | null = null
   private sdfPreviewSdf: SplatEditSdf | null = null
+
+  /* Persistent selection tint (Task 6) — remembers each tinted splat's true
+     color (keyed by original ID) so the warm highlight restores exactly on
+     deselect. Driven from emitSelectionChange, so it covers manual AND agent
+     selections uniformly. */
+  private tint = new TintStore()
 
   /* Selection-change callback (count for the toolbar/status surfaces) */
   onSelectionChange: ((count: number) => void) | null = null
@@ -976,6 +983,10 @@ export class SceneManager implements ViewerHandle {
   deleteSelection(): Uint32Array {
     const ids = this.getSelectionIds()
     if (ids.length === 0) return ids
+    // Untint BEFORE the compaction snapshots the buffer, so the undo entry —
+    // and the deleted splats themselves — carry their true colors, never a
+    // frozen highlight.
+    this.restoreSelectionTint()
     this.deleteByIds(ids)
     this.clearSelection()
     return ids
@@ -985,13 +996,84 @@ export class SceneManager implements ViewerHandle {
   keepSelection(): Uint32Array {
     const ids = this.getSelectionIds()
     if (ids.length === 0) return ids
+    // Kept splats are the tinted ones; untint before the compaction so both the
+    // survivors and the undo snapshot hold true colors.
+    this.restoreSelectionTint()
     this.keepOnlyIds(ids)
     this.clearSelection()
     return ids
   }
 
+  /**
+   * Single tint driver: restore any prior tint, then re-apply for the current
+   * (non-empty) selection. Called on EVERY selection change, so manual tools
+   * and agent tools tint identically. Restore-then-apply keeps it idempotent —
+   * a re-tint always reads true colors, never an already-tinted value.
+   */
   private emitSelectionChange(): void {
+    this.restoreSelectionTint()
+    if (this.selection.size > 0) this.applySelectionTint()
     this.onSelectionChange?.(this.selection.size)
+  }
+
+  /**
+   * Tint the currently-selected splats warm. Stores each splat's true color the
+   * first time only (TintStore), then lerps toward the highlight and writes it
+   * back with the same getSplat/setSplat pattern the delete path uses.
+   */
+  private applySelectionTint(): void {
+    const packed = this.splatMesh?.packedSplats
+    if (!packed || !this.idMap || this.selection.size === 0) return
+    const n = packed.numSplats
+    let touched = false
+    for (let i = 0; i < n; i++) {
+      const id = this.idMap.idAt(i)
+      if (!this.selection.has(id)) continue
+      const splat = packed.getSplat(i)
+      const c = splat.color
+      this.tint.remember(id, [c.r, c.g, c.b])
+      const [r, g, b] = tintedColor(this.tint.original(id)!)
+      splat.color.setRGB(r, g, b)
+      packed.setSplat(i, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
+      touched = true
+    }
+    if (touched) this.markColorsDirty()
+  }
+
+  /**
+   * Write every remembered original color back to whatever packed index now
+   * holds that original ID (robust to compaction), then clear the store. No-op
+   * when nothing is tinted.
+   */
+  private restoreSelectionTint(): void {
+    if (this.tint.size === 0) return
+    const packed = this.splatMesh?.packedSplats
+    if (!packed || !this.idMap) {
+      this.tint.clear()
+      return
+    }
+    const n = packed.numSplats
+    for (let i = 0; i < n; i++) {
+      const orig = this.tint.original(this.idMap.idAt(i))
+      if (!orig) continue
+      const splat = packed.getSplat(i)
+      splat.color.setRGB(orig[0], orig[1], orig[2])
+      packed.setSplat(i, splat.center, splat.scales, splat.quaternion, splat.opacity, splat.color)
+    }
+    this.tint.clear()
+    this.markColorsDirty()
+  }
+
+  /**
+   * GPU re-upload after an in-place COLOR-only write (selection tint). Unlike
+   * markSplatDirty this deliberately does NOT bump the scene revision or
+   * re-cache the framing core: a cosmetic recolor moves no geometry, so it must
+   * not flag captured percepts stale or shift near/far.
+   */
+  private markColorsDirty(): void {
+    if (!this.splatMesh?.packedSplats) return
+    this.splatMesh.packedSplats.needsUpdate = true
+    this.splatMesh.updateVersion()
   }
 
   /* ---- SDF dim-preview for sphere/box volume selection (KTD5) ---- */
@@ -1050,6 +1132,10 @@ export class SceneManager implements ViewerHandle {
   setIdMapFromIds(ids: ArrayLike<number>): void {
     this.idMap = new IdMap(ids)
     this.selection.clear()
+    // The reloaded buffer is untinted and its ID space is redefined; drop stale
+    // originals so the (now empty-selection) emitSelectionChange restore can't
+    // write an old color onto a reused ID.
+    this.tint.clear()
     this.emitSelectionChange()
   }
 
@@ -1466,6 +1552,9 @@ export class SceneManager implements ViewerHandle {
   private disposeSplatMesh(): void {
     if (this.splatMesh) {
       this.clearSelectionPreview()
+      // Drop remembered tint colors — they belong to the buffer being torn
+      // down; a fresh scene reuses the same original-ID space.
+      this.tint.clear()
       this.scene.remove(this.splatMesh)
       this.splatMesh.dispose()
       this.splatMesh = null
