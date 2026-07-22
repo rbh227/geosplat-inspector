@@ -362,7 +362,9 @@ export function viewBasisFromCamera(cam: THREE.PerspectiveCamera): ViewBasis  //
 - [ ] **Step 3: Run — PASS.**
 - [ ] **Step 4: Commit** `feat(agent): pure view-relative box adjustment (dominant-axis snapping)`
 
----### Task 8: Executors — get_core_bounds / show_box_preview / adjust_box_preview
+---
+
+### Task 8: Executors — get_core_bounds / show_box_preview / adjust_box_preview
 
 **Files:**
 - Modify: `frontend/src/agent/executors.ts` (`runSelectionTool`, before the volume-tool branch)
