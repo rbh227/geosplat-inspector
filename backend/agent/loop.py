@@ -78,6 +78,12 @@ class AgentLoop:
         self._result = LoopResult(status="init")
         # Banked operator approvals, per proposal kind (one approval = one edit).
         self._approvals: dict[str, int] = {}
+        # Fix 2 (final review): approvals bind the REVIEWED artifact, not just the
+        # kind. `_previewed_box` tracks the last box shown/adjusted via preview;
+        # `_approved_box` is the box captured when a crop_outside_box approval was
+        # banked, and it overrides whatever coordinates the model later passes.
+        self._previewed_box: dict | None = None
+        self._approved_box: dict | None = None
 
     # -- public -----------------------------------------------------------
     async def run(self, prompt: str) -> LoopResult:
@@ -90,6 +96,8 @@ class AgentLoop:
         self._last_metrics = None
         self._result = LoopResult(status="running")
         self._approvals = {}
+        self._previewed_box = None
+        self._approved_box = None
 
         await self._seed_grounding()
 
@@ -241,6 +249,41 @@ class AgentLoop:
                 return False
             self._approvals[kind] -= 1
 
+            # Fix 2: bind the reviewed artifact to the edit. When the operator
+            # approved a crop_outside_box, the reviewed artifact is a specific
+            # box — enforce it deterministically instead of trusting the model
+            # to re-pass the same coordinates.
+            #   crop_bbox  -> override min/max with the approved box.
+            #   crop_sphere-> reject (the reviewed artifact is a box, not a
+            #                 sphere) and refund the approval so a crop_bbox
+            #                 retry can still consume it.
+            # delete_selection/keep_selection bind no extra state here: the
+            # selection is resolved to IDs as-of-now at dispatch time, so the
+            # approval binds the COUNT the operator reviewed but not the exact
+            # IDs (known looseness — full ID-binding is tracked follow-up work,
+            # see the 2026-07-22 final review).
+            if kind == "crop_outside_box" and self._approved_box is not None:
+                if call.name == "crop_sphere":
+                    self._approvals[kind] += 1  # refund: still spendable via crop_bbox
+                    rejection = {
+                        "ok": False,
+                        "error": "the operator reviewed a box, not a sphere — "
+                                 "call crop_bbox to crop to the approved box "
+                                 "(crop_sphere is not bound to the reviewed artifact)",
+                    }
+                    await self._emit(ev_tool_result(call.name, rejection, step))
+                    self._feed_back(call.name, rejection)
+                    return False
+                approved_min = self._approved_box["min"]
+                approved_max = self._approved_box["max"]
+                if call.args.get("min") != approved_min or call.args.get("max") != approved_max:
+                    await self._emit(ev_narrate(
+                        f"Cropping to the box the operator approved (min {approved_min}, "
+                        f"max {approved_max}), overriding the model's requested box."
+                    ))
+                    call.args["min"] = approved_min
+                    call.args["max"] = approved_max
+
         if call.name == "answer":
             return await self._try_answer(str(call.args.get("text", "")))
 
@@ -260,6 +303,11 @@ class AgentLoop:
             if isinstance(payload, dict) and payload.get("verdict") == "approved":
                 kind = str(call.args.get("kind", ""))
                 self._approvals[kind] = self._approvals.get(kind, 0) + 1
+                # Fix 2: bind the box the operator actually reviewed to this
+                # approval. propose_decision carries no box, so we snapshot the
+                # last previewed box (show_box_preview / adjust_box_preview).
+                if kind == "crop_outside_box":
+                    self._approved_box = dict(self._previewed_box) if self._previewed_box else None
 
         await self._emit(ev_tool_result(call.name, result, step))
         self._absorb_result(call.name, result)
@@ -397,6 +445,12 @@ class AgentLoop:
             self._last_metrics = payload
         else:
             self._ledger.record_tool_result(payload)
+        # Fix 2: remember the last previewed box so a later crop_outside_box
+        # approval can bind it (both preview tools return {ok, min, max}).
+        if name in ("show_box_preview", "adjust_box_preview") and isinstance(payload, dict):
+            mn, mx = payload.get("min"), payload.get("max")
+            if _is_vec3(mn) and _is_vec3(mx):
+                self._previewed_box = {"min": [float(v) for v in mn], "max": [float(v) for v in mx]}
 
     def _feed_back(self, name: str, result: Any) -> None:
         self._messages.append(
@@ -423,6 +477,14 @@ class AgentLoop:
         self._result.error = error
         await self._emit(ev_complete(status, error=error))
         return self._result
+
+
+def _is_vec3(v: Any) -> bool:
+    return (
+        isinstance(v, (list, tuple))
+        and len(v) == 3
+        and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
+    )
 
 
 def _safe(obj: Any) -> str:
