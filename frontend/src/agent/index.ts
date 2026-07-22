@@ -47,7 +47,7 @@ export function createAgent(opts: {
 
 export { Overlay } from './overlay.ts'
 export { PanelBus, CAPABILITY_CATALOG } from './panels.ts'
-export type { Capability } from './panels.ts'
+export type { Capability, ProposalState } from './panels.ts'
 export { AgentWSClient } from './ws-client.ts'
 export { WebSocketTransport, LoopbackTransport } from './transport.ts'
 export type { Transport } from './transport.ts'

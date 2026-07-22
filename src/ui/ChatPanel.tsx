@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { X, SendHorizonal, Play } from 'lucide-react'
 import type { ChatMessage } from '../types/agent'
 import type { SkillInfo } from '../backend/client'
+import type { ProposalState } from '@agent'
 import ActionCard from './ActionCard'
+import ProposalCard from './ProposalCard'
 import Button from './Button'
 
 interface ChatPanelProps {
@@ -12,6 +14,9 @@ interface ChatPanelProps {
   skills: SkillInfo[]
   messages: ChatMessage[]
   isThinking: boolean
+  /** A parked crop/edit proposal awaiting the operator's decision, or null. */
+  proposal: ProposalState | null
+  onProposalDecide: (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => void
   onSend: (text: string) => void
   onClose: () => void
 }
@@ -27,6 +32,8 @@ export default function ChatPanel({
   skills,
   messages,
   isThinking,
+  proposal,
+  onProposalDecide,
   onSend,
   onClose,
 }: ChatPanelProps) {
@@ -174,6 +181,13 @@ export default function ChatPanel({
           </div>
         )}
       </div>
+
+      {/* Parked proposal: docked above the chat input until the operator decides */}
+      {proposal && (
+        <div className="shrink-0">
+          <ProposalCard proposal={proposal} onDecide={onProposalDecide} />
+        </div>
+      )}
 
       {/* Input bar */}
       <div className="shrink-0 px-4 py-3 border-t border-border-subtle">

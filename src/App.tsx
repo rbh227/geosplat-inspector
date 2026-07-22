@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import type { MoveDirection, RotateDirection, ViewerState, ViewerHandle } from './types/viewer'
 import type { ChatMessage, AgentAction } from './types/agent'
 import { createAgent, WebSocketTransport, PanelBus } from '@agent'
-import type { Agent, TraceEntry } from '@agent'
+import type { Agent, TraceEntry, ProposalState } from '@agent'
 import {
   uploadScene, runAgent, sceneWsUrl, scenePlyUrl, isBackendLoadable,
   editByIds, historyOp, getAliveIds, getSkills, type SkillInfo,
@@ -94,6 +94,17 @@ export default function App() {
   const processedTraceRef = useRef(0)
   const runActionsRef = useRef<AgentAction[]>([])
 
+  // A parked crop/edit proposal awaiting the operator's decision (or null).
+  const [proposal, setProposal] = useState<ProposalState | null>(null)
+  // Mirrors `proposal !== null` for stale-closure-free reads in handleManualInput.
+  const proposalPendingRef = useRef(false)
+  // Fold the proposal signal into React state + the ref (stable identity so the
+  // per-scene ensureAgent memo stays intact).
+  const handleProposalSignal = useCallback((p: ProposalState | null) => {
+    setProposal(p)
+    proposalPendingRef.current = p !== null
+  }, [])
+
   const disposeAgent = useCallback(() => {
     unsubsRef.current.forEach((fn) => fn())
     unsubsRef.current = []
@@ -102,6 +113,9 @@ export default function App() {
     transportRef.current = null
     panelsRef.current = null
     processedTraceRef.current = 0
+    // Drop any parked proposal from the torn-down scene so no stale card lingers.
+    proposalPendingRef.current = false
+    setProposal(null)
   }, [])
 
   useEffect(() => disposeAgent, [disposeAgent])
@@ -218,9 +232,11 @@ export default function App() {
   }, [])
 
   /** Manual input during an agent run pauses it at the next tool-call
-   *  boundary (R14/AE1). The banner persists until Resume or Stop. */
+   *  boundary (R14/AE1). The banner persists until Resume or Stop.
+   *  Exception: while a proposal is parked, camera inspection is expected
+   *  review behavior, so it must NOT pause the (already-blocked) run. */
   const handleManualInput = useCallback(() => {
-    if (isThinkingRef.current && !agentPausedRef.current) {
+    if (isThinkingRef.current && !agentPausedRef.current && !proposalPendingRef.current) {
       sendPauseSignal('agent_pause')
       setAgentPaused(true)
     }
@@ -232,11 +248,23 @@ export default function App() {
   }, [sendPauseSignal])
 
   const handleStopAgent = useCallback(() => {
+    // Resolve any parked proposal first so the blocked loop unwinds before the
+    // interrupt (the resolver latch makes this safe even if already resolved).
+    panelsRef.current?.proposal.get()?.resolve('rejected', 'operator stopped the run')
     transportRef.current?.send({ type: 'user_interrupt', id: `int-${Date.now()}`, payload: {} })
     // release the paused loop so it can observe the abort
     sendPauseSignal('agent_resume')
     setAgentPaused(false)
   }, [sendPauseSignal])
+
+  /** Operator decision on the parked proposal — resolves via the signal's
+   *  latched resolver (Task 10), which sends the reply and clears the signal. */
+  const handleProposalDecide = useCallback(
+    (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => {
+      panelsRef.current?.proposal.get()?.resolve(verdict, feedback)
+    },
+    [],
+  )
 
   /**
    * Reload the backend's authoritative scene and adopt its alive-ID list so
@@ -494,11 +522,12 @@ export default function App() {
     unsubsRef.current.push(
       panels.running.subscribe(setIsThinking),
       panels.trace.subscribe(processTrace),
+      panels.proposal.subscribe(handleProposalSignal),
     )
     panelsRef.current = panels
     transportRef.current = transport
     agentRef.current = agent
-  }, [processTrace])
+  }, [processTrace, handleProposalSignal])
 
   const handleSend = useCallback((text: string) => {
     setMessages((prev) => [...prev, {
@@ -663,9 +692,26 @@ export default function App() {
               </div>
             )}
 
+            {/* Awaiting-review banner: while a proposal is parked the run is
+                blocked on the operator — inspect freely, decide in the card. */}
+            {proposal && (
+              <div className="absolute top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded border border-amber-400/40 bg-black/80 px-3 py-1.5">
+                <span className="font-mono text-xs text-amber-200/90">
+                  Awaiting your review
+                </span>
+                <button
+                  type="button"
+                  onClick={handleStopAgent}
+                  className="rounded border border-red-400/30 bg-red-500/10 px-2 py-0.5 font-mono text-[11px] text-red-200 hover:bg-red-500/20 cursor-pointer"
+                >
+                  Stop run
+                </button>
+              </div>
+            )}
+
             {/* Pause banner: persists until Resume or Stop — never self-dismisses.
                 Manual edits during pause are allowed and share the history. */}
-            {agentPaused && (
+            {!proposal && agentPaused && (
               <div className="absolute top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded border border-amber-400/40 bg-black/80 px-3 py-1.5">
                 <span className="font-mono text-xs text-amber-200/90">
                   Agent paused — you have control
@@ -688,7 +734,7 @@ export default function App() {
             )}
 
             {/* Transient status (edit rejected, etc.) */}
-            {!agentPaused && status && (
+            {!agentPaused && !proposal && status && (
               <div className="absolute top-3 left-1/2 z-30 -translate-x-1/2 rounded border border-white/20 bg-black/70 px-3 py-1.5 font-mono text-xs text-white/90">
                 {status}
               </div>
@@ -730,6 +776,8 @@ export default function App() {
             skills={skills}
             messages={messages}
             isThinking={isThinking}
+            proposal={proposal}
+            onProposalDecide={handleProposalDecide}
             onSend={handleSend}
             onClose={() => setRightOpen(false)}
           />
