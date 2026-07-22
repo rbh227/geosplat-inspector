@@ -98,6 +98,60 @@ describe('tint apply/restore over a simulated packed buffer', () => {
     expect(store.size).toBe(0)
   })
 
+  /**
+   * Regression: an undo snapshot must NEVER capture tinted colors. A filter
+   * (cleanOpacity/cropBbox/filterBy*) snapshots the buffer while a selection is
+   * live and tinted. If it sliced the tinted bytes, a later deselect would empty
+   * the store and a subsequent undo would write the frozen highlight back with
+   * nothing left to un-tint — permanent corruption. pushUndoSnapshot fixes this
+   * by restoring true colors BEFORE the slice, then re-tinting. This models that
+   * seam over the simulated buffer/IdMap the same way SceneManager drives it.
+   */
+  it('undo snapshot taken mid-filter holds ORIGINALS, and undo→deselect recovers them', () => {
+    // Mirror of pushUndoSnapshot: untint if tinted, slice, then re-tint.
+    function snapshotUndo(buf: Buffer, map: IdMap, store: TintStore, selection: Set<number>): Buffer {
+      const wasTinted = store.size > 0
+      if (wasTinted) restoreTint(buf, map, store)
+      const snap = buf.map((c) => [...c] as RGB) // slice the packed buffer
+      if (wasTinted && selection.size > 0) applyTint(buf, map, selection, store)
+      return snap
+    }
+
+    const original: Buffer = [
+      [0.10, 0.20, 0.30],
+      [0.40, 0.50, 0.60],
+      [0.70, 0.10, 0.90],
+      [0.05, 0.05, 0.05],
+    ]
+    const buf: Buffer = original.map((c) => [...c] as RGB)
+    const map = new IdMap(4)
+    const store = new TintStore()
+    const selection = new Set([1, 3])
+
+    // Operator selects → splats get tinted.
+    applyTint(buf, map, selection, store)
+    expect(buf[1]).not.toEqual(original[1])
+    expect(buf[3]).not.toEqual(original[3])
+
+    // A filter runs WHILE the selection is live and tinted → takes an undo snapshot.
+    const snap = snapshotUndo(buf, map, store, selection)
+
+    // The snapshot bytes are the TRUE colors, not the highlight.
+    expect(snap).toEqual(original)
+    // ...and the live buffer is still visibly tinted (highlight didn't vanish).
+    expect(buf[1]).not.toEqual(original[1])
+    expect(buf[3]).not.toEqual(original[3])
+    expect(store.size).toBe(2)
+
+    // Later: operator deselects (store empties), then undoes the filter.
+    restoreTint(buf, map, store) // deselect
+    expect(store.size).toBe(0)
+    buf.forEach((_, i) => { buf[i] = [...snap[i]] as RGB }) // undo() writes the snapshot back
+
+    // Nothing is tinted anymore: colors are the pristine originals, no corruption.
+    expect(buf).toEqual(original)
+  })
+
   it('restore keyed by original ID survives a compaction between apply and restore', () => {
     const original: Buffer = [
       [0.10, 0.20, 0.30], // id 0

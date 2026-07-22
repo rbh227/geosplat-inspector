@@ -1681,10 +1681,24 @@ export class SceneManager implements ViewerHandle {
 
   /**
    * Push a copy of the current PackedSplats data onto the undo stack.
+   *
+   * The buffer may be TINTED right now — filters (cleanOpacity/cropBbox/
+   * filterBy*) run without touching the selection, so the operator's warm
+   * highlight is still baked into the packed colors. Snapshotting those tinted
+   * bytes would poison the undo entry: a later deselect empties the TintStore,
+   * then undo() writes the tinted snapshot back with nothing left to un-tint,
+   * and the highlight locks in as the new "original" (permanent corruption).
+   * So restore true colors BEFORE slicing, then re-apply so the live highlight
+   * doesn't silently vanish mid-filter. Guarded by `wasTinted` — the delete/
+   * keep paths already restored (store empty), so this is a no-op for them and
+   * never re-tints splats they are about to compact away.
    */
   private pushUndoSnapshot(label: string): void {
     const packed = this.splatMesh?.packedSplats
     if (!packed?.packedArray) return
+
+    const wasTinted = this.tint.size > 0
+    if (wasTinted) this.restoreSelectionTint()
 
     const splatDataLen = packed.numSplats * INTS_PER_SPLAT
     const snapshot = packed.packedArray.slice(0, splatDataLen)
@@ -1695,6 +1709,8 @@ export class SceneManager implements ViewerHandle {
       numSplats: packed.numSplats,
       idMapSnap: this.idMap?.snapshot() ?? null,
     })
+
+    if (wasTinted && this.selection.size > 0) this.applySelectionTint()
   }
 
   /**
