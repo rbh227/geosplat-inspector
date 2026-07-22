@@ -13,6 +13,15 @@ export interface Capability {
   runs_on: 'frontend' | 'backend'
 }
 
+/** A parked crop/edit proposal awaiting the operator's decision. The resolver
+ *  (installed by ws-client) sends the correlated tool_result and clears the
+ *  signal — nothing is sent until the operator approves/rejects/adjusts. */
+export interface ProposalState {
+  kind: string
+  summary: string
+  resolve: (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => void
+}
+
 /** Static catalog for the capability launcher, derived from the frozen contract. */
 export const CAPABILITY_CATALOG: Capability[] = [
   ...FRONTEND_TOOLS.map((name) => ({ name, runs_on: 'frontend' as const })),
@@ -38,6 +47,7 @@ export class PanelBus {
   readonly narration = new Signal<string | null>(null)
   readonly metrics = new Signal<Metrics | null>(null)
   readonly running = new Signal<boolean>(false)
+  readonly proposal = new Signal<ProposalState | null>(null)
 
   pushTrace(entry: TraceEntry): void {
     this.trace.set([...this.trace.get(), entry])
@@ -55,8 +65,12 @@ export class PanelBus {
   setMetrics(m: Metrics): void { this.metrics.set(m) }
   setRunning(v: boolean): void { this.running.set(v) }
 
+  setProposal(p: ProposalState): void { this.proposal.set(p) }
+  clearProposal(): void { this.proposal.set(null) }
+
   reset(): void {
     this.trace.set([])
     this.narration.set(null)
+    this.proposal.set(null)
   }
 }

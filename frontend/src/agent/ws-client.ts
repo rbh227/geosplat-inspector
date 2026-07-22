@@ -25,6 +25,8 @@ const COMMAND_TYPES = new Set([
   'camera_move', 'capture_request', 'drop_marker', 'clear_markers', 'narrate', 'reload_scene',
   // v0.2 — selection pull + agent-driven editor tools
   'get_selection', 'selection_tool', 'movement_input', 'rotation_input',
+  // v0.5 — blocking proposal: reply is parked until the operator decides
+  'proposal',
 ])
 
 function isCommand(m: { type?: string }): m is WSCommand {
@@ -136,6 +138,22 @@ export class AgentWSClient {
           this.transport.send({ type: 'tool_result', id: cmd.id, payload: result } as WSResponse)
           break
         }
+        case 'proposal': {
+          const { args } = p as unknown as { args: { kind: string; summary: string } }
+          const id = cmd.id
+          this.panels.setProposal({
+            kind: args?.kind ?? '',
+            summary: args?.summary ?? '',
+            resolve: (verdict, feedback) => {
+              this.transport.send({
+                type: 'tool_result', id,
+                payload: { ok: true, verdict, ...(feedback ? { feedback } : {}) },
+              } as WSResponse)
+              this.panels.clearProposal()
+            },
+          })
+          break  // reply parked — resolved by the operator via the ProposalCard
+        }
       }
     } catch (err) {
       this.panels.pushTrace({
@@ -156,6 +174,13 @@ export class AgentWSClient {
     const text = String(payload.text ?? payload.name ?? '')
     const entry: TraceEntry = { kind: ev.type, text, detail: payload, at: Date.now() }
     this.panels.pushTrace(entry)
-    if (ev.type === 'complete') this.panels.setRunning(false)
+    if (ev.type === 'complete') {
+      this.panels.setRunning(false)
+      // The run is over: drop any still-parked proposal WITHOUT replying (the
+      // backend correlator is gone) and clear its viewport artifacts.
+      if (this.panels.proposal.get()) this.panels.clearProposal()
+      try { this.bridge.clearProposalBox() } catch { /* bridge may lack a scene */ }
+      try { this.bridge.clearSelection() } catch { /* bridge may lack a scene */ }
+    }
   }
 }

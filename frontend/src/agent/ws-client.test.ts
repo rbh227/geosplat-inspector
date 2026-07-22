@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import * as THREE from 'three'
 import { AgentWSClient } from './ws-client.ts'
 import { FrontendExecutors } from './executors.ts'
+import { PanelBus } from './panels.ts'
 import type { RendererBridge } from './types.ts'
 import type { Overlay } from './overlay.ts'
-import type { PanelBus } from './panels.ts'
 import type { Transport } from './transport.ts'
 
 /**
@@ -139,5 +139,70 @@ describe('runSelectionTool v0.5 proposal tools', () => {
     expect(r.min).toEqual([-1, -1, -1])
     expect(r.max).toEqual([3, 3, 3])
     expect(bridge.proposal).toEqual({ min: [-1, -1, -1], max: [3, 3, 3] })
+  })
+})
+
+/**
+ * v0.5 parked-proposal handling: the `proposal` command must NOT auto-reply.
+ * It parks a resolver on the PanelBus (populated by the ProposalCard, built in
+ * the next task) that, on operator decision, sends exactly one correlated
+ * tool_result and clears the signal. A `complete` trace that arrives with a
+ * still-pending proposal clears the signal WITHOUT sending (the run is over).
+ */
+class ProposalCleanupBridge {
+  clearedProposalBox = 0
+  clearedSelection = 0
+  clearProposalBox(): void { this.clearedProposalBox++ }
+  clearSelection(): number { this.clearedSelection++; return 0 }
+}
+
+describe('ws-client proposal command (parked reply)', () => {
+  let transport: FakeTransport
+  let panels: PanelBus
+  let bridge: ProposalCleanupBridge
+
+  beforeEach(() => {
+    transport = new FakeTransport()
+    panels = new PanelBus()
+    bridge = new ProposalCleanupBridge()
+    void new AgentWSClient(
+      transport as unknown as Transport,
+      bridge as unknown as RendererBridge,
+      {} as unknown as Overlay,
+      panels,
+    )
+  })
+
+  function proposalCmd(id: string, kind: string, summary: string) {
+    return { type: 'proposal', id, payload: { tool: 'proposal', args: { kind, summary } } }
+  }
+
+  it('parks the proposal — no reply sent, signal populated with kind/summary', async () => {
+    await transport.handler!(proposalCmd('p1', 'crop', 'crop outside the good cube'))
+    expect(transport.sent).toEqual([])
+    const state = panels.proposal.get()
+    expect(state).not.toBeNull()
+    expect(state!.kind).toBe('crop')
+    expect(state!.summary).toBe('crop outside the good cube')
+  })
+
+  it('resolve(adjusted, bigger) sends exactly one correlated tool_result then clears the signal', async () => {
+    await transport.handler!(proposalCmd('p2', 'crop', 'crop it'))
+    panels.proposal.get()!.resolve('adjusted', 'bigger')
+    expect(transport.sent).toEqual([
+      { type: 'tool_result', id: 'p2', payload: { ok: true, verdict: 'adjusted', feedback: 'bigger' } },
+    ])
+    expect(panels.proposal.get()).toBeNull()
+  })
+
+  it('complete trace with a pending proposal clears the signal without sending and calls clearProposalBox', async () => {
+    await transport.handler!(proposalCmd('p3', 'crop', 'crop it'))
+    expect(panels.proposal.get()).not.toBeNull()
+    transport.sent = []
+    await transport.handler!({ type: 'complete', payload: {} })
+    expect(panels.proposal.get()).toBeNull()
+    expect(transport.sent).toEqual([])
+    expect(bridge.clearedProposalBox).toBe(1)
+    expect(bridge.clearedSelection).toBe(1)
   })
 })
