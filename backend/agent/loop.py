@@ -41,6 +41,16 @@ from .types import (
 from .verify import silhouette_intact, verify_edit
 
 
+# Destructive spatial ops locked behind an operator-approved proposal (v0.5).
+# One approval unlocks exactly one edit of the matching kind.
+_APPROVAL_GATED: dict[str, str] = {
+    "crop_bbox": "crop_outside_box",
+    "crop_sphere": "crop_outside_box",
+    "delete_selection": "delete_selection",
+    "keep_selection": "delete_selection",
+}
+
+
 class AgentLoop:
     def __init__(
         self,
@@ -66,6 +76,8 @@ class AgentLoop:
         self._ledger = GroundingLedger()
         self._last_metrics: dict | None = None
         self._result = LoopResult(status="init")
+        # Banked operator approvals, per proposal kind (one approval = one edit).
+        self._approvals: dict[str, int] = {}
 
     # -- public -----------------------------------------------------------
     async def run(self, prompt: str) -> LoopResult:
@@ -77,6 +89,7 @@ class AgentLoop:
         self._ledger = GroundingLedger()
         self._last_metrics = None
         self._result = LoopResult(status="running")
+        self._approvals = {}
 
         await self._seed_grounding()
 
@@ -210,6 +223,24 @@ class AgentLoop:
             self._feed_back(call.name, rejection)
             return False
 
+        # Approval gate (v0.5): destructive spatial ops require a banked,
+        # operator-approved proposal of the matching kind. One approval unlocks
+        # exactly one edit. Only in the clean stage — understand rejected these
+        # at the backstop above.
+        if self.stage == "clean" and call.name in _APPROVAL_GATED:
+            kind = _APPROVAL_GATED[call.name]
+            if self._approvals.get(kind, 0) <= 0:
+                rejection = {
+                    "ok": False,
+                    "error": f"{call.name} is locked: get an approved "
+                             f"propose_decision(kind='{kind}') first — preview what "
+                             "you intend to remove, then propose it to the operator",
+                }
+                await self._emit(ev_tool_result(call.name, rejection, step))
+                self._feed_back(call.name, rejection)
+                return False
+            self._approvals[kind] -= 1
+
         if call.name == "answer":
             return await self._try_answer(str(call.args.get("text", "")))
 
@@ -222,6 +253,14 @@ class AgentLoop:
             return False
 
         result = await self.dispatcher.dispatch(call)
+
+        # Bank an operator approval so the next matching edit can pass the gate.
+        if call.name == "propose_decision" and result.get("ok"):
+            payload = result.get("result")
+            if isinstance(payload, dict) and payload.get("verdict") == "approved":
+                kind = str(call.args.get("kind", ""))
+                self._approvals[kind] = self._approvals.get(kind, 0) + 1
+
         await self._emit(ev_tool_result(call.name, result, step))
         self._absorb_result(call.name, result)
         self._feed_back(call.name, result)
