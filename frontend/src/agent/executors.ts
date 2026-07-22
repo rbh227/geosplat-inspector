@@ -8,6 +8,8 @@ import * as THREE from 'three'
 import type { MoveDirection, RendererBridge, RotateDirection, ToolResult } from './types.ts'
 import { animateOrbit, animateTo, clampToCore, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
+import { adjustBox, viewBasisFromCamera } from './proposalBox.ts'
+import type { AdjustOpts, Box } from './proposalBox.ts'
 import type { Overlay } from './overlay.ts'
 // Shared pure selection math — the SAME module the manual SelectionOverlay
 // uses, so agent and human selections resolve identically (R13 parity).
@@ -73,6 +75,34 @@ export class FrontendExecutors {
     if (tool === 'get_selection_state') {
       const summary = this.bridge.getSelectionSummary()
       return { ok: true, count: summary.count, bbox: summary.bbox }
+    }
+
+    // v0.5 — proposal / good-cube surface
+    if (tool === 'get_core_bounds') {
+      const box = this.bridge.getCoreBoundsBox()
+      return box ? { ok: true, ...box } : { ok: false, error: 'no scene loaded' }
+    }
+    if (tool === 'show_box_preview') {
+      const mn = args.min as number[], mx = args.max as number[]
+      if (!Array.isArray(mn) || !Array.isArray(mx) || mn.length !== 3 || mx.length !== 3) {
+        return { ok: false, error: 'min/max must be [x,y,z]' }
+      }
+      this.bridge.showProposalBox(mn, mx)
+      await sleep(350)  // paced so the operator sees it land (SC2)
+      return { ok: true, min: mn, max: mx }
+    }
+    if (tool === 'adjust_box_preview') {
+      const cur = this.bridge.getProposalBox()
+      if (!cur) return { ok: false, error: 'no box preview active — call show_box_preview first' }
+      const basis = viewBasisFromCamera(this.bridge.getCamera())
+      const next = adjustBox(
+        { min: cur.min as Box['min'], max: cur.max as Box['max'] },
+        basis,
+        args as AdjustOpts,
+      )
+      this.bridge.showProposalBox(next.min, next.max)
+      await sleep(350)
+      return { ok: true, min: next.min, max: next.max }
     }
 
     // World-space volume tools (backend coords → render space via the flip).

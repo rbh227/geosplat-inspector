@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import * as THREE from 'three'
 import { AgentWSClient } from './ws-client.ts'
+import { FrontendExecutors } from './executors.ts'
 import type { RendererBridge } from './types.ts'
 import type { Overlay } from './overlay.ts'
 import type { PanelBus } from './panels.ts'
@@ -70,5 +72,72 @@ describe('ws-client movement/rotation routing (reads p.args)', () => {
       await transport.handler!(movementCmd('rotation_input', input))
       expect(bridge.rots).toContainEqual([expected, true])
     }
+  })
+})
+
+/**
+ * v0.5 proposal / good-cube surface: the three selection_tool cases that seed a
+ * crop box from the detected core and preview/adjust it view-relatively. Driven
+ * straight through runSelectionTool with a stub bridge (no transport needed).
+ */
+class ProposalBridge {
+  coreBox: { min: number[]; max: number[]; count: number } | null = { min: [0, 0, 0], max: [2, 2, 2], count: 42 }
+  proposal: { min: number[]; max: number[] } | null = null
+  shown: Array<{ min: number[]; max: number[] }> = []
+  getCoreBoundsBox() { return this.coreBox }
+  showProposalBox(min: number[], max: number[]): void {
+    this.proposal = { min, max }
+    this.shown.push({ min, max })
+  }
+  clearProposalBox(): void { this.proposal = null }
+  getProposalBox() { return this.proposal }
+  getCamera(): THREE.PerspectiveCamera { return new THREE.PerspectiveCamera() }
+}
+
+describe('runSelectionTool v0.5 proposal tools', () => {
+  let bridge: ProposalBridge
+  let ex: FrontendExecutors
+
+  beforeEach(() => {
+    bridge = new ProposalBridge()
+    ex = new FrontendExecutors(bridge as unknown as RendererBridge, {} as unknown as Overlay)
+  })
+
+  it('get_core_bounds returns the seeded core box', async () => {
+    const r = await ex.runSelectionTool('get_core_bounds', {})
+    expect(r).toEqual({ ok: true, min: [0, 0, 0], max: [2, 2, 2], count: 42 })
+  })
+
+  it('get_core_bounds returns an error when no scene is loaded', async () => {
+    bridge.coreBox = null
+    const r = await ex.runSelectionTool('get_core_bounds', {})
+    expect(r).toEqual({ ok: false, error: 'no scene loaded' })
+  })
+
+  it('show_box_preview shows the box and echoes it', async () => {
+    const r = await ex.runSelectionTool('show_box_preview', { min: [0, 0, 0], max: [2, 2, 2] })
+    expect(r).toEqual({ ok: true, min: [0, 0, 0], max: [2, 2, 2] })
+    expect(bridge.proposal).toEqual({ min: [0, 0, 0], max: [2, 2, 2] })
+  })
+
+  it('show_box_preview rejects a malformed box', async () => {
+    const r = await ex.runSelectionTool('show_box_preview', { min: [0, 0], max: [2, 2, 2] })
+    expect(r).toEqual({ ok: false, error: 'min/max must be [x,y,z]' })
+    expect(bridge.proposal).toBeNull()
+  })
+
+  it('adjust_box_preview with no active box returns an error', async () => {
+    const r = await ex.runSelectionTool('adjust_box_preview', { grow: 2 })
+    expect(r).toEqual({ ok: false, error: 'no box preview active — call show_box_preview first' })
+  })
+
+  it('adjust_box_preview grows the active box about its center and re-shows it', async () => {
+    bridge.proposal = { min: [0, 0, 0], max: [2, 2, 2] }
+    const r = await ex.runSelectionTool('adjust_box_preview', { grow: 2 }) as { ok: boolean; min: number[]; max: number[] }
+    expect(r.ok).toBe(true)
+    // uniform grow=2 about center [1,1,1] -> half-extent doubles to 2 each axis
+    expect(r.min).toEqual([-1, -1, -1])
+    expect(r.max).toEqual([3, 3, 3])
+    expect(bridge.proposal).toEqual({ min: [-1, -1, -1], max: [3, 3, 3] })
   })
 })
