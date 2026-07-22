@@ -282,11 +282,29 @@ def test_delete_selection_gated_on_delete_selection_kind():
     assert len(_rejections(result, "delete_selection")) == 1
 
 
-def test_keep_selection_shares_the_delete_selection_kind():
+def test_keep_selection_requires_its_own_kind():
+    """keep_selection deletes everything EXCEPT the selection — materially
+    different consent than delete_selection, so a delete approval must NOT
+    unlock it (Codex adversarial review)."""
     executor = RecordingExecutor()
     channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
     provider = MockProvider(script=[
         tool_turn(("propose_decision", {"kind": "delete_selection"})),
+        tool_turn(("keep_selection", {})),  # wrong consent — must stay locked
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+    assert result.status == "answered"
+    assert executor.edit_calls == []
+    rej = _rejections(result, "keep_selection")
+    assert rej and "keep_only_selection" in str(rej[0]["result"]["error"])
+
+
+def test_keep_only_selection_kind_unlocks_keep_selection():
+    executor = RecordingExecutor()
+    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {"kind": "keep_only_selection"})),
         tool_turn(("keep_selection", {})),
         tool_turn(("answer", {"text": "done"})),
     ])
@@ -294,6 +312,20 @@ def test_keep_selection_shares_the_delete_selection_kind():
     assert result.status == "answered"
     assert executor.edit_calls == ["keep_selection"]
     assert _rejections(result, "keep_selection") == []
+
+
+def test_keep_only_kind_does_not_unlock_delete_selection():
+    executor = RecordingExecutor()
+    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {"kind": "keep_only_selection"})),
+        tool_turn(("delete_selection", {})),  # inverse substitution — locked
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+    assert result.status == "answered"
+    assert executor.edit_calls == []
+    assert _rejections(result, "delete_selection")
 
 
 def test_delete_kind_does_not_unlock_a_crop():

@@ -178,8 +178,11 @@ Operating rules:
   approves a matching propose_decision, and the approval authorizes EXACTLY
   what the operator reviewed — the app enforces it. Kind 'crop_outside_box'
   requires a previewed box (show_box_preview first) and the crop runs on THAT
-  box regardless of what you pass. Kind 'delete_selection' binds the tinted
-  selection as reviewed — changing the selection after approval voids it.
+  box regardless of what you pass. Kind 'delete_selection' unlocks ONLY
+  delete_selection; kind 'keep_only_selection' unlocks ONLY keep_selection
+  (which deletes everything EXCEPT the selection — never substitute one for
+  the other). Both bind the tinted selection as reviewed — changing the
+  selection after approval voids it.
   Kind 'bulk_edit' must name the sweep in the operation field (tool +
   params) and only that sweep with those parameters will run. One approval =
   one edit.

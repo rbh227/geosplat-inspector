@@ -206,6 +206,30 @@ describe('ws-client proposal command (parked reply)', () => {
     expect(panels.proposal.get()).toBeNull()
   })
 
+  it('carries the canonical operation through to the ProposalState (summary can lie; operation cannot)', async () => {
+    await transport.handler!({
+      type: 'proposal', id: 'p7',
+      payload: {
+        tool: 'proposal',
+        args: {
+          kind: 'bulk_edit',
+          summary: 'gentle cleanup',  // model-authored — may disagree with the payload
+          operation: { tool: 'remove_outliers', params: { k: 8, std_ratio: 2 } },
+        },
+      },
+    })
+    const state = panels.proposal.get()
+    expect(state!.operation).toEqual({ tool: 'remove_outliers', params: { k: 8, std_ratio: 2 } })
+  })
+
+  it('a malformed operation (no tool string) surfaces as null, never a broken object', async () => {
+    await transport.handler!({
+      type: 'proposal', id: 'p8',
+      payload: { tool: 'proposal', args: { kind: 'bulk_edit', summary: 's', operation: { params: { k: 1 } } } },
+    })
+    expect(panels.proposal.get()!.operation).toBeNull()
+  })
+
   it('a second proposal never clobbers a parked one — it is reply-rejected immediately', async () => {
     await transport.handler!(proposalCmd('p5', 'crop', 'first — awaiting review'))
     await transport.handler!(proposalCmd('p6', 'crop', 'second — must not park'))

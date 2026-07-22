@@ -52,8 +52,17 @@ outline, persistent selection tint, paced strokes.
   approval time; if the selection changes before the delete, the approval is
   void and the agent must re-propose. `bulk_edit` proposals must name the
   sweep in `operation: {tool, params}`; only that tool runs, with the
-  reviewed params. Checks run before consumption, so a mismatched call
-  leaves the approval intact for the correct retry.
+  reviewed params, and the ProposalCard renders the canonical operation
+  verbatim ("Will run exactly: ...") so the operator reviews the real
+  payload, not just the model-authored summary. Checks run before
+  consumption, so a mismatched call leaves the approval intact for the
+  correct retry. `keep_selection` (deletes everything EXCEPT the selection)
+  has its own kind `keep_only_selection` — materially different consent than
+  `delete_selection`, never interchangeable.
+- **Scene-load race guard (Codex adversarial review):** every load path
+  (mount restore, file, demo, URL) claims a monotonic generation; a
+  continuation that no longer owns the latest generation never mutates
+  viewer or scene state, so restoring cannot clobber a newly chosen scene.
 - **One run per scene (Codex adversarial review):** `/agent/run` returns 409
   while a run is active for the scene; the chat input refuses new tasks for
   the whole run lifetime (not just while a proposal is parked); the frontend
@@ -77,7 +86,7 @@ Four new tools, all `runs_on: "frontend"`, **Clean-stage only** (excluded from
 | `get_core_bounds` | — | `{min: [x,y,z], max: [x,y,z], count}` — 5th–95th percentile per-axis box (existing `robustBounds`), backend coords |
 | `show_box_preview` | `{min, max}` backend coords | `{ok}` — renders persistent SDF dim + wireframe outline until cleared/replaced/run end |
 | `adjust_box_preview` | `{grow?: number, grow_axes?: [gx,gy,gz], shift?: [right,up,forward]}` — view-relative, units of box size | `{ok, min, max}` — new box after frontend maps view→world via operator camera basis |
-| `propose_decision` | `{kind: 'crop_outside_box'\|'delete_selection'\|'bulk_edit', summary: string}` | `{verdict: 'approved'\|'rejected'\|'adjusted', feedback?: string}` — blocks until operator responds |
+| `propose_decision` | `{kind: 'crop_outside_box'\|'delete_selection'\|'keep_only_selection'\|'bulk_edit', summary: string}` | `{verdict: 'approved'\|'rejected'\|'adjusted', feedback?: string}` — blocks until operator responds |
 
 ## 2. Proposal machinery
 

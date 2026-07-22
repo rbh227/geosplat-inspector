@@ -85,6 +85,10 @@ export default function App() {
   const panelsRef = useRef<PanelBus | null>(null)
   const sceneIdRef = useRef<string | null>(null)
   const hasSceneRef = useRef(false) // mirrors hasScene for stale-closure-free reads
+  // Monotonic scene-load generation: every load path (mount restore, file,
+  // demo, URL) claims a new generation; a continuation that no longer owns the
+  // latest generation must not mutate viewer or scene state.
+  const loadGenRef = useRef(0)
   // Large real-world scenes can take up to ~60s to upload+parse on the backend
   // (confirmed: 675MB/3M-gaussian scene ≈ 60s). Without this, a prompt typed
   // during that window sees sceneId===null and wrongly reports "view-only".
@@ -125,15 +129,23 @@ export default function App() {
   // On mount, restore the last backend scene if it still exists. Probe /ids
   // first (cheap JSON, 404s when the backend has lost the scene) so a stale
   // record falls back to the empty state instead of a hung load.
+  //
+  // Load-generation guard (Codex adversarial review): every load path — this
+  // restore AND every user-initiated load — claims a monotonic generation.
+  // After each await, the restore proceeds only while it still owns the
+  // latest generation, so choosing a new scene mid-restore can never be
+  // clobbered by the stale continuation (success OR failure path).
   useEffect(() => {
     const rec = loadPersistedScene()
     if (!rec) return
-    let cancelled = false
+    const gen = ++loadGenRef.current
+    const owns = () => loadGenRef.current === gen
     void (async () => {
       try {
         const ids = await getAliveIds(rec.sceneId)
-        if (cancelled) return
+        if (!owns()) return
         await viewerRef.current?.loadSplat(scenePlyUrl(rec.sceneId))
+        if (!owns()) return
         viewerRef.current?.setIdMapFromIds(ids)
         sceneIdRef.current = rec.sceneId
         setBackendSceneId(rec.sceneId)
@@ -148,14 +160,14 @@ export default function App() {
       } catch (err) {
         console.warn('[persistence] scene restore failed; starting fresh:', err)
         clearPersistedScene()
-        if (!cancelled) {
+        if (owns()) {
           setHasScene(false)
           setBackendSceneId(null)
           sceneIdRef.current = null
         }
       }
     })()
-    return () => { cancelled = true }
+    return () => { ++loadGenRef.current } // unmount invalidates too
   }, [])
 
   // Persist the latest camera pose as the page unloads, so a refresh lands the
@@ -410,6 +422,7 @@ export default function App() {
 
   // Render a File locally AND register it with the backend so the agent works.
   const loadFile = useCallback((file: File) => {
+    ++loadGenRef.current // invalidate any pending restore/load continuation
     setHasScene(true)
     void (async () => {
       try {
@@ -427,6 +440,7 @@ export default function App() {
 
   // Render a splat by URL, view-only (no backend scene).
   const loadUrl = useCallback((url: string, label: string) => {
+    ++loadGenRef.current // invalidate any pending restore/load continuation
     setHasScene(true)
     disposeAgent()
     sceneIdRef.current = null
@@ -453,6 +467,7 @@ export default function App() {
       loadUrl(demo.url, demo.name)
       return
     }
+    ++loadGenRef.current // invalidate a pending restore even before the fetch resolves
     setHasScene(true)
     try {
       const res = await fetch(demo.url)

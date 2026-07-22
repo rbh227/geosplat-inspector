@@ -139,8 +139,22 @@ export class AgentWSClient {
           break
         }
         case 'proposal': {
-          const { args } = p as unknown as { args: { kind: string; summary: string } }
+          const { args } = p as unknown as {
+            args: { kind: string; summary: string; operation?: { tool?: unknown; params?: unknown } }
+          }
           const id = cmd.id
+          // Carry the canonical operation to the card (Codex adversarial
+          // review): the operator must review the real payload the backend
+          // binds the approval to, not only the model-authored summary.
+          const rawOp = args?.operation
+          const operation = rawOp && typeof rawOp.tool === 'string'
+            ? {
+                tool: rawOp.tool,
+                params: rawOp.params && typeof rawOp.params === 'object'
+                  ? rawOp.params as Record<string, unknown>
+                  : undefined,
+              }
+            : null
           // Never replace a parked proposal (Codex adversarial review): the
           // first resolver would be orphaned and its no-timeout future would
           // hang forever. Single-run enforcement makes this unreachable in
@@ -159,6 +173,7 @@ export class AgentWSClient {
           this.panels.setProposal({
             kind: args?.kind ?? '',
             summary: args?.summary ?? '',
+            operation,
             resolve: (verdict, feedback) => {
               if (done) return
               done = true

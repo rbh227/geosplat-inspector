@@ -232,7 +232,11 @@ TOOL_REGISTRY: list[ToolEntry] = [
     ToolEntry("propose_decision", "frontend", {
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "enum": ["crop_outside_box", "delete_selection", "bulk_edit"]},
+            "kind": {"type": "string",
+                     "enum": ["crop_outside_box", "delete_selection", "keep_only_selection", "bulk_edit"],
+                     "description": "delete_selection deletes the selected splats; "
+                                    "keep_only_selection deletes everything EXCEPT them — "
+                                    "materially different consent, so distinct kinds"},
             "summary": {"type": "string",
                         "description": "One or two sentences the operator reads before deciding"},
             "operation": {

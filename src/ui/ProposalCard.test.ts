@@ -14,6 +14,12 @@ describe('proposalTitle', () => {
     expect(proposalTitle('bulk_edit')).toBe('Run this scene-wide cleanup?')
   })
 
+  it('maps keep_only_selection to the inverse-delete question — the consent difference must be explicit', () => {
+    expect(proposalTitle('keep_only_selection')).toBe(
+      'Keep ONLY the highlighted splats — delete everything else?',
+    )
+  })
+
   it('falls back to a generic question for unknown kinds', () => {
     expect(proposalTitle('some_future_kind')).toBe('Apply this edit?')
   })

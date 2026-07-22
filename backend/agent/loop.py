@@ -47,7 +47,9 @@ _APPROVAL_GATED: dict[str, str] = {
     "crop_bbox": "crop_outside_box",
     "crop_sphere": "crop_outside_box",
     "delete_selection": "delete_selection",
-    "keep_selection": "delete_selection",
+    # Keep-only DELETES EVERYTHING ELSE — materially different consent than
+    # deleting the selection, so it has its own kind (Codex adversarial review).
+    "keep_selection": "keep_only_selection",
     # Statistical cleaners delete splats too — "every delete is reviewed"
     # (operator decision, 2026-07-22): one bulk_edit approval per sweep.
     "opacity_threshold": "bulk_edit",
@@ -61,6 +63,10 @@ _APPROVAL_GATED: dict[str, str] = {
 _BULK_SWEEPS: frozenset[str] = frozenset(
     {"opacity_threshold", "remove_outliers", "prune_oversized", "remove_needles"}
 )
+
+# Kinds whose reviewed artifact is the current selection (ID snapshot at
+# approval; void if the selection changes before the edit).
+_SELECTION_KINDS: frozenset[str] = frozenset({"delete_selection", "keep_only_selection"})
 
 
 class AgentLoop:
@@ -322,7 +328,7 @@ class AgentLoop:
                 call.args.update(approved_params)
                 self._approvals[kind] -= 1
                 self._approved_sweep = None
-            elif kind == "delete_selection":
+            elif kind in _SELECTION_KINDS:
                 current = await self._pull_selection_ids()
                 if current is None or current != self._approved_ids:
                     # The reviewed selection is gone — the approval reviews nothing
@@ -520,7 +526,7 @@ class AgentLoop:
                     f"is one of {sorted(_BULK_SWEEPS)}."
                 )
             self._approved_sweep = {"tool": tool, "params": dict(op.get("params") or {})}
-        elif kind == "delete_selection":
+        elif kind in _SELECTION_KINDS:
             ids = await self._pull_selection_ids()
             if not ids:
                 return (

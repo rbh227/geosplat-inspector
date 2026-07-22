@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Crop, Eraser, HelpCircle, SendHorizonal, Sparkles } from 'lucide-react'
+import { Crop, Eraser, Focus, HelpCircle, SendHorizonal, Sparkles } from 'lucide-react'
 import type { ProposalState } from '@agent'
 import Button from './Button'
 import { proposalTitle } from './proposalTitle'
@@ -13,6 +13,7 @@ interface ProposalCardProps {
 const KIND_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   crop_outside_box: Crop,
   delete_selection: Eraser,
+  keep_only_selection: Focus,
   bulk_edit: Sparkles,
 }
 
@@ -48,6 +49,18 @@ export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) 
       <p className="text-xs text-text-secondary leading-relaxed">
         {proposal.summary}
       </p>
+
+      {/* The canonical operation the approval authorizes — shown verbatim so
+          the operator reviews the real payload, never just the summary. */}
+      {proposal.operation && (
+        <p className="text-xs font-mono text-text-primary bg-bg-elevated border border-border-subtle rounded-lg px-2 py-1.5">
+          Will run exactly:{' '}
+          <span className="text-accent-amber">{proposal.operation.tool}</span>
+          {proposal.operation.params && Object.keys(proposal.operation.params).length > 0
+            ? ` ${JSON.stringify(proposal.operation.params)}`
+            : ''}
+        </p>
+      )}
 
       {/* Approve / Reject */}
       <div className="flex items-center gap-2">

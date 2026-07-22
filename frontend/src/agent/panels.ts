@@ -19,6 +19,10 @@ export interface Capability {
 export interface ProposalState {
   kind: string
   summary: string
+  /** For bulk_edit: the exact operation the approval authorizes — rendered on
+   *  the card so the operator reviews the real payload, never just the
+   *  model-authored summary (Codex adversarial review). */
+  operation?: { tool: string; params?: Record<string, unknown> } | null
   resolve: (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => void
 }
 
