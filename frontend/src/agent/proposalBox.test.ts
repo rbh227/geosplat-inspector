@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { adjustBox, viewBasisFromCamera } from './proposalBox.ts'
+import { adjustBox, projectBoxToScreen, viewBasisFromCamera } from './proposalBox.ts'
 import type { Box, ViewBasis } from './proposalBox.ts'
+import { composeMatrices } from '../../../src/viewer/selection.ts'
 
 // An axis-aligned backend basis: right=+x, up=+y, forward=-z (the operator
 // looking down -z, the render→backend involution already applied).
@@ -95,5 +96,58 @@ describe('viewBasisFromCamera', () => {
     expect(out.min[2]).toBe(-1)
     expect(out.max[2]).toBe(1)
     expect(out.min[0]).not.toBe(-1) // x did move
+  })
+})
+
+// The same composeMatrices product executors.projectCenters builds, so the
+// box's ruler math resolves through the identical view-projection the
+// screen-space selection tools use.
+function viewProjFor(cam: THREE.PerspectiveCamera): number[] {
+  cam.updateMatrixWorld()
+  return composeMatrices(
+    Array.from(cam.projectionMatrix.elements),
+    Array.from(cam.matrixWorldInverse.elements),
+  )
+}
+
+describe('projectBoxToScreen', () => {
+  it('centers an origin unit box for a +z camera looking at the origin', () => {
+    const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+    cam.position.set(0, 0, 5)
+    cam.lookAt(0, 0, 0)
+    const bs = projectBoxToScreen(UNIT_BOX, viewProjFor(cam), 800, 800)!
+    expect(bs).not.toBeNull()
+    expect(bs.behind_camera).toBe(false)
+    expect(bs.center[0]).toBeCloseTo(0.5, 5)
+    expect(bs.center[1]).toBeCloseTo(0.5, 5)
+    // a 2-wide box at distance 5, fov 60 fills < a frame → nothing offscreen
+    expect(bs.offscreen_edges).toEqual([])
+    expect(bs.width).toBeGreaterThan(0)
+    expect(bs.width).toBeLessThan(1)
+  })
+
+  it('flags "left" when the box sits far off the left edge', () => {
+    const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+    cam.position.set(0, 0, 5)
+    cam.lookAt(0, 0, 0)
+    // centered at x=-10 (backend): render keeps x, camera-right is +x, so it
+    // projects far to the left of the frame
+    const box: Box = { min: [-11, -1, -1], max: [-9, 1, 1] }
+    const bs = projectBoxToScreen(box, viewProjFor(cam), 800, 800)!
+    expect(bs.behind_camera).toBe(false)
+    expect(bs.offscreen_edges).toContain('left')
+    expect(bs.offscreen_edges).not.toContain('right')
+  })
+
+  it('reports behind_camera with a zeroed rect when the camera looks away', () => {
+    const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+    cam.position.set(0, 0, 5)
+    cam.lookAt(0, 0, 10) // looking +z, away from the origin box behind it
+    const bs = projectBoxToScreen(UNIT_BOX, viewProjFor(cam), 800, 800)!
+    expect(bs.behind_camera).toBe(true)
+    expect(bs.width).toBe(0)
+    expect(bs.height).toBe(0)
+    expect(bs.center).toEqual([0, 0])
+    expect(bs.offscreen_edges).toEqual([])
   })
 })

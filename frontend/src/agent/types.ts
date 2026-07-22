@@ -7,6 +7,7 @@
  */
 import type * as THREE from 'three'
 import type { FrontendToolName } from '../contracts.ts'
+import type { BoxScreen } from './proposalBox.ts'
 
 export type { FrontendToolName } from '../contracts.ts'
 
@@ -71,6 +72,9 @@ export interface PerceptTag {
   /** Fraction of the view the scene fills (0..1). ~0.4-0.7 well-framed;
    *  <0.15 too far, >0.9 too close. Lets the agent judge zoom without guessing. */
   coverage: number
+  /** The proposal box's projected footprint — present only when a box preview
+   *  is active. The box as the model's on-screen ruler (see projectBoxToScreen). */
+  box_screen?: BoxScreen
 }
 
 export type ToolResult =

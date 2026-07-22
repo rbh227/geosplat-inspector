@@ -5,10 +5,10 @@
  * the trail. Captures go through the R1-hardened PNG path.
  */
 import * as THREE from 'three'
-import type { MoveDirection, RendererBridge, RotateDirection, ToolResult } from './types.ts'
+import type { MoveDirection, PerceptTag, RendererBridge, RotateDirection, ToolResult } from './types.ts'
 import { animateOrbit, animateTo, clampToCore, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
-import { adjustBox, viewBasisFromCamera } from './proposalBox.ts'
+import { adjustBox, projectBoxToScreen, viewBasisFromCamera } from './proposalBox.ts'
 import type { AdjustOpts, Box } from './proposalBox.ts'
 import type { Overlay } from './overlay.ts'
 // Shared pure selection math — the SAME module the manual SelectionOverlay
@@ -321,15 +321,30 @@ export class FrontendExecutors {
     const png_base64 = dataUrlToBase64(await capturePNG(this.bridge))
     const { position, target } = this.bridge.getCameraPose()
     const coverage = sceneCoverage(position.clone(), this.bridge.getCamera().fov, this.bridge.getSceneCore())
-    return {
-      png_base64,
-      percept: {
-        position: [position.x, position.y, position.z],
-        target: [target.x, target.y, target.z],
-        revision: this.bridge.getSceneRevision(),
-        coverage: Math.round(coverage * 100) / 100,
-      },
+    const percept: PerceptTag = {
+      position: [position.x, position.y, position.z],
+      target: [target.x, target.y, target.z],
+      revision: this.bridge.getSceneRevision(),
+      coverage: Math.round(coverage * 100) / 100,
     }
+    // When a crop-proposal box is live, tag the capture with its projected
+    // footprint — the box becomes the model's on-screen ruler (deterministic,
+    // through the same camera matrices the screen-space selection tools use).
+    const pbox = this.bridge.getProposalBox()
+    if (pbox) {
+      const cam = this.bridge.getCamera()
+      cam.updateMatrixWorld()
+      const el = this.bridge.getRenderer().domElement
+      const w = el.clientWidth || el.width
+      const h = el.clientHeight || el.height
+      const viewProj = composeMatrices(
+        Array.from(cam.projectionMatrix.elements),
+        Array.from(cam.matrixWorldInverse.elements),
+      )
+      const bs = projectBoxToScreen({ min: pbox.min, max: pbox.max } as Box, viewProj, w, h)
+      if (bs) percept.box_screen = bs
+    }
+    return { png_base64, percept }
   }
 
   async capture_orbit(args: { center: number[]; n: number; radius?: number }): Promise<ToolResult> {

@@ -117,6 +117,96 @@ function toBackendUnit(v: Vec3): Vec3 {
   return normalize([v[0], -v[1], -v[2]])
 }
 
+// A clip-w this small or smaller means the point is on/behind the camera plane
+// and never projects — matches projectToScreen in src/viewer/selection.ts.
+const W_EPSILON = 1e-6
+
+/**
+ * The projected footprint of the proposal box, as the model reads it off a
+ * screenshot: a viewport-normalized rect plus flags for the frame edges it
+ * spills past. This is the box's on-screen ruler — deterministic, no renderer
+ * state — so the agent can judge "how big / where" from the picture alone.
+ */
+export interface BoxScreen {
+  /** Rect center, viewport-normalized [u,v] and clamped to [0,1]. */
+  center: [number, number]
+  /** Rect width as a fraction of frame width (0..). */
+  width: number
+  /** Rect height as a fraction of frame height (0..). */
+  height: number
+  /** Frame edges the UNCLAMPED rect crosses (box spills offscreen there). */
+  offscreen_edges: Array<'left' | 'right' | 'top' | 'bottom'>
+  /** True when all 8 corners are behind the camera (rect is zeroed). */
+  behind_camera: boolean
+}
+
+/** The 8 corners of an axis-aligned box (backend coords). */
+function boxCorners(box: Box): Vec3[] {
+  const { min, max } = box
+  const corners: Vec3[] = []
+  for (const x of [min[0], max[0]]) {
+    for (const y of [min[1], max[1]]) {
+      for (const z of [min[2], max[2]]) corners.push([x, y, z])
+    }
+  }
+  return corners
+}
+
+/**
+ * Project a backend-coord box to its screen footprint through the SAME
+ * column-major view-projection `executors.projectCenters` builds.
+ *
+ * Each corner is converted backend→render (negate y,z — the `toRenderSpace`
+ * involution in ./camera.ts), then projected. Corners on/behind the camera are
+ * dropped; if none survive the box is `behind_camera` with a zeroed rect.
+ * Otherwise we take the 2D bounding rect of the in-front corners, normalize by
+ * (w,h), clamp only `center` to [0,1], and flag every frame edge the UNCLAMPED
+ * rect crosses.
+ */
+export function projectBoxToScreen(
+  boxBackend: Box,
+  viewProj: number[],
+  w: number,
+  h: number,
+): BoxScreen | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let anyFront = false
+  for (const [bx, by, bz] of boxCorners(boxBackend)) {
+    // backend → render: negate y,z (same involution as toRenderSpace)
+    const x = bx, y = -by, z = -bz
+    const clipW = viewProj[3] * x + viewProj[7] * y + viewProj[11] * z + viewProj[15]
+    if (clipW <= W_EPSILON) continue // on/behind the camera
+    anyFront = true
+    const clipX = viewProj[0] * x + viewProj[4] * y + viewProj[8] * z + viewProj[12]
+    const clipY = viewProj[1] * x + viewProj[5] * y + viewProj[9] * z + viewProj[13]
+    const px = (clipX / clipW * 0.5 + 0.5) * w
+    const py = (-clipY / clipW * 0.5 + 0.5) * h // pixel space, origin top-left
+    if (px < minX) minX = px
+    if (px > maxX) maxX = px
+    if (py < minY) minY = py
+    if (py > maxY) maxY = py
+  }
+
+  if (!anyFront) {
+    return { center: [0, 0], width: 0, height: 0, offscreen_edges: [], behind_camera: true }
+  }
+
+  const offscreen_edges: Array<'left' | 'right' | 'top' | 'bottom'> = []
+  if (minX < 0) offscreen_edges.push('left')
+  if (maxX > w) offscreen_edges.push('right')
+  if (minY < 0) offscreen_edges.push('top')
+  if (maxY > h) offscreen_edges.push('bottom')
+
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+  return {
+    center: [clamp01((minX + maxX) / 2 / w), clamp01((minY + maxY) / 2 / h)],
+    width: (maxX - minX) / w,
+    height: (maxY - minY) / h,
+    offscreen_edges,
+    behind_camera: false,
+  }
+}
+
 /**
  * Extract the camera's world basis in BACKEND coords.
  *
