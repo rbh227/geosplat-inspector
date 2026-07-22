@@ -1161,6 +1161,7 @@ export class SceneManager implements ViewerHandle {
       if (this.proposalWire) this.splatMesh.remove(this.proposalWire)
     }
     this.proposalWire?.geometry.dispose()
+    ;(this.proposalWire?.material as THREE.LineBasicMaterial | undefined)?.dispose()
     this.proposalEdit = null; this.proposalWire = null
     this.proposalBoxState = null
   }
