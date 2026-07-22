@@ -141,6 +141,17 @@ export class AgentWSClient {
         case 'proposal': {
           const { args } = p as unknown as { args: { kind: string; summary: string } }
           const id = cmd.id
+          // Never replace a parked proposal (Codex adversarial review): the
+          // first resolver would be orphaned and its no-timeout future would
+          // hang forever. Single-run enforcement makes this unreachable in
+          // protocol; reply-reject defensively rather than clobber.
+          if (this.panels.proposal.get()) {
+            this.transport.send({
+              type: 'tool_result', id,
+              payload: { ok: false, verdict: 'rejected', feedback: 'another proposal is already awaiting review' },
+            } as WSResponse)
+            break
+          }
           // Latch the resolver: a rapid double-click on the ProposalCard must
           // never send two tool_results for the same id. The exactly-one-reply
           // invariant is guaranteed here, not delegated to the caller.

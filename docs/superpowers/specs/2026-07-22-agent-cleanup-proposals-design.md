@@ -43,11 +43,25 @@ outline, persistent selection tint, paced strokes.
   proposal kind `bulk_edit` (one approval = one sweep; the proposal summary
   names the tool and parameters). "Every delete is reviewed" holds for the
   whole registry.
-- **Approval binding (final review, Fix 2):** a `crop_outside_box` approval
-  binds the box the operator actually reviewed — the loop overrides the
-  model's `crop_bbox` args with the approved box (narrated honestly) and
-  rejects `crop_sphere` against a box approval. `delete_selection` binds the
-  reviewed count but not exact IDs (tracked follow-up).
+- **Approval binding (final review Fix 2 + Codex adversarial review):** an
+  approval authorizes the exact reviewed OPERATION, never a category.
+  `crop_outside_box` requires a previewed box at approval time (unpreviewed
+  approvals are refused at banking) and the crop runs on that box — model
+  args are overridden with an honest narrate; `crop_sphere` is rejected
+  against a box approval. `delete_selection` snapshots the selection IDs at
+  approval time; if the selection changes before the delete, the approval is
+  void and the agent must re-propose. `bulk_edit` proposals must name the
+  sweep in `operation: {tool, params}`; only that tool runs, with the
+  reviewed params. Checks run before consumption, so a mismatched call
+  leaves the approval intact for the correct retry.
+- **One run per scene (Codex adversarial review):** `/agent/run` returns 409
+  while a run is active for the scene; the chat input refuses new tasks for
+  the whole run lifetime (not just while a proposal is parked); the frontend
+  never replaces a parked proposal — a second `proposal` command is
+  reply-rejected immediately.
+- **Core-box sampling (Codex adversarial review):** `getCoreBoundsBox`
+  samples with the same 100k-point stride cap as the framing path; `count`
+  is stride-scaled (exact below 100k splats, an estimate above).
 
 ## 1. Contract extension (v0.5)
 

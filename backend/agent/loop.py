@@ -56,6 +56,12 @@ _APPROVAL_GATED: dict[str, str] = {
     "remove_needles": "bulk_edit",
 }
 
+# The sweeps a bulk_edit proposal may name in its `operation` — a bulk approval
+# authorizes exactly one named sweep with the reviewed parameters.
+_BULK_SWEEPS: frozenset[str] = frozenset(
+    {"opacity_threshold", "remove_outliers", "prune_oversized", "remove_needles"}
+)
+
 
 class AgentLoop:
     def __init__(
@@ -84,12 +90,17 @@ class AgentLoop:
         self._result = LoopResult(status="init")
         # Banked operator approvals, per proposal kind (one approval = one edit).
         self._approvals: dict[str, int] = {}
-        # Fix 2 (final review): approvals bind the REVIEWED artifact, not just the
-        # kind. `_previewed_box` tracks the last box shown/adjusted via preview;
-        # `_approved_box` is the box captured when a crop_outside_box approval was
-        # banked, and it overrides whatever coordinates the model later passes.
+        # Approvals bind the REVIEWED OPERATION, not just a kind (final review
+        # Fix 2 + Codex adversarial review): `_previewed_box` tracks the last box
+        # shown/adjusted via preview; the `_approved_*` fields hold the exact
+        # artifact the operator reviewed, captured at approval-banking time.
+        # Approvals that would bind nothing (no preview, no named sweep, empty
+        # selection) are REFUSED at banking, so the enforcement branch can rely
+        # on the artifact being present.
         self._previewed_box: dict | None = None
         self._approved_box: dict | None = None
+        self._approved_sweep: dict | None = None      # {"tool": str, "params": dict}
+        self._approved_ids: frozenset[int] | None = None
 
     # -- public -----------------------------------------------------------
     async def run(self, prompt: str) -> LoopResult:
@@ -104,6 +115,8 @@ class AgentLoop:
         self._approvals = {}
         self._previewed_box = None
         self._approved_box = None
+        self._approved_sweep = None
+        self._approved_ids = None
 
         await self._seed_grounding()
 
@@ -253,24 +266,14 @@ class AgentLoop:
                 await self._emit(ev_tool_result(call.name, rejection, step))
                 self._feed_back(call.name, rejection)
                 return False
-            self._approvals[kind] -= 1
-
-            # Fix 2: bind the reviewed artifact to the edit. When the operator
-            # approved a crop_outside_box, the reviewed artifact is a specific
-            # box — enforce it deterministically instead of trusting the model
-            # to re-pass the same coordinates.
-            #   crop_bbox  -> override min/max with the approved box.
-            #   crop_sphere-> reject (the reviewed artifact is a box, not a
-            #                 sphere) and refund the approval so a crop_bbox
-            #                 retry can still consume it.
-            # delete_selection/keep_selection bind no extra state here: the
-            # selection is resolved to IDs as-of-now at dispatch time, so the
-            # approval binds the COUNT the operator reviewed but not the exact
-            # IDs (known looseness — full ID-binding is tracked follow-up work,
-            # see the 2026-07-22 final review).
-            if kind == "crop_outside_box" and self._approved_box is not None:
+            # Bind the reviewed OPERATION to the edit (Codex adversarial review):
+            # an approval authorizes exactly the artifact the operator saw, never
+            # a category. Checks run BEFORE the approval is consumed, so a
+            # mismatched call leaves it intact for the correct retry; consuming
+            # clears the bound artifact (one approval = one edit).
+            if kind == "crop_outside_box":
+                # Banking refuses box approvals without a preview, so the box is set.
                 if call.name == "crop_sphere":
-                    self._approvals[kind] += 1  # refund: still spendable via crop_bbox
                     rejection = {
                         "ok": False,
                         "error": "the operator reviewed a box, not a sphere — "
@@ -280,15 +283,65 @@ class AgentLoop:
                     await self._emit(ev_tool_result(call.name, rejection, step))
                     self._feed_back(call.name, rejection)
                     return False
-                approved_min = self._approved_box["min"]
-                approved_max = self._approved_box["max"]
+                approved_min = self._approved_box["min"] if self._approved_box else None
+                approved_max = self._approved_box["max"] if self._approved_box else None
+                if approved_min is None or approved_max is None:
+                    # Defensive: should be unreachable (banking requires a preview).
+                    rejection = {"ok": False, "error": "no reviewed box on record — propose_decision again after show_box_preview"}
+                    await self._emit(ev_tool_result(call.name, rejection, step))
+                    self._feed_back(call.name, rejection)
+                    return False
                 if call.args.get("min") != approved_min or call.args.get("max") != approved_max:
                     await self._emit(ev_narrate(
                         f"Cropping to the box the operator approved (min {approved_min}, "
                         f"max {approved_max}), overriding the model's requested box."
                     ))
-                    call.args["min"] = approved_min
-                    call.args["max"] = approved_max
+                call.args["min"] = approved_min
+                call.args["max"] = approved_max
+                self._approvals[kind] -= 1
+                self._approved_box = None
+            elif kind == "bulk_edit":
+                sweep = self._approved_sweep or {}
+                if call.name != sweep.get("tool"):
+                    rejection = {
+                        "ok": False,
+                        "error": f"the operator approved the sweep "
+                                 f"'{sweep.get('tool')}' — call that tool, or "
+                                 f"propose_decision(kind='bulk_edit') again naming {call.name}",
+                    }
+                    await self._emit(ev_tool_result(call.name, rejection, step))
+                    self._feed_back(call.name, rejection)
+                    return False
+                approved_params = dict(sweep.get("params") or {})
+                if dict(call.args) != approved_params:
+                    await self._emit(ev_narrate(
+                        f"Running {call.name} with the parameters the operator approved "
+                        f"({approved_params}), overriding the model's requested parameters."
+                    ))
+                call.args.clear()
+                call.args.update(approved_params)
+                self._approvals[kind] -= 1
+                self._approved_sweep = None
+            elif kind == "delete_selection":
+                current = await self._pull_selection_ids()
+                if current is None or current != self._approved_ids:
+                    # The reviewed selection is gone — the approval reviews nothing
+                    # anymore. Drop it and make the model re-propose.
+                    self._approvals[kind] -= 1
+                    self._approved_ids = None
+                    rejection = {
+                        "ok": False,
+                        "error": "the selection changed since the operator approved it — "
+                                 "the approval is void. Re-select (or leave the tinted "
+                                 "selection untouched) and propose_decision again",
+                    }
+                    await self._emit(ev_tool_result(call.name, rejection, step))
+                    self._feed_back(call.name, rejection)
+                    return False
+                self._approvals[kind] -= 1
+                self._approved_ids = None
+            else:
+                self._approvals[kind] -= 1
 
         if call.name == "answer":
             return await self._try_answer(str(call.args.get("text", "")))
@@ -304,16 +357,16 @@ class AgentLoop:
         result = await self.dispatcher.dispatch(call)
 
         # Bank an operator approval so the next matching edit can pass the gate.
+        # Banking REFUSES approvals that would bind no reviewed artifact (Codex
+        # adversarial review) — an unbound approval would let arbitrary edits
+        # through the gate.
         if call.name == "propose_decision" and result.get("ok"):
             payload = result.get("result")
             if isinstance(payload, dict) and payload.get("verdict") == "approved":
                 kind = str(call.args.get("kind", ""))
-                self._approvals[kind] = self._approvals.get(kind, 0) + 1
-                # Fix 2: bind the box the operator actually reviewed to this
-                # approval. propose_decision carries no box, so we snapshot the
-                # last previewed box (show_box_preview / adjust_box_preview).
-                if kind == "crop_outside_box":
-                    self._approved_box = dict(self._previewed_box) if self._previewed_box else None
+                refusal = await self._bank_approval(kind, call.args)
+                if refusal:
+                    self._nudge_sync(refusal)
 
         await self._emit(ev_tool_result(call.name, result, step))
         self._absorb_result(call.name, result)
@@ -440,6 +493,55 @@ class AgentLoop:
             self._ledger.record_metrics(metrics)
             self._last_metrics = metrics
         return metrics
+
+    # -- approval banking (v0.5) ------------------------------------------
+    async def _bank_approval(self, kind: str, args: dict) -> str | None:
+        """Bank an approved proposal, capturing the reviewed artifact.
+
+        Returns a refusal message (and banks nothing) when the approval would
+        bind no artifact — the gate must never be passable by an approval the
+        operator couldn't have meaningfully reviewed.
+        """
+        if kind == "crop_outside_box":
+            if self._previewed_box is None:
+                return (
+                    "[system] approval not banked: no box was previewed. Call "
+                    "show_box_preview, verify with a capture, then propose again."
+                )
+            self._approved_box = dict(self._previewed_box)
+        elif kind == "bulk_edit":
+            op = args.get("operation")
+            tool = op.get("tool") if isinstance(op, dict) else None
+            if tool not in _BULK_SWEEPS:
+                return (
+                    "[system] approval not banked: bulk_edit proposals must name "
+                    "the exact sweep — propose_decision(kind='bulk_edit', "
+                    "operation={'tool': <sweep>, 'params': {...}}) where <sweep> "
+                    f"is one of {sorted(_BULK_SWEEPS)}."
+                )
+            self._approved_sweep = {"tool": tool, "params": dict(op.get("params") or {})}
+        elif kind == "delete_selection":
+            ids = await self._pull_selection_ids()
+            if not ids:
+                return (
+                    "[system] approval not banked: the selection is empty. Select "
+                    "the splats first (they tint), then propose again."
+                )
+            self._approved_ids = ids
+        self._approvals[kind] = self._approvals.get(kind, 0) + 1
+        return None
+
+    async def _pull_selection_ids(self) -> frozenset[int] | None:
+        """Current selection as stable IDs, pulled over the channel. None on
+        failure or when nothing is selected."""
+        try:
+            pulled = await self.channel.send_command({"type": "get_selection", "args": {}})
+        except Exception:  # noqa: BLE001 — renderer gone; caller treats as no selection
+            return None
+        ids = pulled.get("ids") if isinstance(pulled, dict) else None
+        if not ids:
+            return None
+        return frozenset(int(i) for i in ids)
 
     # -- bookkeeping ------------------------------------------------------
     def _absorb_result(self, name: str, result: dict) -> None:

@@ -235,6 +235,18 @@ TOOL_REGISTRY: list[ToolEntry] = [
             "kind": {"type": "string", "enum": ["crop_outside_box", "delete_selection", "bulk_edit"]},
             "summary": {"type": "string",
                         "description": "One or two sentences the operator reads before deciding"},
+            "operation": {
+                "type": "object",
+                "description": "REQUIRED for kind 'bulk_edit': the exact sweep the "
+                               "approval authorizes — nothing else will run",
+                "properties": {
+                    "tool": {"type": "string",
+                             "enum": ["opacity_threshold", "remove_outliers",
+                                      "prune_oversized", "remove_needles"]},
+                    "params": {"type": "object"},
+                },
+                "required": ["tool"],
+            },
         },
         "required": ["kind", "summary"],
     }, "{verdict: approved|rejected|adjusted, feedback?}"),

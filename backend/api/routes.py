@@ -70,6 +70,10 @@ def create_router(
 ) -> APIRouter:
     router = APIRouter()
     _runs: set[asyncio.Task] = set()  # keep background runs from being GC'd
+    # One active run per scene (Codex adversarial review): a second concurrent
+    # loop would race edits/undo against the same history and orphan a parked
+    # no-timeout proposal, hanging the first loop forever.
+    _active_runs: dict[str, asyncio.Task] = {}
 
     def _require(scene_id: str):
         state = store.get(scene_id)
@@ -237,6 +241,13 @@ def create_router(
     @router.post("/agent/run", response_model=AgentRunResponse)
     async def agent_run(req: AgentRunRequest):
         state = _require(req.scene_id)
+        existing = _active_runs.get(req.scene_id)
+        if existing is not None and not existing.done():
+            raise HTTPException(
+                status_code=409,
+                detail="an agent run is already active for this scene — "
+                       "stop it or wait for it to finish",
+            )
         channel = WSChannel(req.scene_id, manager)
 
         async def _drive():
@@ -247,7 +258,14 @@ def create_router(
 
         task = asyncio.create_task(_drive())
         _runs.add(task)
-        task.add_done_callback(_runs.discard)
+        _active_runs[req.scene_id] = task
+
+        def _cleanup(t: asyncio.Task, sid: str = req.scene_id) -> None:
+            _runs.discard(t)
+            if _active_runs.get(sid) is t:
+                _active_runs.pop(sid, None)
+
+        task.add_done_callback(_cleanup)
         return AgentRunResponse(run_id=uuid.uuid4().hex, status="started")
 
     # ---- WS /ws/{scene_id} : renderer channel ---------------------------- #

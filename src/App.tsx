@@ -549,6 +549,20 @@ export default function App() {
       return
     }
 
+    // One run at a time for the WHOLE run lifetime, not just while a proposal
+    // is parked (Codex adversarial review): a second run would race edits/undo
+    // against the same history, and its first proposal would orphan the
+    // blocked one. The backend also 409s this; refusing here keeps the UX clear.
+    if (isThinkingRef.current) {
+      setMessages((prev) => [...prev, {
+        id: `msg-${Date.now()}-assistant`,
+        role: 'assistant',
+        content: 'A run is already active — Stop it (or wait for it to finish) before sending a new task.',
+        timestamp: Date.now(),
+      }])
+      return
+    }
+
     if (!sceneIdRef.current) {
       const content = registeringSceneRef.current
         ? "Still uploading this scene to the backend — large scenes can take up to a minute. Try again in a moment."

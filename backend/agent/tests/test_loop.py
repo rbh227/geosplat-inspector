@@ -38,8 +38,12 @@ def _floater_script():
             ("drop_marker", {"position": [0.75, 0.75, 0.75], "label": "floaters"}),
             ("scan_pause", {"ms": 800}),
         ),
-        # every delete is proposed-and-reviewed: bank a bulk_edit approval first
-        tool_turn(("propose_decision", {"kind": "bulk_edit", "summary": "remove_outliers k=16"})),
+        # every delete is proposed-and-reviewed: bank a bulk_edit approval first,
+        # naming the exact sweep the approval authorizes
+        tool_turn(("propose_decision", {
+            "kind": "bulk_edit", "summary": "remove_outliers k=16",
+            "operation": {"tool": "remove_outliers", "params": {"k": 16, "std_ratio": 2.0}},
+        })),
         tool_turn(("remove_outliers", {"k": 16, "std_ratio": 2.0})),
         tool_turn(("capture_frame", {})),
         text_then_tools(
@@ -198,7 +202,10 @@ def test_loop_rejects_then_accepts_grounded_answer():
 def test_destructive_edit_that_worsens_is_undone():
     script = [
         tool_turn(("get_metrics", {})),
-        tool_turn(("propose_decision", {"kind": "bulk_edit", "summary": "remove_outliers k=16"})),
+        tool_turn(("propose_decision", {
+            "kind": "bulk_edit", "summary": "remove_outliers k=16",
+            "operation": {"tool": "remove_outliers", "params": {"k": 16, "std_ratio": 2.0}},
+        })),
         tool_turn(("remove_outliers", {"k": 16, "std_ratio": 2.0})),
         tool_turn(("answer", {"text": "Attempted cleanup but it made things worse, so I reverted it."})),
     ]

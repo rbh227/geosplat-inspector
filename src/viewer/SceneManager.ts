@@ -958,25 +958,30 @@ export class SceneManager implements ViewerHandle {
     const packed = this.splatMesh?.packedSplats
     if (!packed) return null
     const n = packed.numSplats
-    const pts: Vec3[] = new Array<Vec3>(n)
-    for (let i = 0; i < n; i++) {
+    if (n === 0) return null
+    // Strided sample with the same 100k cap as sampleWorldPoints: the percentile
+    // fit sorts three full-length arrays, so an unbounded pass would block the
+    // UI thread for seconds on multi-million-splat scenes. The count is scaled
+    // back by the stride — an estimate above 100k splats, exact below.
+    const stride = Math.max(1, Math.floor(n / 100_000))
+    const pts: Vec3[] = []
+    for (let i = 0; i < n; i += stride) {
       const c = packed.getSplat(i).center
-      pts[i] = { x: c.x, y: c.y, z: c.z }
+      pts.push({ x: c.x, y: c.y, z: c.z })
     }
     const box = computeCoreBox(pts)
     if (!box) return null
     const [minX, minY, minZ] = box.min
     const [maxX, maxY, maxZ] = box.max
-    let count = 0
-    for (let i = 0; i < n; i++) {
-      const c = packed.getSplat(i).center
+    let sampledInside = 0
+    for (const c of pts) {
       if (
         c.x >= minX && c.x <= maxX &&
         c.y >= minY && c.y <= maxY &&
         c.z >= minZ && c.z <= maxZ
-      ) count++
+      ) sampledInside++
     }
-    return { min: box.min, max: box.max, count }
+    return { min: box.min, max: box.max, count: Math.min(n, sampledInside * stride) }
   }
 
   /** Delete the selected splats locally. Returns the IDs that were deleted. */

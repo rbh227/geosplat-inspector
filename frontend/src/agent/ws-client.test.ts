@@ -206,6 +206,25 @@ describe('ws-client proposal command (parked reply)', () => {
     expect(panels.proposal.get()).toBeNull()
   })
 
+  it('a second proposal never clobbers a parked one — it is reply-rejected immediately', async () => {
+    await transport.handler!(proposalCmd('p5', 'crop', 'first — awaiting review'))
+    await transport.handler!(proposalCmd('p6', 'crop', 'second — must not park'))
+    // the second command got an immediate rejected reply on ITS id
+    expect(transport.sent).toEqual([
+      {
+        type: 'tool_result', id: 'p6',
+        payload: { ok: false, verdict: 'rejected', feedback: 'another proposal is already awaiting review' },
+      },
+    ])
+    // the FIRST proposal is still parked and still resolvable
+    const state = panels.proposal.get()
+    expect(state!.summary).toBe('first — awaiting review')
+    state!.resolve('approved')
+    expect(transport.sent[1]).toEqual({
+      type: 'tool_result', id: 'p5', payload: { ok: true, verdict: 'approved' },
+    })
+  })
+
   it('complete trace with a pending proposal clears the signal without sending and calls clearProposalBox', async () => {
     await transport.handler!(proposalCmd('p3', 'crop', 'crop it'))
     expect(panels.proposal.get()).not.toBeNull()

@@ -130,6 +130,7 @@ def test_approved_proposal_unlocks_one_crop_then_relocks():
     executor = RecordingExecutor()
     channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
     provider = MockProvider(script=[
+        tool_turn(("show_box_preview", {"min": [0, 0, 0], "max": [1, 1, 1]})),
         tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
         tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
         tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
@@ -143,18 +144,22 @@ def test_approved_proposal_unlocks_one_crop_then_relocks():
     assert len(_rejections(result, "crop_bbox")) == 1
 
 
-def test_crop_sphere_shares_the_crop_outside_box_kind():
+def test_crop_approval_without_preview_is_not_banked():
+    """An approval binds a reviewed box; approving with no box ever previewed
+    banks NOTHING (Codex adversarial review) — the crop stays locked."""
     executor = RecordingExecutor()
     channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
     provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
+        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),  # no preview!
+        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
         tool_turn(("crop_sphere", {"center": [0, 0, 0], "radius": 0.5})),
         tool_turn(("answer", {"text": "done"})),
     ])
     result = asyncio.run(_loop(provider, channel, executor).run("clean"))
     assert result.status == "answered"
-    assert executor.edit_calls == ["crop_sphere"]
-    assert _rejections(result, "crop_sphere") == []
+    assert executor.edit_calls == []  # nothing unlocked
+    assert _rejections(result, "crop_bbox")
+    assert _rejections(result, "crop_sphere")
 
 
 # ── Fix 2: an approval binds the REVIEWED box, not just the kind ─────────
@@ -336,6 +341,7 @@ def test_approved_crop_flows_through_the_destructive_verify_branch():
     executor = RecordingExecutor()  # default count 200_000; crop_bbox -> 80%
     channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
     provider = MockProvider(script=[
+        tool_turn(("show_box_preview", {"min": [-1, -1, -1], "max": [1, 1, 1]})),
         tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
         tool_turn(("crop_bbox", {"min": [-1, -1, -1], "max": [1, 1, 1]})),
         tool_turn(("answer", {"text": "done"})),
@@ -375,7 +381,10 @@ def test_approved_bulk_edit_unlocks_exactly_one_sweep():
     executor = SweepRecordingExecutor()
     channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
     provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "bulk_edit"})),
+        tool_turn(("propose_decision", {
+            "kind": "bulk_edit",
+            "operation": {"tool": "remove_outliers", "params": {"k": 8, "std_ratio": 2.0}},
+        })),
         tool_turn(("remove_outliers", {"k": 8, "std_ratio": 2.0})),
         tool_turn(("remove_outliers", {"k": 8, "std_ratio": 2.0})),  # second: rejected
         tool_turn(("answer", {"text": "done"})),
@@ -385,3 +394,101 @@ def test_approved_bulk_edit_unlocks_exactly_one_sweep():
     assert result.status == "answered"
     assert executor.edit_calls == ["remove_outliers"]  # exactly one consumed
     assert _rejections(result, "remove_outliers"), "second sweep must be re-gated"
+
+
+def test_bulk_edit_approval_without_operation_is_not_banked():
+    """A bulk approval must name the exact sweep — a bare kind banks nothing."""
+    executor = SweepRecordingExecutor()
+    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {"kind": "bulk_edit"})),  # no operation!
+        tool_turn(("remove_outliers", {"k": 8, "std_ratio": 2.0})),
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+    assert result.status == "answered"
+    assert executor.edit_calls == []
+    assert _rejections(result, "remove_outliers")
+
+
+def test_bulk_edit_approval_binds_the_named_sweep_and_params():
+    """The approval authorizes ONE named sweep; another sweep is rejected and
+    the executed call runs with the REVIEWED params, not the model's."""
+    executor = SweepRecordingExecutor()
+    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {
+            "kind": "bulk_edit",
+            "operation": {"tool": "remove_outliers", "params": {"k": 8, "std_ratio": 2.0}},
+        })),
+        tool_turn(("opacity_threshold", {"min_alpha": 0.05})),  # NOT the approved sweep
+        tool_turn(("remove_outliers", {"k": 99, "std_ratio": 9.0})),  # wrong params
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+
+    assert result.status == "answered"
+    assert executor.edit_calls == ["remove_outliers"]  # opacity_threshold never ran
+    # the engine received the approved params (k=8), not the model's k=99
+    assert executor.state["outlier"] < 0.12  # sweep genuinely ran
+    mismatch_rej = [
+        e for e in _tool_results(result, "opacity_threshold")
+        if e.get("result", {}).get("ok") is False
+        and "remove_outliers" in str(e.get("result", {}).get("error", ""))
+    ]
+    assert mismatch_rej, "expected a rejection naming the approved sweep"
+    # override surfaced honestly
+    narrations = [e for e in result.trace if e.get("type") == "narrate"]
+    assert any("parameters the operator approved" in str(e) for e in narrations)
+
+
+# ── delete_selection approvals bind the reviewed IDs ─────────────────────
+class GrowingSelectionChannel(ProposalChannel):
+    """The selection grows right after the approval banks its ID snapshot (the
+    first get_selection pull) — simulating strokes landing between the
+    operator's approval and the delete."""
+
+    _grown = False
+
+    async def send_command(self, cmd: dict) -> dict:
+        res = await super().send_command(cmd)
+        if cmd.get("type") == "get_selection" and not self._grown:
+            self._grown = True
+            self.selected_ids = [1, 2, 3, 99]  # operator-unseen extra splat
+        return res
+
+
+def test_selection_change_after_approval_voids_it():
+    """Brushing MORE splats between approval and delete must void the approval:
+    the operator reviewed a different selection than would be deleted."""
+    executor = RecordingExecutor()
+    channel = GrowingSelectionChannel(verdicts=[{"verdict": "approved"}], selected_ids=[1, 2, 3])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {"kind": "delete_selection"})),
+        tool_turn(("delete_selection", {})),
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+
+    assert result.status == "answered"
+    assert executor.edit_calls == []  # the changed selection was never deleted
+    void_rej = [
+        e for e in _tool_results(result, "delete_selection")
+        if e.get("result", {}).get("ok") is False
+        and "changed since" in str(e.get("result", {}).get("error", ""))
+    ]
+    assert void_rej, "expected the selection-changed voiding rejection"
+
+
+def test_delete_approval_with_empty_selection_is_not_banked():
+    executor = RecordingExecutor()
+    channel = ProposalChannel(verdicts=[{"verdict": "approved"}], selected_ids=[])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {"kind": "delete_selection"})),
+        tool_turn(("delete_selection", {})),
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+    assert result.status == "answered"
+    assert executor.edit_calls == []
+    assert _rejections(result, "delete_selection")

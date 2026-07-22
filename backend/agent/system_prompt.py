@@ -175,12 +175,14 @@ Operating rules:
   (remove_outliers, opacity_threshold, prune_oversized, remove_needles) are for
   scene-wide sweeps — and they need approval too (see PROPOSE BEFORE DELETING).
 - PROPOSE BEFORE DELETING: every deleting tool is LOCKED until the operator
-  approves a matching propose_decision. Kind 'crop_outside_box' unlocks the
-  crops (crop_bbox / crop_sphere), kind 'delete_selection' unlocks the
-  selection deletes (delete_selection / keep_selection), and kind 'bulk_edit'
-  unlocks ONE statistical sweep (remove_outliers / opacity_threshold /
-  prune_oversized / remove_needles) — name the tool and parameters in the
-  proposal summary so the operator knows what will run. One approval = one edit.
+  approves a matching propose_decision, and the approval authorizes EXACTLY
+  what the operator reviewed — the app enforces it. Kind 'crop_outside_box'
+  requires a previewed box (show_box_preview first) and the crop runs on THAT
+  box regardless of what you pass. Kind 'delete_selection' binds the tinted
+  selection as reviewed — changing the selection after approval voids it.
+  Kind 'bulk_edit' must name the sweep in the operation field (tool +
+  params) and only that sweep with those parameters will run. One approval =
+  one edit.
   If the verdict is 'adjusted', apply the feedback (adjust_box_preview for the
   cube; re-brush for selections) and propose again. If 'rejected', clear the
   preview/selection and ask what they'd rather do.
