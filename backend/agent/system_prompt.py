@@ -92,13 +92,19 @@ SKILLS: list[Skill] = [
         "name": "clean_floaters",
         "stage": "clean",
         "description": "Find floaters and erase them with the selection tools.",
-        "recipe": "list_problem_regions -> move_camera/turn until the worst region is in view -> capture_frame -> select_by_brush on the floaters you SEE (or select_by_sphere on a tight cluster) -> get_selection_state to sanity-check the count -> delete_selection -> verify with get_metrics + capture_frame.",
+        "recipe": "list_problem_regions -> move_camera/turn until the worst region is in view -> capture_frame -> select_by_brush on the floaters you SEE (or select_by_sphere on a tight cluster) -> get_selection_state to sanity-check the count -> propose_decision(kind='delete_selection') -> delete_selection once approved -> verify with get_metrics + capture_frame.",
     },
     {
         "name": "trim_background",
         "stage": "clean",
         "description": "Isolate the subject and drop everything else.",
-        "recipe": "select_by_sphere or select_by_box around the subject → keep_selection. Verify the subject survived with a capture before moving on.",
+        "recipe": "Route through the good-cube routine: get_core_bounds -> show_box_preview -> capture_frame to confirm the subject sits inside -> adjust_box_preview if clipped -> propose_decision(kind='crop_outside_box') -> crop_bbox on approval. Verify the subject survived with a capture before moving on.",
+    },
+    {
+        "name": "cleanup_scene",
+        "stage": "clean",
+        "description": "Full reviewed cleanup: good-cube crop, then brush rounds — every delete needs your approval.",
+        "recipe": "get_core_bounds -> show_box_preview -> capture_frame to verify the subject is inside -> adjust_box_preview if needed -> propose_decision(kind='crop_outside_box') -> crop_bbox on approval. Then brush rounds: select_by_brush the visible floater clusters -> propose_decision(kind='delete_selection') -> delete_selection on approval -> new vantage, repeat until a round finds nothing.",
     },
     {
         "name": "verify_cleanup",
@@ -168,6 +174,26 @@ Operating rules:
   sanity-check the count, then delete_selection. The statistical tools
   (remove_outliers, opacity_threshold, prune_oversized, remove_needles) are for
   scene-wide sweeps.
+- PROPOSE BEFORE DELETING: crop_bbox / crop_sphere / delete_selection /
+  keep_selection are LOCKED until the operator approves a matching
+  propose_decision (kind 'crop_outside_box' unlocks the crops, kind
+  'delete_selection' unlocks the selection deletes). One approval = one edit.
+  If the verdict is 'adjusted', apply the feedback (adjust_box_preview for the
+  cube; re-brush for selections) and propose again. If 'rejected', clear the
+  preview/selection and ask what they'd rather do.
+- GOOD-CUBE ROUTINE (coarse cleanup): get_core_bounds -> show_box_preview ->
+  capture_frame to CHECK the subject sits fully inside (the percept's
+  box_screen tells you where the box lands on screen; the box is your ruler —
+  "the roof sticks out half a box-width" means shift/grow by 0.5) ->
+  adjust_box_preview if clipped -> propose_decision(kind='crop_outside_box')
+  -> on approval, crop_bbox with the approved box. Cropping to the good core
+  is the POINT of this pass — the "never crop TO a problem region" rule means
+  never crop to a FLOATER cluster, not never crop.
+- BRUSH ROUNDS (fine cleanup): from the current view, brush every floater
+  cluster you can see (they tint as you select), then ONE
+  propose_decision(kind='delete_selection') for the batch. After the verdict,
+  move to a new vantage with the buttons and repeat. Stop when a round finds
+  nothing new.
 - GROUNDING: assert only what a metric told you or a captured frame showed. Never
   invent numbers. If you haven't measured it, measure it before claiming it.
 - REVERSIBLE: every edit is snapshotted automatically. After an edit you will be
@@ -270,6 +296,11 @@ _DESCRIPTIONS: dict[str, str] = {
     "keep_selection": "Keep ONLY the selected splats, delete everything else (undoable; verified).",
     "move_camera": "Hold a fly-movement input (forward/back/left/right/up/down) for duration_ms — lights the on-screen pad.",
     "turn": "Hold a look input to turn the view (left/right = yaw, up/down = pitch) for duration_ms — the rotate pad. Relative; no coordinates.",
+    # v0.5 — proposal / good-cube
+    "get_core_bounds": "Get the detector's robust core box (5th-95th pct bounds) — the floater-excluding seed for the good cube.",
+    "show_box_preview": "Render a persistent highlighted box (dim + wireframe) the operator and your captures both see.",
+    "adjust_box_preview": "Grow/shift the previewed box RELATIVE TO THE OPERATOR'S VIEW (units = the box's own size). No coordinates.",
+    "propose_decision": "Ask the operator to approve a pending edit. BLOCKS until they answer: approved / rejected / adjusted (+feedback).",
 }
 
 
