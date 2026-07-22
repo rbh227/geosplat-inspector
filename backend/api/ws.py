@@ -29,6 +29,7 @@ COMMAND_TYPES = {
     "camera_move", "capture_request", "drop_marker",
     "clear_markers", "narrate", "reload_scene",
     "get_selection", "selection_tool", "movement_input", "rotation_input",
+    "proposal",
 }
 TRACE_TYPES = {"thought", "tool_call", "tool_result", "complete"}
 REPLY_TYPES = {"frame", "user_interrupt", "selection", "tool_result", "agent_pause", "agent_resume"}
@@ -125,7 +126,7 @@ class ConnectionManager:
         scene_id: str,
         ctype: str,
         payload: dict | None = None,
-        timeout: float = DEFAULT_COMMAND_TIMEOUT,
+        timeout: float | None = DEFAULT_COMMAND_TIMEOUT,
     ) -> dict:
         ws = self._conns.get(scene_id)
         if ws is None:
@@ -203,7 +204,10 @@ class WSChannel(FrontendChannel):
         if ctype not in COMMAND_TYPES:
             raise ValueError(f"unknown command type: {ctype!r}")
         payload = cmd.get("payload", {k: v for k, v in cmd.items() if k != "type"})
-        return await self._mgr.send_command(self._scene_id, ctype, payload)
+        # A proposal parks on the operator's decision — no timeout (asyncio's
+        # wait_for(timeout=None) already waits forever).
+        timeout = None if ctype == "proposal" else DEFAULT_COMMAND_TIMEOUT
+        return await self._mgr.send_command(self._scene_id, ctype, payload, timeout)
 
     async def emit_event(self, event: dict) -> None:
         etype = event.get("type")

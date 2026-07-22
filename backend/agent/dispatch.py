@@ -85,6 +85,11 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
     "get_selection_state": "selection_tool",
     "move_camera": "movement_input",
     "turn": "rotation_input",
+    # v0.5 — proposal / good-cube
+    "get_core_bounds": "selection_tool",
+    "show_box_preview": "selection_tool",
+    "adjust_box_preview": "selection_tool",
+    "propose_decision": "proposal",
 }
 
 # Backend tools that operate on the CURRENT frontend selection: dispatch pulls
