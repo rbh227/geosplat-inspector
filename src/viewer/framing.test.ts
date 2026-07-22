@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeFraming, computeCoreBounds, nearFarForDistance, type Vec3 } from './framing'
+import { computeFraming, computeCoreBounds, computeCoreBox, nearFarForDistance, type Vec3 } from './framing'
 
 /** Elevation of the camera above the target's horizontal plane, in degrees. */
 function elevationDeg(target: number[], position: number[]): number {
@@ -89,6 +89,17 @@ describe('computeCoreBounds', () => {
 
   it('returns null for empty input', () => {
     expect(computeCoreBounds([])).toBeNull()
+  })
+})
+
+describe('computeCoreBox', () => {
+  it('computeCoreBox excludes far floaters', () => {
+    const pts = []
+    for (let i = 0; i < 100; i++) pts.push({ x: i % 10, y: (i / 10) | 0, z: 0 })
+    pts.push({ x: 5000, y: 5000, z: 5000 })  // one far floater
+    const box = computeCoreBox(pts)!
+    expect(box.max[0]).toBeLessThan(20)
+    expect(box.max[1]).toBeLessThan(20)
   })
 })
 

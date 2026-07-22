@@ -89,6 +89,7 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         clearSelection: () => mgr().clearSelection(),
         invertSelection: () => mgr().invertSelection(),
         getSelectionSummary: () => mgr().getSelectionSummary(),
+        getCoreBoundsBox: () => mgr().getCoreBoundsBox(),
         deleteSelection: () => mgr().deleteSelection(),
         keepSelection: () => mgr().keepSelection(),
         showSelectionPreview: (s, c, z) => mgr().showSelectionPreview(s, c, z),

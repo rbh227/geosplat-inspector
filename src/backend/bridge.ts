@@ -33,6 +33,7 @@ export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
     clearSelection: () => viewer.clearSelection(),
     invertSelection: () => viewer.invertSelection(),
     getSelectionSummary: () => viewer.getSelectionSummary(),
+    getCoreBoundsBox: () => viewer.getCoreBoundsBox(),
     showSelectionPreview: (s, c, z) => viewer.showSelectionPreview(s, c, z),
     clearSelectionPreview: () => viewer.clearSelectionPreview(),
     setMovementInput: (d, a) => viewer.setMovementInput(d, a),

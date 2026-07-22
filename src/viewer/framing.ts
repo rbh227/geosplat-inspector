@@ -89,6 +89,19 @@ export function computeCoreBounds(points: readonly Vec3[]): CoreBounds | null {
   return { center: b.center, radius: 0.5 * Math.hypot(b.ex, b.ey, b.ez) }
 }
 
+export interface CoreBox { min: [number, number, number]; max: [number, number, number] }
+
+/** Robust percentile box (5th-95th per axis) — min/max form for crop/preview. */
+export function computeCoreBox(points: readonly Vec3[]): CoreBox | null {
+  const b = robustBounds(points)
+  if (!b) return null
+  const [cx, cy, cz] = b.center
+  return {
+    min: [cx - b.ex / 2, cy - b.ey / 2, cz - b.ez / 2],
+    max: [cx + b.ex / 2, cy + b.ey / 2, cz + b.ez / 2],
+  }
+}
+
 /**
  * Derive perspective near/far planes from the camera-to-target distance and the
  * scene's radius. A fixed near=0.1/far=1000 gives a 10000:1 ratio that wrecks

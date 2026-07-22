@@ -10,7 +10,7 @@ import {
 } from '@sparkjsdev/spark'
 import type { ViewerHandle, ViewerState, ViewPreset, SceneStats } from '../types/viewer.ts'
 import { tweenCamera } from './camera.ts'
-import { computeFraming, computeCoreBounds, nearFarForDistance, type Vec3 } from './framing.ts'
+import { computeFraming, computeCoreBounds, computeCoreBox, nearFarForDistance, type Vec3 } from './framing.ts'
 import { IdMap } from './idMap.ts'
 import { transformPoints } from './selection.ts'
 import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
@@ -939,6 +939,37 @@ export class SceneManager implements ViewerHandle {
       count: this.selection.size,
       bbox: { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] },
     }
+  }
+
+  /**
+   * Robust percentile core box in BACKEND coordinates (mesh-local, pre-flip) —
+   * the "good cube" seed for the agent's crop proposal. Samples packedSplats
+   * centers directly (already backend space; see getSelectionSummary), fits the
+   * 5th-95th percentile box, then counts centers inside it. Null when no mesh.
+   */
+  getCoreBoundsBox(): { min: number[]; max: number[]; count: number } | null {
+    const packed = this.splatMesh?.packedSplats
+    if (!packed) return null
+    const n = packed.numSplats
+    const pts: Vec3[] = new Array<Vec3>(n)
+    for (let i = 0; i < n; i++) {
+      const c = packed.getSplat(i).center
+      pts[i] = { x: c.x, y: c.y, z: c.z }
+    }
+    const box = computeCoreBox(pts)
+    if (!box) return null
+    const [minX, minY, minZ] = box.min
+    const [maxX, maxY, maxZ] = box.max
+    let count = 0
+    for (let i = 0; i < n; i++) {
+      const c = packed.getSplat(i).center
+      if (
+        c.x >= minX && c.x <= maxX &&
+        c.y >= minY && c.y <= maxY &&
+        c.z >= minZ && c.z <= maxZ
+      ) count++
+    }
+    return { min: box.min, max: box.max, count }
   }
 
   /** Delete the selected splats locally. Returns the IDs that were deleted. */

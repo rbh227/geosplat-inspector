@@ -43,6 +43,9 @@ export interface RendererBridge {
   clearSelection(): number
   invertSelection(): number
   getSelectionSummary(): { count: number; bbox: { min: number[]; max: number[] } | null }
+  /** Robust percentile core box in BACKEND coords + count of centers inside —
+   *  the "good cube" seed for the agent's crop proposal. */
+  getCoreBoundsBox(): { min: number[]; max: number[]; count: number } | null
   showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
   clearSelectionPreview(): void
   setMovementInput(direction: MoveDirection, active: boolean): void
