@@ -48,6 +48,12 @@ _APPROVAL_GATED: dict[str, str] = {
     "crop_sphere": "crop_outside_box",
     "delete_selection": "delete_selection",
     "keep_selection": "delete_selection",
+    # Statistical cleaners delete splats too — "every delete is reviewed"
+    # (operator decision, 2026-07-22): one bulk_edit approval per sweep.
+    "opacity_threshold": "bulk_edit",
+    "remove_outliers": "bulk_edit",
+    "prune_oversized": "bulk_edit",
+    "remove_needles": "bulk_edit",
 }
 
 

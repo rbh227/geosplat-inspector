@@ -232,7 +232,7 @@ TOOL_REGISTRY: list[ToolEntry] = [
     ToolEntry("propose_decision", "frontend", {
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "enum": ["crop_outside_box", "delete_selection"]},
+            "kind": {"type": "string", "enum": ["crop_outside_box", "delete_selection", "bulk_edit"]},
             "summary": {"type": "string",
                         "description": "One or two sentences the operator reads before deciding"},
         },

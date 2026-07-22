@@ -348,3 +348,40 @@ def test_approved_crop_flows_through_the_destructive_verify_branch():
     assert result.edits_reverted == 0
     # the destructive branch emitted a verify:<tool> result
     assert _tool_results(result, "verify:crop_bbox")
+
+
+# ── bulk_edit: statistical sweeps are gated too (operator decision 2026-07-22) ─
+class SweepRecordingExecutor(RecordingExecutor):
+    def remove_outliers(self, k, std_ratio):
+        self.edit_calls.append("remove_outliers")
+        return super().remove_outliers(k, std_ratio)
+
+
+def test_statistical_sweep_without_approval_is_rejected():
+    executor = SweepRecordingExecutor()
+    channel = ProposalChannel()
+    provider = MockProvider(script=[
+        tool_turn(("remove_outliers", {"k": 8, "std_ratio": 2.0})),
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+
+    assert result.status == "answered"
+    assert executor.edit_calls == []  # sweep never reached the engine
+    assert _rejections(result, "remove_outliers"), "expected the approval-gate rejection"
+
+
+def test_approved_bulk_edit_unlocks_exactly_one_sweep():
+    executor = SweepRecordingExecutor()
+    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
+    provider = MockProvider(script=[
+        tool_turn(("propose_decision", {"kind": "bulk_edit"})),
+        tool_turn(("remove_outliers", {"k": 8, "std_ratio": 2.0})),
+        tool_turn(("remove_outliers", {"k": 8, "std_ratio": 2.0})),  # second: rejected
+        tool_turn(("answer", {"text": "done"})),
+    ])
+    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+
+    assert result.status == "answered"
+    assert executor.edit_calls == ["remove_outliers"]  # exactly one consumed
+    assert _rejections(result, "remove_outliers"), "second sweep must be re-gated"

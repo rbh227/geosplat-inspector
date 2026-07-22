@@ -37,6 +37,17 @@ outline, persistent selection tint, paced strokes.
   only (excluded from `UNDERSTAND_TOOLS`, rejected at spec AND dispatch level).
   `crop_sphere` — the other destructive backend crop — is gated the same way:
   Clean-stage only, no silent delete outside the proposal flow.
+- **Gate scope (operator decision, 2026-07-22, post final review):** the
+  statistical cleaners (`remove_outliers`, `opacity_threshold`,
+  `prune_oversized`, `remove_needles`) are ALSO approval-gated, under a third
+  proposal kind `bulk_edit` (one approval = one sweep; the proposal summary
+  names the tool and parameters). "Every delete is reviewed" holds for the
+  whole registry.
+- **Approval binding (final review, Fix 2):** a `crop_outside_box` approval
+  binds the box the operator actually reviewed — the loop overrides the
+  model's `crop_bbox` args with the approved box (narrated honestly) and
+  rejects `crop_sphere` against a box approval. `delete_selection` binds the
+  reviewed count but not exact IDs (tracked follow-up).
 
 ## 1. Contract extension (v0.5)
 
@@ -52,7 +63,7 @@ Four new tools, all `runs_on: "frontend"`, **Clean-stage only** (excluded from
 | `get_core_bounds` | — | `{min: [x,y,z], max: [x,y,z], count}` — 5th–95th percentile per-axis box (existing `robustBounds`), backend coords |
 | `show_box_preview` | `{min, max}` backend coords | `{ok}` — renders persistent SDF dim + wireframe outline until cleared/replaced/run end |
 | `adjust_box_preview` | `{grow?: number, grow_axes?: [gx,gy,gz], shift?: [right,up,forward]}` — view-relative, units of box size | `{ok, min, max}` — new box after frontend maps view→world via operator camera basis |
-| `propose_decision` | `{kind: 'crop_outside_box'\|'delete_selection', summary: string}` | `{verdict: 'approved'\|'rejected'\|'adjusted', feedback?: string}` — blocks until operator responds |
+| `propose_decision` | `{kind: 'crop_outside_box'\|'delete_selection'\|'bulk_edit', summary: string}` | `{verdict: 'approved'\|'rejected'\|'adjusted', feedback?: string}` — blocks until operator responds |
 
 ## 2. Proposal machinery
 

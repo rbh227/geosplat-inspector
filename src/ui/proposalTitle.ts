@@ -6,6 +6,8 @@ export function proposalTitle(kind: string): string {
       return 'Crop to this box?'
     case 'delete_selection':
       return 'Delete the highlighted splats?'
+    case 'bulk_edit':
+      return 'Run this scene-wide cleanup?'
     default:
       return 'Apply this edit?'
   }

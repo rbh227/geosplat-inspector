@@ -44,6 +44,8 @@ def test_clean_prompt_teaches_the_proposal_flow():
     assert "BRUSH ROUNDS" in prompt
     assert "crop_outside_box" in prompt
     assert "delete_selection" in prompt
+    # statistical sweeps are gated too (operator decision, 2026-07-22)
+    assert "bulk_edit" in prompt
 
 
 def test_understand_prompt_never_mentions_propose_decision():

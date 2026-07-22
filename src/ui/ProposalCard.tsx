@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Crop, Eraser, HelpCircle, SendHorizonal } from 'lucide-react'
+import { Crop, Eraser, HelpCircle, SendHorizonal, Sparkles } from 'lucide-react'
 import type { ProposalState } from '@agent'
 import Button from './Button'
 import { proposalTitle } from './proposalTitle'
@@ -13,6 +13,7 @@ interface ProposalCardProps {
 const KIND_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   crop_outside_box: Crop,
   delete_selection: Eraser,
+  bulk_edit: Sparkles,
 }
 
 export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) {

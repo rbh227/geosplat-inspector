@@ -75,6 +75,10 @@ class MockFrontendChannel:
                 return {"ok": True, "frames": [self.frame] * n}
             percept = {**self.pose, "revision": self.revision}
             return {"ok": True, "frame": self.frame, "percept": percept}
+        if cmd.get("type") == "proposal":
+            # Default operator: approves. Tests that need rejected/adjusted
+            # verdicts use their own channel (see test_proposals.ProposalChannel).
+            return {"verdict": "approved"}
         return {"ok": True}
 
     async def emit_event(self, event: dict) -> None:
