@@ -5,7 +5,10 @@ build; v0.2 adds spatial selection, movement, and selection-edit tools for the
 editor-first rework (docs/plans/2026-07-05-001). v0.3 adds the `turn` look tool
 (rotate pad) for button-only relative navigation (docs/plans/2026-07-20-001).
 v0.4 adds `reframe` — an app-owned "return to the operator's start view" recovery
-op (docs/plans/2026-07-20-002). Additions only — nothing is removed or renamed.
+op (docs/plans/2026-07-20-002). v0.5 adds the proposal / good-cube tools
+(get_core_bounds, show_box_preview, adjust_box_preview, propose_decision) for the
+propose-and-review cleanup flow (docs/superpowers/specs/2026-07-22-agent-cleanup-
+proposals-design.md). Additions only — nothing is removed or renamed.
 """
 
 from __future__ import annotations
@@ -198,6 +201,43 @@ TOOL_REGISTRY: list[ToolEntry] = [
         },
         "required": ["direction", "duration_ms"],
     }, "ok"),
+
+    # ── frontend (proposal / good-cube) — v0.5 ──
+    # The proposal surface (docs/superpowers/specs/2026-07-22-agent-cleanup-
+    # proposals-design.md): preview a region, then BLOCK on the operator's
+    # verdict. Clean-stage only; coordinates are backend space.
+    ToolEntry("get_core_bounds", "frontend", {
+        "type": "object", "properties": {},
+    }, "{min, max, count} — robust (5th-95th pct) core box"),
+    ToolEntry("show_box_preview", "frontend", {
+        "type": "object",
+        "properties": {
+            "min": _vec3("Box min corner, backend coords"),
+            "max": _vec3("Box max corner, backend coords"),
+        },
+        "required": ["min", "max"],
+    }, "{ok, min, max}"),
+    ToolEntry("adjust_box_preview", "frontend", {
+        "type": "object",
+        "properties": {
+            "grow": {"type": "number",
+                     "description": "Uniform scale about the box center (1.2 = 20% bigger)"},
+            "grow_axes": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
+                          "description": "Per-view-axis scale [right, up, forward]"},
+            "shift": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
+                      "description": "Move by [right, up, forward] in units of the box's own size, "
+                                     "relative to the OPERATOR'S current view"},
+        },
+    }, "{ok, min, max}"),
+    ToolEntry("propose_decision", "frontend", {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["crop_outside_box", "delete_selection"]},
+            "summary": {"type": "string",
+                        "description": "One or two sentences the operator reads before deciding"},
+        },
+        "required": ["kind", "summary"],
+    }, "{verdict: approved|rejected|adjusted, feedback?}"),
 
     # ── backend (analysis) ──
     ToolEntry("get_metrics", "backend", {

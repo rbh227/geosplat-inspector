@@ -3,7 +3,7 @@
 **Date:** 2026-07-22
 **Status:** Approved (brainstorm session, all sections reviewed live)
 **Phase:** Cleanup flow — agent proposes and performs edits with operator review
-**Contract version:** v0.2 → v0.3
+**Contract version:** v0.2 → v0.5 (v0.3/v0.4 already taken by the turn/reframe ops)
 
 ## Goal
 
@@ -33,8 +33,12 @@ outline, persistent selection tint, paced strokes.
   clusters brushed from a viewpoint.
 - **Scope:** cube pass + brush pass + visualization in one plan (shared
   proposal machinery).
+- **Stage gating:** the four new proposal / good-cube tools are Clean-stage
+  only (excluded from `UNDERSTAND_TOOLS`, rejected at spec AND dispatch level).
+  `crop_sphere` — the other destructive backend crop — is gated the same way:
+  Clean-stage only, no silent delete outside the proposal flow.
 
-## 1. Contract extension (v0.3)
+## 1. Contract extension (v0.5)
 
 Registry bump in both mirrors (`backend/contracts/tools.py`,
 `frontend/src/contracts.ts`); drift tests updated
@@ -142,7 +146,7 @@ rejected), proposal timeout exemption, stage gating (all four new tools
 rejected in Understand at spec AND dispatch level), loop continuation after
 `adjusted`.
 
-**Frontend tests:** contract drift guards (v0.3), `adjust_box_preview`
+**Frontend tests:** contract drift guards (v0.5), `adjust_box_preview`
 view→world mapping math, `box_screen` projection math, ProposalCard resolves
 the parked WS reply, tint apply/restore round-trip.
 

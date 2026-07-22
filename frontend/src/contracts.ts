@@ -97,6 +97,8 @@ export const FRONTEND_TOOLS = [
   "turn",
   // v0.4 — app-owned recovery: return to the operator's start view
   "reframe",
+  // v0.5 — proposal / good-cube (agent-cleanup-proposals spec)
+  "get_core_bounds", "show_box_preview", "adjust_box_preview", "propose_decision",
 ] as const;
 
 export const BACKEND_TOOLS = [
@@ -147,7 +149,11 @@ export type WSCommandType =
   // v0.2: agent-driven selection/movement tools, executed on the shared
   // visible action layer (same code paths as manual tools)
   | "selection_tool"
-  | "movement_input";
+  | "movement_input"
+  // v0.2: rotate-pad input (was missing from this union — drift fix)
+  | "rotation_input"
+  // v0.5: blocking proposal — reply is parked until the operator decides
+  | "proposal";
 
 export interface WSCommand {
   type: WSCommandType;

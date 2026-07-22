@@ -11,6 +11,10 @@ V02_FRONTEND = {
 }
 V02_BACKEND = {"delete_selection", "keep_selection"}
 
+V05_FRONTEND = {
+    "get_core_bounds", "show_box_preview", "adjust_box_preview", "propose_decision",
+}
+
 
 def test_no_duplicate_names():
     names = [t.name for t in TOOL_REGISTRY]
@@ -18,11 +22,12 @@ def test_no_duplicate_names():
 
 
 def test_v02_counts():
-    # v0.3 added `turn`, v0.4 added `reframe` (both frontend): 22 -> 24 frontend,
-    # 40 -> 42 total.
-    assert len(FRONTEND_TOOLS) == 24
+    # v0.3 added `turn`, v0.4 added `reframe` (both frontend): 22 -> 24 frontend.
+    # v0.5 adds the four proposal / good-cube frontend tools: 24 -> 28 frontend,
+    # 42 -> 46 total.
+    assert len(FRONTEND_TOOLS) == 28
     assert len(BACKEND_TOOLS) == 18
-    assert len(TOOL_REGISTRY) == 42
+    assert len(TOOL_REGISTRY) == 46
 
 
 def test_v03_turn_tool_present_and_routed():
@@ -36,6 +41,13 @@ def test_v04_reframe_tool_present_and_routed():
     assert "reframe" in FRONTEND_TOOLS
     assert "reframe" in TOOL_BY_NAME
     assert TOOL_BY_NAME["reframe"].runs_on == "frontend"
+
+
+def test_v05_proposal_tools_present_and_routed():
+    assert V05_FRONTEND <= FRONTEND_TOOLS
+    for name in V05_FRONTEND:
+        assert name in TOOL_BY_NAME
+        assert TOOL_BY_NAME[name].runs_on == "frontend"
 
 
 def test_v02_tools_present_and_routed():
