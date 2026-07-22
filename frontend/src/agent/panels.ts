@@ -65,6 +65,8 @@ export class PanelBus {
   setMetrics(m: Metrics): void { this.metrics.set(m) }
   setRunning(v: boolean): void { this.running.set(v) }
 
+  // Relies on the blocking-proposal contract: the backend never sends a second
+  // proposal while one is parked, so a plain set (no queue) is sufficient.
   setProposal(p: ProposalState): void { this.proposal.set(p) }
   clearProposal(): void { this.proposal.set(null) }
 

@@ -141,10 +141,16 @@ export class AgentWSClient {
         case 'proposal': {
           const { args } = p as unknown as { args: { kind: string; summary: string } }
           const id = cmd.id
+          // Latch the resolver: a rapid double-click on the ProposalCard must
+          // never send two tool_results for the same id. The exactly-one-reply
+          // invariant is guaranteed here, not delegated to the caller.
+          let done = false
           this.panels.setProposal({
             kind: args?.kind ?? '',
             summary: args?.summary ?? '',
             resolve: (verdict, feedback) => {
+              if (done) return
+              done = true
               this.transport.send({
                 type: 'tool_result', id,
                 payload: { ok: true, verdict, ...(feedback ? { feedback } : {}) },

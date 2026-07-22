@@ -195,6 +195,17 @@ describe('ws-client proposal command (parked reply)', () => {
     expect(panels.proposal.get()).toBeNull()
   })
 
+  it('resolver is idempotent — a double-click sends exactly one tool_result', async () => {
+    await transport.handler!(proposalCmd('p4', 'crop', 'crop it'))
+    const state = panels.proposal.get()!
+    state.resolve('approved')
+    state.resolve('approved')
+    expect(transport.sent).toEqual([
+      { type: 'tool_result', id: 'p4', payload: { ok: true, verdict: 'approved' } },
+    ])
+    expect(panels.proposal.get()).toBeNull()
+  })
+
   it('complete trace with a pending proposal clears the signal without sending and calls clearProposalBox', async () => {
     await transport.handler!(proposalCmd('p3', 'crop', 'crop it'))
     expect(panels.proposal.get()).not.toBeNull()
