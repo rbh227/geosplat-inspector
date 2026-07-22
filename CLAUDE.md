@@ -112,10 +112,12 @@ pipeline/            Offline generation pipeline (separate from backend)
 - Backend agent with stage-gated tools: Clean = full editor surface (40-tool v0.2 registry), Understand = look-only analyst (navigation/capture/answer; edits rejected at spec AND dispatch level)
 - Skills vocabulary (`backend/agent/system_prompt.py` SKILLS): one list rendered into the system prompt and served via `GET /agent/skills`; clickable pills in the chat panel run the same routines the agent composes
 - Agent visible operation: `move_camera` lights the pad, sphere/box selections flash the SDF preview before committing, screen-space selections are paced; pause-on-manual-input holds the loop at the next tool-call boundary with a Resume/Stop banner
+- Proposed-and-reviewed cleanup (v0.5, agent-cleanup-proposals): the Clean-stage `cleanup_scene` pill runs a good-cube crop then brush rounds where every destructive step is gated — the agent must bank an operator-approved `propose_decision` (kinds: crop-outside-box, delete-selection) before a matching edit fires; a ProposalCard in the chat panel drives approve/reject/adjust, adjust feeds natural-language feedback back into the loop and re-shows the persistent proposal box (SDF dim + wireframe, `box_screen` percept). Selection tint marks the pending set; camera moves during review do NOT pause the run; Stop cleanly ends it
 - Real-time HUD (splat count, FPS, camera position) in the top bar
 
 ## What's Not Done / Known Issues
 - **Analyst answer quality untuned**: the Understand-stage capture-then-answer structure is tested (CI proxies in `backend/agent/tests/test_analyst_prompt.py`), but live-model counting accuracy on real post-disaster scenes needs manual iteration
+- **Cleanup-flow model behavior untuned**: the propose→approve→edit machinery is fully tested headlessly (scripted-provider round-trip in `backend/agent/tests/test_proposals.py`, WS routing in `backend/api/tests/test_proposal_ws.py`), but how well a live model chooses good-cube bounds and brush targets on real scenes needs manual iteration
 - **Selection loops are O(N) per operation**: fine at demo scale; 600K+ splat scenes may want the cached-centers/stride optimizations before heavy brush sessions
 - **Pipeline not tested end-to-end on GPU**: gsplat/PyTorch compatibility issue
 - **No persistent storage**: no save of cleaned splats across sessions (export via the backend `.ply` serve works)

@@ -1122,7 +1122,6 @@ export class SceneManager implements ViewerHandle {
 
   /* ---- Persistent proposal box (v0.5, agent-cleanup-proposals) ---- */
   private proposalEdit: SplatEdit | null = null
-  private proposalSdf: SplatEditSdf | null = null
   private proposalWire: THREE.LineSegments | null = null
   private proposalBoxState: { min: number[]; max: number[] } | null = null
 
@@ -1152,7 +1151,7 @@ export class SceneManager implements ViewerHandle {
     geom.dispose()
     wire.position.set(center[0], center[1], center[2])
     mesh.add(wire)
-    this.proposalEdit = edit; this.proposalSdf = sdf; this.proposalWire = wire
+    this.proposalEdit = edit; this.proposalWire = wire
     this.proposalBoxState = { min: [...min], max: [...max] }
   }
 
@@ -1162,7 +1161,7 @@ export class SceneManager implements ViewerHandle {
       if (this.proposalWire) this.splatMesh.remove(this.proposalWire)
     }
     this.proposalWire?.geometry.dispose()
-    this.proposalEdit = null; this.proposalSdf = null; this.proposalWire = null
+    this.proposalEdit = null; this.proposalWire = null
     this.proposalBoxState = null
   }
 
