@@ -53,7 +53,15 @@ class AnthropicProvider:
             ) from exc
         if not self.api_key:
             raise ProviderConfigError("No ANTHROPIC_API_KEY (env-only).")
-        self._client = anthropic.Anthropic(api_key=self.api_key)
+        import httpx  # anthropic's own transport dep, always present with it
+
+        # Bounded timeout: mirrors openai.py — a wedged socket must surface as
+        # a provider error within ~2 minutes. Retries are with_retry's job.
+        self._client = anthropic.Anthropic(
+            api_key=self.api_key,
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            max_retries=0,
+        )
         return self._client
 
     def _to_tools(self, tools: list[ToolSpec]) -> list[dict]:

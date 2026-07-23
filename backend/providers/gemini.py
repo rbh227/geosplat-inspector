@@ -60,7 +60,14 @@ class GeminiProvider:
             raise ProviderConfigError(
                 "No Gemini API key. Set GEMINI_API_KEY (env-only; never in code)."
             )
-        self._client = genai.Client(api_key=self.api_key)
+        from google.genai import types  # type: ignore
+
+        # Bounded timeout (ms): mirrors openai.py — the SDK default turns a
+        # half-dead tunnel into a multi-minute silent hang inside `generate`.
+        self._client = genai.Client(
+            api_key=self.api_key,
+            http_options=types.HttpOptions(timeout=120_000),
+        )
         return self._client
 
     def _to_genai_tools(self, tools: list[ToolSpec]) -> list[Any]:
