@@ -79,6 +79,7 @@ export interface PerceptTag {
 
 export type ToolResult =
   | { ok: true }
+  | { ok: false; error: string }
   | { png_base64: string; percept?: PerceptTag }  // capture_frame
   | { frames_base64: string[] }   // capture_orbit
 
@@ -86,7 +87,7 @@ export type ToolResult =
 export interface CameraMovePayload {
   tool: Extract<
     FrontendToolName,
-    'look_at' | 'set_view' | 'orbit' | 'dolly' | 'frame_object' | 'reset_view' | 'scan_pause'
+    'look_at' | 'set_view' | 'orbit' | 'dolly' | 'frame_object' | 'reset_view' | 'scan_pause' | 'reframe' | 'reset_trail'
   >
   args: Record<string, unknown>
 }

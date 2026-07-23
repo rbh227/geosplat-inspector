@@ -315,6 +315,13 @@ export class FrontendExecutors {
     return { ok: true }
   }
 
+  /** Clear the breadcrumb trail — routed as a camera_move (dispatch.py maps it). */
+  async reset_trail(_args: Record<string, never>): Promise<ToolResult> {
+    void _args
+    this.overlay.resetTrail()
+    return { ok: true }
+  }
+
   async capture_frame(): Promise<ToolResult> {
     // Capture first, THEN read the pose/revision, so the tag matches exactly the
     // frame that was rendered (Codex boundary — every percept tied to state).
@@ -368,7 +375,7 @@ export class FrontendExecutors {
 }
 
 export type CameraTool =
-  | 'look_at' | 'set_view' | 'orbit' | 'dolly' | 'frame_object' | 'reset_view' | 'scan_pause' | 'reframe'
+  | 'look_at' | 'set_view' | 'orbit' | 'dolly' | 'frame_object' | 'reset_view' | 'scan_pause' | 'reframe' | 'reset_trail'
 
 /** Dispatch a `camera_move` tool by name. */
 export function runCameraTool(
@@ -385,5 +392,10 @@ export function runCameraTool(
     case 'reset_view': return ex.reset_view(args as never)
     case 'reframe': return ex.reframe(args as never)
     case 'scan_pause': return ex.scan_pause(args as never)
+    case 'reset_trail': return ex.reset_trail(args as never)
+    default:
+      // Malformed/unknown payloads must be rejected at the boundary, never
+      // silently "succeed" (the old switch returned undefined here).
+      return Promise.resolve({ ok: false, error: `unknown camera tool: ${String(tool)}` })
   }
 }

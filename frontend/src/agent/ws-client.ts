@@ -77,16 +77,28 @@ export class AgentWSClient {
           break
         }
         case 'capture_request': {
-          const orbit = (p as { orbit?: { center: number[]; n: number; radius?: number } }).orbit
-          const result = orbit
-            ? await this.executors.capture_orbit(orbit)
+          // Dispatcher envelope: {tool: 'capture_frame'|'capture_orbit', args}.
+          const { tool, args } = p as unknown as {
+            tool?: string
+            args?: { center: number[]; n: number; radius?: number }
+          }
+          const result = tool === 'capture_orbit' && args
+            ? await this.executors.capture_orbit(args)
             : await this.executors.capture_frame()
           this.reply(cmd.id, result as Record<string, unknown>)
           break
         }
         case 'drop_marker': {
-          const { position, label } = p as { position: [number, number, number]; label: string }
-          this.overlay.dropMarker(position, label ?? '')
+          const { args } = p as unknown as { args?: { position?: unknown; label?: unknown } }
+          const position = args?.position
+          if (!Array.isArray(position) || position.length !== 3 || position.some((v) => typeof v !== 'number')) {
+            this.reply(cmd.id, { ok: false, error: 'drop_marker: args.position must be [x,y,z]' })
+            break
+          }
+          this.overlay.dropMarker(
+            position as [number, number, number],
+            typeof args?.label === 'string' ? args.label : '',
+          )
           this.reply(cmd.id, { ok: true })
           break
         }
@@ -96,9 +108,18 @@ export class AgentWSClient {
           break
         }
         case 'narrate': {
-          const { text } = p as { text: string }
-          this.panels.setNarration(text ?? '')
-          this.reply(cmd.id, { ok: true })
+          // Two legitimate shapes: the dispatcher command {tool, args:{text}}
+          // and the loop's ev_narrate EVENT {text} (no args, no correlation id).
+          const maybe = p as { args?: { text?: unknown }; text?: unknown }
+          const text = typeof maybe.args?.text === 'string'
+            ? maybe.args.text
+            : typeof maybe.text === 'string' ? maybe.text : ''
+          if (!text) {
+            if (cmd.id) this.reply(cmd.id, { ok: false, error: 'narrate: args.text missing' })
+            break
+          }
+          this.panels.setNarration(text)
+          if (cmd.id) this.reply(cmd.id, { ok: true })
           break
         }
         case 'reload_scene': {

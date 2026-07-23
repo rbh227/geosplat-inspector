@@ -44,7 +44,7 @@ export class MockBackend {
     const frames: string[] = []
 
     this.trace('thought', { text: 'Beginning scene inspection.' })
-    await this.command('narrate', { text: 'Framing the whole scene…' })
+    await this.command('narrate', { tool: 'narrate', args: { text: 'Framing the whole scene…' } })
 
     this.trace('tool_call', { name: 'reset_view' })
     await this.command('camera_move', { tool: 'reset_view', args: {} })
@@ -56,14 +56,14 @@ export class MockBackend {
       args: { center: [0, 0, 0], deg: 60, axis: 'y', duration_ms: 1200 },
     })
 
-    await this.command('narrate', { text: 'Scanning the upper region for floaters.' })
+    await this.command('narrate', { tool: 'narrate', args: { text: 'Scanning the upper region for floaters.' } })
     await this.command('camera_move', { tool: 'scan_pause', args: { ms: 600 } })
 
     await this.command('drop_marker', { position: [0.8, 0.8, 0.0], label: 'floaters?' })
     await this.command('drop_marker', { position: [-0.6, 0.2, 0.5], label: 'outlier' })
 
     this.trace('tool_call', { name: 'capture_frame' })
-    const cap = await this.command('capture_request', {})
+    const cap = await this.command('capture_request', { tool: 'capture_frame', args: {} })
     // Same wire shape as the real backend: bare base64 under png_base64.
     if (typeof cap.png_base64 === 'string') frames.push(`data:image/png;base64,${cap.png_base64}`)
     this.trace('tool_result', { text: 'captured frame' })
@@ -74,14 +74,15 @@ export class MockBackend {
     })
 
     const orbitCap = await this.command('capture_request', {
-      orbit: { center: [0, 0, 0], n: 4, radius: 3 },
+      tool: 'capture_orbit',
+      args: { center: [0, 0, 0], n: 4, radius: 2.2 },
     })
     if (Array.isArray(orbitCap.frames_base64)) {
       frames.push(...(orbitCap.frames_base64 as string[]).map((b) => `data:image/png;base64,${b}`))
     }
 
     if (opts.reloadUrl) {
-      await this.command('narrate', { text: 'Loading cleaned scene…' })
+      await this.command('narrate', { tool: 'narrate', args: { text: 'Loading cleaned scene…' } })
       await this.command('reload_scene', { url: opts.reloadUrl })
     }
 

@@ -260,3 +260,77 @@ describe('ws-client proposal command (parked reply)', () => {
     expect(bridge.clearedSelection).toBe(1)
   })
 })
+
+class FakeOverlay {
+  markers: Array<{ position: [number, number, number]; label: string }> = []
+  trailResets = 0
+  dropMarker(position: [number, number, number], label: string): void { this.markers.push({ position, label }) }
+  resetTrail(): void { this.trailResets += 1 }
+}
+
+class FakePanels {
+  narrations: string[] = []
+  setNarration(text: string): void { this.narrations.push(text) }
+  pushTrace(): void {}
+}
+
+describe('ws-client command envelopes (dispatcher wraps everything as {tool, args})', () => {
+  let transport: FakeTransport
+  let overlay: FakeOverlay
+  let panels: FakePanels
+
+  beforeEach(() => {
+    transport = new FakeTransport()
+    overlay = new FakeOverlay()
+    panels = new FakePanels()
+    void new AgentWSClient(
+      transport as unknown as Transport,
+      {} as unknown as RendererBridge,
+      overlay as unknown as Overlay,
+      panels as unknown as PanelBus,
+    )
+  })
+
+  function lastReplyPayload(): Record<string, unknown> {
+    const msg = transport.sent[transport.sent.length - 1] as { payload?: Record<string, unknown> }
+    return msg?.payload ?? {}
+  }
+
+  it('drop_marker reads position/label from p.args (the dispatcher envelope)', async () => {
+    await transport.handler!({ type: 'drop_marker', id: 'c1', payload: { tool: 'drop_marker', args: { position: [1, 2, 3], label: 'floaters' } } })
+    expect(overlay.markers).toEqual([{ position: [1, 2, 3], label: 'floaters' }])
+    expect(lastReplyPayload().ok).toBe(true)
+  })
+
+  it('drop_marker rejects a malformed payload instead of throwing into a generic error', async () => {
+    await transport.handler!({ type: 'drop_marker', id: 'c2', payload: { position: [1, 2, 3] } })
+    expect(overlay.markers).toEqual([])
+    expect(lastReplyPayload().ok).toBe(false)
+  })
+
+  it('narrate reads text from p.args and reports failure when both shapes are absent', async () => {
+    await transport.handler!({ type: 'narrate', id: 'c3', payload: { tool: 'narrate', args: { text: 'scanning the ridge' } } })
+    expect(panels.narrations).toEqual(['scanning the ridge'])
+    expect(lastReplyPayload().ok).toBe(true)
+
+    await transport.handler!({ type: 'narrate', id: 'c4', payload: { tool: 'narrate', args: {} } })
+    expect(panels.narrations).toEqual(['scanning the ridge']) // no blank narration
+    expect(lastReplyPayload().ok).toBe(false)
+  })
+
+  it('narrate still accepts the loop-event root shape {text} (ev_narrate has no args)', async () => {
+    await transport.handler!({ type: 'narrate', payload: { text: 'Paused — the operator has control.' } })
+    expect(panels.narrations).toEqual(['Paused — the operator has control.'])
+  })
+
+  it('reset_trail routed as camera_move actually resets the trail', async () => {
+    await transport.handler!({ type: 'camera_move', id: 'c5', payload: { tool: 'reset_trail', args: {} } })
+    expect(overlay.trailResets).toBe(1)
+    expect(lastReplyPayload().ok).toBe(true)
+  })
+
+  it('an unknown camera tool is rejected, not silently succeeded', async () => {
+    await transport.handler!({ type: 'camera_move', id: 'c6', payload: { tool: 'warp_drive', args: {} } })
+    expect(lastReplyPayload().ok).toBe(false)
+  })
+})
