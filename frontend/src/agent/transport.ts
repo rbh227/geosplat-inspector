@@ -9,6 +9,9 @@ export interface Transport {
   send(msg: WSResponse): void
   /** Register the handler for backend → frontend messages (commands + trace). */
   onMessage(handler: (data: unknown) => void): void
+  /** Optional: fired once if the channel dies UNEXPECTEDLY (close/error).
+   *  A deliberate close() never fires it. Mocks may omit. */
+  onClose?(handler: () => void): void
   close(): void
 }
 
@@ -16,6 +19,9 @@ export interface Transport {
 export class WebSocketTransport implements Transport {
   private ws: WebSocket
   private handler: ((data: unknown) => void) | null = null
+  private closeHandlers: Array<() => void> = []
+  private died = false        // unexpected close/error observed
+  private closedByUs = false  // deliberate close() — not a failure
 
   constructor(url: string) {
     this.ws = new WebSocket(url)
@@ -29,6 +35,13 @@ export class WebSocketTransport implements Transport {
       }
       this.handler?.(data)
     })
+    const fireClose = () => {
+      if (this.closedByUs || this.died) return
+      this.died = true
+      this.closeHandlers.forEach((h) => h())
+    }
+    this.ws.addEventListener('close', fireClose)
+    this.ws.addEventListener('error', fireClose)
   }
 
   send(msg: WSResponse): void {
@@ -39,6 +52,11 @@ export class WebSocketTransport implements Transport {
     this.handler = handler
   }
 
+  onClose(handler: () => void): void {
+    this.closeHandlers.push(handler)
+    if (this.died) handler()
+  }
+
   whenOpen(): Promise<void> {
     if (this.ws.readyState === WebSocket.OPEN) return Promise.resolve()
     return new Promise((resolve, reject) => {
@@ -47,7 +65,10 @@ export class WebSocketTransport implements Transport {
     })
   }
 
-  close(): void { this.ws.close() }
+  close(): void {
+    this.closedByUs = true
+    this.ws.close()
+  }
 }
 
 /** In-process loopback: pairs the client with a mock backend, no network. */

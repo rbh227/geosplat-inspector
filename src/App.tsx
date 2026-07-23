@@ -531,6 +531,18 @@ export default function App() {
     const panels = new PanelBus()
     const transport = new WebSocketTransport(sceneWsUrl(sceneId))
     await transport.whenOpen()
+
+    // The socket can die out from under a cached agent (backend restart,
+    // network drop). Without this, `complete` never arrives, isThinking stays
+    // true forever, and handleSend refuses every future run.
+    transport.onClose?.(() => {
+      disposeAgent()
+      setIsThinking(false)
+      setAgentPaused(false)
+      setAgentStep(0)
+      showStatus('Agent connection lost — the run was stopped. Send again to reconnect.')
+    })
+
     const agent = createAgent({ bridge: makeRendererBridge(viewer), transport, panels })
 
     processedTraceRef.current = panels.trace.get().length
@@ -542,7 +554,7 @@ export default function App() {
     panelsRef.current = panels
     transportRef.current = transport
     agentRef.current = agent
-  }, [processTrace, handleProposalSignal])
+  }, [processTrace, handleProposalSignal, disposeAgent, showStatus])
 
   const handleSend = useCallback((text: string) => {
     setMessages((prev) => [...prev, {
