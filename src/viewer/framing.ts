@@ -84,9 +84,35 @@ function robustBounds(points: readonly Vec3[]): RobustBounds | null {
 
 /** Robust core center + bounding-sphere radius (used for view presets). */
 export function computeCoreBounds(points: readonly Vec3[]): CoreBounds | null {
-  const b = robustBounds(points)
-  if (!b) return null
-  return { center: b.center, radius: 0.5 * Math.hypot(b.ex, b.ey, b.ez) }
+  const n = points.length
+  if (n === 0) return null
+  // Center = per-axis median, radius = 80th-percentile distance from it —
+  // NOT the 5/95 percentile box: on floater-heavy captures the shell both
+  // drags the box's midpoint off the dense mass and inflates its diagonal
+  // severalfold, which made the agent's `coverage` percept read "too close"
+  // from every sane viewpoint and sent it retreating into the void. Medians
+  // and distance percentiles hug the dense mass regardless of how far the
+  // shell extends.
+  const xs = new Array<number>(n)
+  const ys = new Array<number>(n)
+  const zs = new Array<number>(n)
+  for (let i = 0; i < n; i++) {
+    xs[i] = points[i].x
+    ys[i] = points[i].y
+    zs[i] = points[i].z
+  }
+  xs.sort((a, b) => a - b)
+  ys.sort((a, b) => a - b)
+  zs.sort((a, b) => a - b)
+  const cx = percentile(xs, 0.5)
+  const cy = percentile(ys, 0.5)
+  const cz = percentile(zs, 0.5)
+  const dists = new Array<number>(n)
+  for (let i = 0; i < n; i++) {
+    dists[i] = Math.hypot(points[i].x - cx, points[i].y - cy, points[i].z - cz)
+  }
+  dists.sort((a, b) => a - b)
+  return { center: [cx, cy, cz], radius: percentile(dists, 0.8) }
 }
 
 export interface CoreBox { min: [number, number, number]; max: [number, number, number] }

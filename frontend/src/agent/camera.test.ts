@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { clampToCore, poseForBox, resolveAimPoint, sceneCoverage, toRenderSpace } from './camera.ts'
+import { computeCoreBounds } from '../../../src/viewer/framing.ts'
 import type { RendererBridge } from './types.ts'
 
 describe('toRenderSpace', () => {
@@ -91,6 +92,49 @@ describe('sceneCoverage (R2 framing signal)', () => {
 
   it('is 0 with no core', () => {
     expect(sceneCoverage(new THREE.Vector3(0, 0, 10), 90, null)).toBe(0)
+  })
+})
+
+describe('coverage back-off policy on a floater-heavy scene (regression)', () => {
+  it('backing off until coverage ≤0.9 keeps the dense mass filling the view', () => {
+    // Reproduces the 2026-07-23 live failure: the agent obeys the prompt rule
+    // "coverage >0.9 → back off", and with a floater-inflated core it kept
+    // retreating until the real scene was a speck. Percept and policy must
+    // agree: at the first "not too close" reading, the dense mass (median
+    // distance from center) must still fill a meaningful part of the view.
+    let seed = 7
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 2 ** 32
+    }
+    const pts = []
+    for (let i = 0; i < 850; i++) {
+      pts.push({ x: rand() * 2 - 1, y: rand() * 2 - 1, z: rand() * 2 - 1 })
+    }
+    for (let i = 0; i < 150; i++) {
+      const r = 100 + rand() * 900
+      const u = rand() * 2 - 1
+      const phi = rand() * 2 * Math.PI
+      const s = Math.sqrt(1 - u * u)
+      pts.push({ x: r * s * Math.cos(phi), y: r * u, z: r * s * Math.sin(phi) })
+    }
+    const core = computeCoreBounds(pts)!
+    const center = new THREE.Vector3(...core.center)
+
+    const fov = 60
+    let dist = 2 // operator starts with the dense mass framed
+    while (
+      sceneCoverage(center.clone().add(new THREE.Vector3(0, 0, dist)), fov, core) > 0.9
+    ) {
+      dist *= 1.25
+    }
+
+    const dists = pts
+      .map((p) => Math.hypot(p.x - core.center[0], p.y - core.center[1], p.z - core.center[2]))
+      .sort((a, b) => a - b)
+    const denseR = dists[Math.floor(dists.length / 2)]
+    const halfHeight = Math.tan((fov * Math.PI) / 360) * dist
+    expect(denseR / halfHeight).toBeGreaterThan(0.25)
   })
 })
 

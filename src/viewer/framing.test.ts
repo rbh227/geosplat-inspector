@@ -90,6 +90,33 @@ describe('computeCoreBounds', () => {
   it('returns null for empty input', () => {
     expect(computeCoreBounds([])).toBeNull()
   })
+
+  it('radius tracks the dense mass, not a heavy floater shell', () => {
+    // Mirrors a real messy capture: ~85% of splats in a tight core, ~15%
+    // floaters scattered to 100-1000x the core size in random directions.
+    // Per-axis percentile trims keep enough of the shell to inflate the
+    // radius severalfold, which makes the agent's `coverage` percept read
+    // "too close" from every sane viewpoint and drives it into the void.
+    let seed = 42
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 2 ** 32
+    }
+    const pts: Vec3[] = []
+    for (let i = 0; i < 850; i++) {
+      pts.push({ x: rand() * 2 - 1, y: rand() * 2 - 1, z: rand() * 2 - 1 })
+    }
+    for (let i = 0; i < 150; i++) {
+      const r = 100 + rand() * 900
+      const u = rand() * 2 - 1
+      const phi = rand() * 2 * Math.PI
+      const s = Math.sqrt(1 - u * u)
+      pts.push({ x: r * s * Math.cos(phi), y: r * u, z: r * s * Math.sin(phi) })
+    }
+    const b = computeCoreBounds(pts)!
+    expect(b.radius).toBeGreaterThan(0.5)
+    expect(b.radius).toBeLessThan(5)
+  })
 })
 
 describe('computeCoreBox', () => {

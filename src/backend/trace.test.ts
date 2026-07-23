@@ -32,4 +32,12 @@ describe('completeContent', () => {
     expect(completeContent({})).toBe('Done.')
     expect(completeContent(undefined)).toBe('Done.')
   })
+  it('reports a step-limit ending instead of a bare Done', () => {
+    expect(completeContent({ status: 'max_steps', answer: null, error: null }))
+      .toBe('Run ended: step limit reached before finishing.')
+  })
+  it('reports an operator stop', () => {
+    expect(completeContent({ status: 'interrupted', answer: null, error: null }))
+      .toBe('Stopped by the operator.')
+  })
 })

@@ -19,11 +19,17 @@ export function classifyAction(name: string): AgentAction['type'] {
 
 /**
  * Chat content for a `complete` trace event's payload. Error wins over answer;
- * a bare completion with neither falls back to "Done."
+ * non-answer endings (step limit, operator stop) must say what happened — a
+ * bare "Done." on an exhausted run reads as success and hides that the agent
+ * simply ran out of turns.
  */
 export function completeContent(detail: Record<string, unknown> | undefined): string {
   const error = detail?.error ? String(detail.error) : null
   if (error) return `Error: ${error}`
   const answer = detail?.answer ? String(detail.answer) : null
-  return answer ?? 'Done.'
+  if (answer) return answer
+  const status = detail?.status ? String(detail.status) : null
+  if (status === 'max_steps') return 'Run ended: step limit reached before finishing.'
+  if (status === 'interrupted') return 'Stopped by the operator.'
+  return 'Done.'
 }
