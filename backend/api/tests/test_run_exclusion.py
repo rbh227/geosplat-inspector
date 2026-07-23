@@ -37,6 +37,12 @@ class BlockingRunner:
         await self.release.wait()
 
 
+class FakeRenderer:
+    async def accept(self) -> None: ...
+    async def send_json(self, message: dict) -> None: ...
+    async def close(self) -> None: ...
+
+
 @pytest.mark.anyio
 async def test_second_concurrent_run_is_rejected_with_409(monkeypatch):
     runner = BlockingRunner()
@@ -51,6 +57,7 @@ async def test_second_concurrent_run_is_rejected_with_409(monkeypatch):
             )
         assert up.status_code == 200, up.text
         scene_id = up.json()["id"]
+        await app.state.manager.connect(scene_id, FakeRenderer())
         body = {"scene_id": scene_id, "prompt": "clean", "stage": "clean"}
 
         r1 = await client.post("/agent/run", json=body)
@@ -70,3 +77,22 @@ async def test_second_concurrent_run_is_rejected_with_409(monkeypatch):
             if r3.status_code == 200:
                 break
         assert r3.status_code == 200, r3.text
+
+
+@pytest.mark.anyio
+async def test_run_without_renderer_is_rejected_with_409(monkeypatch):
+    runner = BlockingRunner()
+    monkeypatch.setattr(server_mod, "_select_runner", lambda: runner)
+    app = server_mod.create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        with open(MESSY, "rb") as f:
+            up = await client.post(
+                "/scene", files={"file": ("messy.ply", f, "application/octet-stream")}
+            )
+        scene_id = up.json()["id"]
+        r = await client.post(
+            "/agent/run", json={"scene_id": scene_id, "prompt": "clean", "stage": "clean"}
+        )
+        assert r.status_code == 409
+        assert "no renderer" in r.json()["detail"]

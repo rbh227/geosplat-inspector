@@ -121,10 +121,34 @@ async def test_runner_drives_channel_end_to_end():
 
 def test_agent_run_route_returns_started():
     """POST /agent/run wires up and returns a run id (drive verified above)."""
-    client = TestClient(create_app())
+    app = create_app()
+    client = TestClient(app)
     with open(MESSY, "rb") as f:
         scene_id = client.post("/scene", files={"file": ("m.ply", f, "application/octet-stream")}).json()["id"]
+    asyncio.run(app.state.manager.connect(scene_id, MockWS()))
     r = client.post("/agent/run", json={"scene_id": scene_id, "prompt": "hi"})
     assert r.status_code == 200
     assert r.json()["status"] == "started"
     assert r.json()["run_id"]
+
+
+@pytest.mark.anyio
+async def test_stale_socket_cleanup_does_not_evict_replacement():
+    """The reconnect race: connect() swaps A→B, then A's route cleanup fires.
+    Keyed-by-scene disconnect used to evict B, leaving no renderer registered."""
+    mgr = ConnectionManager()
+    a, b = MockWS(), MockWS()
+    await mgr.connect("s1", a)
+    await mgr.connect("s1", b)   # one-renderer-per-scene: closes and replaces a
+    mgr.disconnect("s1", a)      # stale route cleanup for the OLD socket
+    assert mgr.is_connected("s1"), "replacement socket must survive stale cleanup"
+    mgr.disconnect("s1", b)      # the CURRENT socket's cleanup still removes
+    assert not mgr.is_connected("s1")
+
+
+@pytest.mark.anyio
+async def test_disconnect_without_socket_still_removes():
+    mgr = ConnectionManager()
+    await mgr.connect("s1", MockWS())
+    mgr.disconnect("s1")
+    assert not mgr.is_connected("s1")

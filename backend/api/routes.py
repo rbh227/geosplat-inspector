@@ -248,6 +248,12 @@ def create_router(
                 detail="an agent run is already active for this scene — "
                        "stop it or wait for it to finish",
             )
+        if not manager.is_connected(req.scene_id):
+            raise HTTPException(
+                status_code=409,
+                detail="no renderer connected for this scene — completion events "
+                       "would be dropped silently; open the viewer first",
+            )
         channel = WSChannel(req.scene_id, manager)
 
         async def _drive():
@@ -277,9 +283,9 @@ def create_router(
                 message = await websocket.receive_json()
                 manager.handle_message(scene_id, message)
         except WebSocketDisconnect:
-            manager.disconnect(scene_id)
+            manager.disconnect(scene_id, websocket)
         except Exception:
-            manager.disconnect(scene_id)
+            manager.disconnect(scene_id, websocket)
 
     return router
 

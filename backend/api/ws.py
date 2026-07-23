@@ -61,7 +61,13 @@ class ConnectionManager:
         self._conns[scene_id] = websocket
         self._interrupted.discard(scene_id)
 
-    def disconnect(self, scene_id: str) -> None:
+    def disconnect(self, scene_id: str, websocket: Any | None = None) -> None:
+        """Remove a scene's renderer. With `websocket` given, remove it only if
+        it is STILL the registered socket: connect() swaps in a replacement
+        before the old socket's route cleanup runs, and that stale cleanup must
+        never evict the replacement (observed reconnect race)."""
+        if websocket is not None and self._conns.get(scene_id) is not websocket:
+            return
         self._conns.pop(scene_id, None)
         # fail any in-flight commands for this scene
         for corr_id, sid in list(self._pending_scene.items()):
@@ -185,7 +191,7 @@ class ConnectionManager:
         try:
             await ws.send_json({"type": etype, "payload": payload or {}})
         except Exception:
-            self.disconnect(scene_id)
+            self.disconnect(scene_id, ws)
 
 
 class WSChannel(FrontendChannel):
