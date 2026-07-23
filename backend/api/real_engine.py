@@ -206,7 +206,10 @@ class RealAgentRunner:
             base_url=cfg.base_url,
             system_instruction=system_prompt_for(resolved),
         )
-        loop = AgentLoop(provider, dispatcher, channel, stage=resolved)
+        # The provider carries the system prompt natively (system_instruction
+        # above); an empty system_prompt stops the loop from ALSO seeding
+        # messages[0] with the same text — providers were sending it twice.
+        loop = AgentLoop(provider, dispatcher, channel, stage=resolved, system_prompt="")
         await loop.run(prompt)
 
 

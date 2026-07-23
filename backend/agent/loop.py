@@ -110,10 +110,10 @@ class AgentLoop:
 
     # -- public -----------------------------------------------------------
     async def run(self, prompt: str) -> LoopResult:
-        self._messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": prompt},
-        ]
+        self._messages = []
+        if self.system_prompt:
+            self._messages.append({"role": "system", "content": self.system_prompt})
+        self._messages.append({"role": "user", "content": prompt})
         self._pending_frames = []
         self._ledger = GroundingLedger()
         self._last_metrics = None
@@ -231,7 +231,8 @@ class AgentLoop:
             "near the scene radius covers everything, so use a small fraction of "
             "it to target a region."
         )
-        self._messages.insert(1, {"role": "user", "content": msg})
+        pos = 1 if self._messages and self._messages[0].get("role") == "system" else 0
+        self._messages.insert(pos, {"role": "user", "content": msg})
 
     # -- pause / takeover (KTD9, R14) --------------------------------------
     async def _pause_checkpoint(self) -> str | None:
