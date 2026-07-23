@@ -123,6 +123,8 @@ class AgentLoop:
         self._approved_box = None
         self._approved_sweep = None
         self._approved_ids = None
+        if hasattr(self.dispatcher, "edits_applied"):
+            self.dispatcher.edits_applied = 0
 
         await self._seed_grounding()
 
@@ -483,7 +485,7 @@ class AgentLoop:
                 return False
         self._result.status = "answered"
         self._result.answer = text
-        await self._emit(ev_complete("answered", answer=text))
+        await self._emit(ev_complete("answered", answer=text, scene_changed=self._scene_changed()))
         return True
 
     # -- metrics helpers --------------------------------------------------
@@ -581,15 +583,18 @@ class AgentLoop:
         self._result.trace.append(event)
         await self.channel.emit_event(event)
 
+    def _scene_changed(self) -> bool:
+        return getattr(self.dispatcher, "edits_applied", 0) > 0
+
     async def _finish_status(self, status: str) -> LoopResult:
         self._result.status = status
-        await self._emit(ev_complete(status))
+        await self._emit(ev_complete(status, scene_changed=self._scene_changed()))
         return self._result
 
     async def _finish_error(self, status: str, error: str) -> LoopResult:
         self._result.status = status
         self._result.error = error
-        await self._emit(ev_complete(status, error=error))
+        await self._emit(ev_complete(status, error=error, scene_changed=self._scene_changed()))
         return self._result
 
 

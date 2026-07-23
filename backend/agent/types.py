@@ -54,8 +54,17 @@ def ev_narrate(text: str) -> dict:
     return {"type": "narrate", "text": text, "t": _now()}
 
 
-def ev_complete(status: str, *, answer: str | None = None, error: str | None = None) -> dict:
-    return {"type": "complete", "status": status, "answer": answer, "error": error, "t": _now()}
+def ev_complete(
+    status: str,
+    *,
+    answer: str | None = None,
+    error: str | None = None,
+    scene_changed: bool = False,
+) -> dict:
+    return {
+        "type": "complete", "status": status, "answer": answer,
+        "error": error, "scene_changed": scene_changed, "t": _now(),
+    }
 
 
 @dataclass

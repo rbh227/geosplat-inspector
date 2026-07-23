@@ -97,12 +97,18 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
 # to the editing engine. The model never sees or forwards raw ID arrays.
 _SELECTION_EDIT_TOOLS = frozenset({"delete_selection", "keep_selection"})
 
+# Tools whose success means the served scene differs from what the renderer
+# has loaded: destructive edits plus history restores. Drives the `complete`
+# event's scene_changed flag (the frontend gates its reload on it).
+_SCENE_MUTATORS = DESTRUCTIVE_TOOLS | frozenset({"undo", "redo"})
+
 
 class ToolDispatcher:
     def __init__(self, executor: BackendExecutor, channel: FrontendChannel):
         self.executor = executor
         self.channel = channel
         self.snapshots_taken = 0
+        self.edits_applied = 0
 
     async def dispatch(self, call: ToolCall) -> dict:
         """Execute one tool call. Returns a normalized envelope:
@@ -153,6 +159,8 @@ class ToolDispatcher:
             return {"ok": False, "name": call.name, "error": f"bad args: {exc}"}
         except Exception as exc:  # noqa: BLE001 - surface engine errors to the loop
             return {"ok": False, "name": call.name, "error": str(exc)}
+        if call.name in _SCENE_MUTATORS:
+            self.edits_applied += 1
         return {"ok": True, "name": call.name, "result": result, "snapshotted": snapshotted}
 
     # -- frontend ---------------------------------------------------------
