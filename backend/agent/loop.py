@@ -158,13 +158,28 @@ class AgentLoop:
                 await self._nudge("Use a tool, or call answer() to finish.")
                 continue
 
-            for call in response.tool_calls:
-                returned = await self._handle_call(call, step)
-                if returned:  # answer() fired
-                    return self._result
+            calls = list(response.tool_calls)
+            for idx, call in enumerate(calls):
+                # Honor Stop/Pause BEFORE the action, not one action late.
                 verdict = await self._pause_checkpoint()
                 if verdict:
                     return await self._finish_status(verdict)
+                returned = await self._handle_call(call, step)
+                if returned:  # answer() fired
+                    return self._result
+                # Perception barrier: anything queued after a capture in this
+                # same response would execute before the model ever sees the
+                # frame. Drop the tail and tell the model why.
+                if call.name in VISION_TOOLS and idx < len(calls) - 1:
+                    dropped = [c.name for c in calls[idx + 1:]]
+                    self._nudge_sync(
+                        f"capture taken — dropped {len(dropped)} queued action(s) "
+                        f"({', '.join(dropped)}): look at the frame before acting again."
+                    )
+                    break
+            verdict = await self._pause_checkpoint()
+            if verdict:
+                return await self._finish_status(verdict)
 
         return await self._finish_status("max_steps")
 
