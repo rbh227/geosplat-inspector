@@ -33,3 +33,10 @@ export function completeContent(detail: Record<string, unknown> | undefined): st
   if (status === 'interrupted') return 'Stopped by the operator.'
   return 'Done.'
 }
+
+/** True when a `complete` payload records a real backend edit this run.
+ *  Gates the authoritative reload: reloading reframes the scene, and a
+ *  read-only survey must not yank the operator's camera the moment it ends. */
+export function sceneChanged(detail: Record<string, unknown> | undefined): boolean {
+  return detail?.scene_changed === true
+}

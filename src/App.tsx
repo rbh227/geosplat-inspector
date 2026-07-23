@@ -10,7 +10,7 @@ import {
   getModelConfig, type ModelConfig,
 } from './backend/client'
 import { makeRendererBridge } from './backend/bridge'
-import { classifyAction, completeContent } from './backend/trace'
+import { classifyAction, completeContent, sceneChanged } from './backend/trace'
 import {
   savePersistedScene, loadPersistedScene, clearPersistedScene, updatePersistedCamera,
 } from './persistence'
@@ -283,7 +283,7 @@ export default function App() {
    * the viewer's stable ID map keeps matching the backend's ID space (KTD2/3).
    */
   const reloadAuthoritative = useCallback(async (sceneId: string) => {
-    await viewerRef.current?.loadSplat(scenePlyUrl(sceneId))
+    await viewerRef.current?.loadSplat(scenePlyUrl(sceneId), { keepCamera: true })
     try {
       const ids = await getAliveIds(sceneId)
       viewerRef.current?.setIdMapFromIds(ids)
@@ -509,9 +509,9 @@ export default function App() {
         setNarration(content)
         setAgentStep(0)
         runActionsRef.current = []
-        // The agent edited the backend model; reload the served .ply and
-        // adopt the backend's alive-ID list so both sides keep one ID space.
-        if (!hadError && sceneIdRef.current) {
+        // Reload the served .ply ONLY when the run actually edited the backend
+        // model (scene_changed) — a read-only survey must not reload/reframe.
+        if (!hadError && sceneIdRef.current && sceneChanged(e.detail)) {
           void reloadAuthoritative(sceneIdRef.current)
         }
       }

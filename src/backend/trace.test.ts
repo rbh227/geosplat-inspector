@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyAction, completeContent } from './trace'
+import { classifyAction, completeContent, sceneChanged } from './trace'
 
 describe('classifyAction', () => {
   it('maps camera tools', () => {
@@ -39,5 +39,14 @@ describe('completeContent', () => {
   it('reports an operator stop', () => {
     expect(completeContent({ status: 'interrupted', answer: null, error: null }))
       .toBe('Stopped by the operator.')
+  })
+})
+
+describe('sceneChanged (completion-gated reload)', () => {
+  it('is true only when the payload explicitly records a backend edit', () => {
+    expect(sceneChanged({ scene_changed: true })).toBe(true)
+    expect(sceneChanged({ scene_changed: false })).toBe(false)
+    expect(sceneChanged({})).toBe(false)        // absent field: never reload-yank
+    expect(sceneChanged(undefined)).toBe(false)
   })
 })

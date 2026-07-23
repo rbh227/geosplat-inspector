@@ -62,7 +62,7 @@ export interface ViewerHandle {
   isLoaded(): boolean
 
   // Loading
-  loadSplat(url: string): Promise<void>
+  loadSplat(url: string, opts?: { keepCamera?: boolean }): Promise<void>
   loadSplatFile(file: File): Promise<void>
 
   // Cleanup

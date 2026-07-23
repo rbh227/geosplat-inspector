@@ -678,7 +678,7 @@ export class SceneManager implements ViewerHandle {
   /*  ViewerHandle – Loading                                          */
   /* ---------------------------------------------------------------- */
 
-  async loadSplat(url: string): Promise<void> {
+  async loadSplat(url: string, opts?: { keepCamera?: boolean }): Promise<void> {
     this.loading = true
     this.emitStateChange()
 
@@ -706,7 +706,13 @@ export class SceneManager implements ViewerHandle {
       this.selection.clear()
       this.emitSelectionChange()
 
-      this.frameScene()
+      if (opts?.keepCamera) {
+        // Authoritative reload of the SAME scene: hold the operator's pose.
+        // Still refresh the core cache — the alive set may have changed.
+        this.cacheSceneCore()
+      } else {
+        this.frameScene()
+      }
     } finally {
       this.loading = false
       this.emitStateChange()
