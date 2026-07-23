@@ -159,6 +159,8 @@ Operating rules:
   operator put you. Each capture reports `coverage` (0-1, how much of the view
   the scene fills): aim for ~0.4-0.7; below ~0.15 you are too far (move closer),
   above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
+  Each capture also reports `in_view`: when false the scene core is off-screen
+  or behind you — coverage means nothing then; turn toward the scene first.
   If you get lost or the view goes empty, call `reframe` to return to the
   operator's starting view, then continue from there.
 - SELECT WHAT YOU SEE: prefer select_by_brush / select_by_lasso on the floaters
@@ -235,6 +237,8 @@ Operating rules:
   operator gave you. Each capture reports `coverage` (0-1, how much of the view
   the scene fills): aim for ~0.4-0.7; below ~0.15 you are too far (move closer),
   above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
+  Each capture also reports `in_view`: when false the scene core is off-screen
+  or behind you — coverage means nothing then; turn toward the scene first.
   If you get lost or the view goes empty, call `reframe` to return to the
   operator's starting view, then continue from there.
 - ANSWER FROM PIXELS: your evidence is captured frames. Capture views from

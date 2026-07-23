@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import * as THREE from 'three'
 import { computeFraming, computeCoreBounds, computeCoreBox, nearFarForDistance, type Vec3 } from './framing'
+import { sceneCoverage } from '../../frontend/src/agent/camera.ts'
 
 /** Elevation of the camera above the target's horizontal plane, in degrees. */
 function elevationDeg(target: number[], position: number[]): number {
@@ -169,5 +171,33 @@ describe('nearFarForDistance', () => {
       expect(near).toBeGreaterThan(0)
       expect(near).toBeLessThan(d + r)     // near plane doesn't swallow the scene
     }
+  })
+})
+
+describe('computeFraming agrees with the coverage percept', () => {
+  it('frames the median/80th core: the framed pose reads well-framed, aimed at the dense mass', () => {
+    let seed = 42
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
+    const pts: { x: number; y: number; z: number }[] = []
+    for (let i = 0; i < 900; i++) pts.push({ x: rand() * 2 - 1, y: rand() * 2 - 1, z: rand() * 2 - 1 })
+    for (let i = 0; i < 100; i++) {
+      const r = 80 + rand() * 400
+      const u = rand() * 2 - 1
+      const phi = rand() * 2 * Math.PI
+      const s = Math.sqrt(1 - u * u)
+      pts.push({ x: r * s * Math.cos(phi), y: r * u, z: r * s * Math.sin(phi) })
+    }
+    const fov = 60
+    const framing = computeFraming(pts, fov, 1.6)!
+    const core = computeCoreBounds(pts)!
+    const cov = sceneCoverage(new THREE.Vector3(...framing.position), fov, core)
+    expect(cov).toBeGreaterThan(0.3)   // not a speck in the void
+    expect(cov).toBeLessThan(0.85)     // not buried in the mass
+    const dTarget = Math.hypot(
+      framing.target[0] - core.center[0],
+      framing.target[1] - core.center[1],
+      framing.target[2] - core.center[2],
+    )
+    expect(dTarget).toBeLessThan(1e-9) // aimed at the dense-mass center, not the box midpoint
   })
 })

@@ -163,9 +163,10 @@ export function computeFraming(
 ): Framing | null {
   if (points.length < 2) return null
   const b = robustBounds(points)
-  if (!b) return null
+  const core = computeCoreBounds(points)
+  if (!b || !core) return null
 
-  const [cx, cy, cz] = b.center
+  const [cx, cy, cz] = core.center // aim at the dense mass, not the box midpoint
   const horizontal = Math.hypot(b.ex, b.ez)
   const vertical = b.ey
   const ratio = horizontal > 1e-6 ? vertical / horizontal : 1
@@ -176,12 +177,15 @@ export function computeFraming(
   const elevation = elevationDeg * DEG
   const azimuth = azimuthDeg * DEG
 
-  // Fit the core's bounding sphere within the limiting (smaller) FOV.
-  const boundingRadius = Math.max(0.5 * Math.hypot(b.ex, b.ey, b.ez), 1e-3)
+  // Frame the SAME core sphere the agent's coverage percept measures
+  // (computeCoreBounds): the 80th-percentile radius is tighter than the old
+  // 5/95 half-diagonal, so pad more (1.5 vs 1.15) to land inside the
+  // percept's well-framed band (~0.4-0.7) instead of edge-to-edge.
+  const boundingRadius = Math.max(core.radius, 1e-3)
   const vfov = fovYDeg * DEG
   const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect)
   const limitingFov = Math.min(vfov, hfov)
-  const distance = (boundingRadius / Math.sin(limitingFov / 2)) * 1.15
+  const distance = (boundingRadius / Math.sin(limitingFov / 2)) * 1.5
 
   const dir = {
     x: Math.cos(elevation) * Math.sin(azimuth),

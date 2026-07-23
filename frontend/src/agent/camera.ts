@@ -144,6 +144,25 @@ export function sceneCoverage(
 }
 
 /**
+ * Is the scene core in front of the camera and inside the frustum?
+ * `coverage` is pure distance — it reads "well framed" even facing away from
+ * the scene. The capture percept pairs it with this flag so the model knows
+ * when the number is meaningless and it should turn toward the scene first.
+ */
+export function coreInView(
+  camera: THREE.PerspectiveCamera,
+  core: { center: [number, number, number]; radius: number } | null,
+): boolean {
+  if (!core || core.radius <= 0) return false
+  const center = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+  camera.updateMatrixWorld()
+  const inCam = center.clone().applyMatrix4(camera.matrixWorldInverse)
+  if (inCam.z >= 0) return false // behind the camera plane
+  const ndc = center.clone().project(camera)
+  return Math.abs(ndc.x) <= 1.1 && Math.abs(ndc.y) <= 1.1 // small margin off-center
+}
+
+/**
  * Clamp a camera destination to a sane distance band around the scene core —
  * an app-owned safety limit so a dolly can't bury the camera in a few floaters
  * (too close) or fling it into the void (too far), regardless of what distance

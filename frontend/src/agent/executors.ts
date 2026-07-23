@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three'
 import type { MoveDirection, PerceptTag, RendererBridge, RotateDirection, ToolResult } from './types.ts'
-import { animateOrbit, animateTo, clampToCore, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, toRenderSpace } from './camera.ts'
+import { animateOrbit, animateTo, clampToCore, coreInView, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
 import { adjustBox, projectBoxToScreen, viewBasisFromCamera } from './proposalBox.ts'
 import type { AdjustOpts, Box } from './proposalBox.ts'
@@ -327,19 +327,20 @@ export class FrontendExecutors {
     // frame that was rendered (Codex boundary — every percept tied to state).
     const png_base64 = dataUrlToBase64(await capturePNG(this.bridge))
     const { position, target } = this.bridge.getCameraPose()
-    const coverage = sceneCoverage(position.clone(), this.bridge.getCamera().fov, this.bridge.getSceneCore())
+    const cam = this.bridge.getCamera()
+    const coverage = sceneCoverage(position.clone(), cam.fov, this.bridge.getSceneCore())
     const percept: PerceptTag = {
       position: [position.x, position.y, position.z],
       target: [target.x, target.y, target.z],
       revision: this.bridge.getSceneRevision(),
       coverage: Math.round(coverage * 100) / 100,
+      in_view: coreInView(cam, this.bridge.getSceneCore()),
     }
     // When a crop-proposal box is live, tag the capture with its projected
     // footprint — the box becomes the model's on-screen ruler (deterministic,
     // through the same camera matrices the screen-space selection tools use).
     const pbox = this.bridge.getProposalBox()
     if (pbox) {
-      const cam = this.bridge.getCamera()
       cam.updateMatrixWorld()
       const el = this.bridge.getRenderer().domElement
       const w = el.clientWidth || el.width

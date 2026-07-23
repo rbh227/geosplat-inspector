@@ -72,6 +72,9 @@ export interface PerceptTag {
   /** Fraction of the view the scene fills (0..1). ~0.4-0.7 well-framed;
    *  <0.15 too far, >0.9 too close. Lets the agent judge zoom without guessing. */
   coverage: number
+  /** False when the scene core is behind the camera or outside the frustum —
+   *  coverage is meaningless then; turn toward the scene before judging zoom. */
+  in_view: boolean
   /** The proposal box's projected footprint — present only when a box preview
    *  is active. The box as the model's on-screen ruler (see projectBoxToScreen). */
   box_screen?: BoxScreen

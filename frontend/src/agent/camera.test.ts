@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { clampToCore, poseForBox, resolveAimPoint, sceneCoverage, toRenderSpace } from './camera.ts'
+import { clampToCore, coreInView, poseForBox, resolveAimPoint, sceneCoverage, toRenderSpace } from './camera.ts'
 import { computeCoreBounds } from '../../../src/viewer/framing.ts'
 import type { RendererBridge } from './types.ts'
 
@@ -186,5 +186,29 @@ describe('poseForBox framing clamp (A2)', () => {
     const dist = pose.position.distanceTo(box.getCenter(new THREE.Vector3()))
     expect(dist).toBeLessThanOrEqual(radius * 5 + 1e-6)
     expect(dist).toBeGreaterThan(radius) // still outside the scene, not inside it
+  })
+})
+
+describe('coreInView (direction-aware coverage companion)', () => {
+  const core = { center: [0, 0, 0] as [number, number, number], radius: 1 }
+  function cam(pos: [number, number, number], look: [number, number, number]): THREE.PerspectiveCamera {
+    const c = new THREE.PerspectiveCamera(60, 1.6)
+    c.position.set(...pos)
+    c.lookAt(new THREE.Vector3(...look))
+    c.updateMatrixWorld()
+    return c
+  }
+
+  it('true when the camera faces the core', () => {
+    expect(coreInView(cam([0, 0, 10], [0, 0, 0]), core)).toBe(true)
+  })
+  it('false when the core is behind the camera (coverage alone still reads well-framed)', () => {
+    expect(coreInView(cam([0, 0, 10], [0, 0, 20]), core)).toBe(false)
+  })
+  it('false when the core is outside the frustum', () => {
+    expect(coreInView(cam([0, 0, 10], [30, 0, 10]), core)).toBe(false)
+  })
+  it('false with no core', () => {
+    expect(coreInView(cam([0, 0, 10], [0, 0, 0]), null)).toBe(false)
   })
 })
