@@ -4,7 +4,9 @@
  * The viewer's old default framing parked the camera at a fixed ~19° elevation
  * and a std-based distance. For wide/flat outdoor captures that is a grazing
  * view that collapses the scene into a thin streak. These functions instead:
- *   - find a robust core (5th/95th percentile bounds) that ignores far floaters,
+ *   - find a robust core (median center, 80th-percentile-distance radius) that
+ *     ignores far floaters — the 5th/95th percentile box is used only for the
+ *     elevation heuristic and computeCoreBox,
  *   - pick a camera elevation from the scene's vertical-vs-horizontal aspect
  *     (flat/wide → high angle, tall → low angle), and
  *   - pick a distance that fits the core within the camera's limiting FOV.

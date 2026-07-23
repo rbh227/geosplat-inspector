@@ -6,7 +6,11 @@ Public surface used by Agent 4 (API server) at integration:
     from backend.providers import get_provider
 
     dispatcher = ToolDispatcher(engine, channel)        # engine: BackendExecutor
-    loop = AgentLoop(get_provider(system_instruction=SYSTEM_PROMPT), dispatcher, channel)
+    provider = get_provider(system_instruction=SYSTEM_PROMPT)
+    # system_prompt="" — the provider already carries the prompt via
+    # system_instruction above; leaving the default here would re-send it as
+    # messages[0], doubling it (see backend/api/real_engine.py).
+    loop = AgentLoop(provider, dispatcher, channel, system_prompt="")
     result = await loop.run(prompt)
 
 Everything imports from the frozen `/backend/contracts`; nothing here edits it.

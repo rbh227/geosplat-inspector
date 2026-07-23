@@ -497,7 +497,6 @@ export default function App() {
       } else if (e.kind === 'complete') {
         setAgentPaused(false)
         const content = completeContent(e.detail)
-        const hadError = Boolean(e.detail?.error)
         const actions = [...runActionsRef.current]
         setMessages((prev) => [...prev, {
           id: `msg-${Date.now()}-assistant`,
@@ -509,9 +508,14 @@ export default function App() {
         setNarration(content)
         setAgentStep(0)
         runActionsRef.current = []
-        // Reload the served .ply ONLY when the run actually edited the backend
+        // Reload the served .ply whenever the run actually edited the backend
         // model (scene_changed) — a read-only survey must not reload/reframe.
-        if (!hadError && sceneIdRef.current && sceneChanged(e.detail)) {
+        // An error does NOT suppress this: loop-level failures (_finish_error)
+        // still report scene_changed: true when edits landed before the
+        // failure (e.g. an approved crop applied, then a provider timeout),
+        // and the viewer must resync or it's left showing a stale scene with
+        // a desynced ID map.
+        if (sceneIdRef.current && sceneChanged(e.detail)) {
           void reloadAuthoritative(sceneIdRef.current)
         }
       }
