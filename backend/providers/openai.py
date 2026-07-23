@@ -62,7 +62,19 @@ class OpenAIProvider:
                 api_key = "not-needed"
             else:
                 raise ProviderConfigError("No OPENAI_API_KEY (env-only).")
-        self._client = openai.OpenAI(api_key=api_key, base_url=self.base_url)
+        import httpx  # openai's own transport dep, always present with it
+
+        # Bounded timeout: the SDK default (600s per attempt, 2 retries) turns
+        # a half-dead SSH tunnel into a ~30-minute silent hang inside
+        # `generate`. A wedged socket must surface as a provider error within
+        # ~2 minutes. Retries are with_retry's job (rate limits only) — an
+        # SDK-level retry would just multiply the wait.
+        self._client = openai.OpenAI(
+            api_key=api_key,
+            base_url=self.base_url,
+            timeout=httpx.Timeout(120.0, connect=10.0),
+            max_retries=0,
+        )
         return self._client
 
     def _to_tools(self, tools: list[ToolSpec]) -> list[dict]:
