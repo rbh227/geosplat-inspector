@@ -8,8 +8,11 @@ from dataclasses import dataclass
 @dataclass
 class AgentConfig:
     # Hard stops so a runaway model can't loop forever or burn the free tier.
-    max_steps: int = 20            # total model turns per run
-    max_vision_calls: int = 8      # total capture_frame/capture_orbit dispatches
+    # Sized for real cleanup runs: nudges, perception barriers, and proposal
+    # round-trips each cost a turn, so 20 ran out mid-work and the run ended
+    # looking like an unexplained stop.
+    max_steps: int = 40            # total model turns per run
+    max_vision_calls: int = 16     # total capture_frame/capture_orbit dispatches
     max_retries_per_problem: int = 2  # loosen-and-retry budget for a fix (R4/R5)
 
     # Behaviour toggles.

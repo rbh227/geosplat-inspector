@@ -47,6 +47,11 @@ _EDIT_OPS = frozenset(
 # These two take a `selection` dict as their first positional arg.
 _SELECTION_OPS = frozenset({"recolor", "adjust_opacity"})
 
+# Cross-run chat memory kept per scene (messages, newest last). 60 entries is
+# roughly 10-15 agent steps of context — enough for follow-ups without letting
+# a long session snowball the provider payload.
+_CHAT_HISTORY_LIMIT = 60
+
 
 class RealScene:
     """`engine.Scene` over the real model/history/editing core."""
@@ -55,6 +60,13 @@ class RealScene:
         self.model = model
         self.history = History(model)
         self.editing = EditingEngine(model, self.history)
+        # Agent conversation memory for this scene: RealAgentRunner seeds each
+        # run with it and writes the updated transcript back, so follow-up
+        # prompts have context. Dies with the scene (new upload = fresh chat).
+        # `agent_ledger` is the companion grounding evidence (typed loosely so
+        # this module never imports backend.agent at boot).
+        self.chat_history: list[dict] = []
+        self.agent_ledger: object | None = None
 
     def metrics(self, region: dict | None = None) -> dict:
         return compute_metrics(self.model, region)
@@ -210,7 +222,17 @@ class RealAgentRunner:
         # above); an empty system_prompt stops the loop from ALSO seeding
         # messages[0] with the same text — providers were sending it twice.
         loop = AgentLoop(provider, dispatcher, channel, stage=resolved, system_prompt="")
-        await loop.run(prompt)
+        history = getattr(scene, "chat_history", None)
+        try:
+            await loop.run(prompt, history=history, ledger=getattr(scene, "agent_ledger", None))
+        finally:
+            # Persist even after an error/interrupt — the follow-up should
+            # still know what happened. Bounded tail so per-scene memory
+            # can't grow without limit across runs.
+            if history is not None:
+                history[:] = loop.transcript()[-_CHAT_HISTORY_LIMIT:]
+            if hasattr(scene, "agent_ledger"):
+                scene.agent_ledger = loop.ledger
 
 
 __all__ = ["RealBackend", "RealScene", "RealBackendExecutor", "RealAgentRunner"]

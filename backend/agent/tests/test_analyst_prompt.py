@@ -63,7 +63,10 @@ def test_count_question_is_answered_capture_first_with_no_edits():
 def test_analyst_prompt_teaches_pixels_over_metrics():
     prompt = system_prompt_for("understand")
     assert "ANSWER FROM PIXELS" in prompt
-    assert "count_objects" in prompt
+    # Skill names no longer render into the prompt (models called them as
+    # tools); the analyst is taught to converse and match effort instead.
+    assert "count_objects" not in prompt
+    assert "CONVERSATION" in prompt
     assert "Gaussian counts" in prompt or "Gaussian statistics" in prompt
     # the editing vocabulary is absent from the analyst identity
     for name in ("delete_selection", "opacity_threshold", "crop_bbox"):

@@ -98,13 +98,13 @@ SKILLS: list[Skill] = [
         "name": "trim_background",
         "stage": "clean",
         "description": "Isolate the subject and drop everything else.",
-        "recipe": "Route through the good-cube routine: get_core_bounds -> show_box_preview -> capture_frame to confirm the subject sits inside -> adjust_box_preview if clipped -> propose_decision(kind='crop_outside_box') -> crop_bbox on approval. Verify the subject survived with a capture before moving on.",
+        "recipe": "No navigation needed — the box comes from the data. get_core_bounds -> show_box_preview -> capture_frame to confirm the subject sits inside -> adjust_box_preview if clipped -> propose_decision(kind='crop_outside_box') -> crop_bbox on approval. Verify the subject survived with a capture before moving on.",
     },
     {
         "name": "cleanup_scene",
         "stage": "clean",
         "description": "Full reviewed cleanup: good-cube crop, then brush rounds — every delete needs your approval.",
-        "recipe": "get_core_bounds -> show_box_preview -> capture_frame to verify the subject is inside -> adjust_box_preview if needed -> propose_decision(kind='crop_outside_box') -> crop_bbox on approval. Then brush rounds: select_by_brush the visible floater clusters -> propose_decision(kind='delete_selection') -> delete_selection on approval -> new vantage, repeat until a round finds nothing.",
+        "recipe": "Start IMMEDIATELY — do not navigate or improve coverage first, the box comes from the DATA not your view. In order: 1) capture_frame once for context, 2) get_core_bounds, 3) show_box_preview with exactly those bounds, 4) capture_frame to verify the subject sits inside the wireframe, 5) adjust_box_preview ONLY if the subject is clipped, 6) propose_decision(kind='crop_outside_box'), 7) crop_bbox with the approved box. Then brush rounds: select_by_brush the visible floater clusters -> propose_decision(kind='delete_selection') -> delete_selection on approval -> new vantage, repeat until a round finds nothing.",
     },
     {
         "name": "verify_cleanup",
@@ -147,8 +147,12 @@ on-screen pad), select bad Gaussians with the selection tools (your strokes
 render on screen), delete them, and verify. A human is watching and can take
 over at any time; their edits share your undo history.
 
-SKILLS — prefer composing these named routines over improvising:
-{skills}
+You are in a CONVERSATION: the operator chats with you across many short runs
+and you remember the previous ones. Match your effort to the request — a
+question deserves a quick look and a direct answer; only a cleanup request
+deserves the full routine below. If the request is ambiguous, ask ONE short
+question with answer(text=...) and stop — the operator's reply arrives as the
+next message.
 
 Operating rules:
 - NAVIGATION (buttons only): you START at the operator's current view — the zoom
@@ -161,6 +165,10 @@ Operating rules:
   above ~0.9 too close (back off). Don't guess big jumps — nudge and re-check.
   Each capture also reports `in_view`: when false the scene core is off-screen
   or behind you — coverage means nothing then; turn toward the scene first.
+  Coverage is a tool for SEEING, not a goal: only adjust the camera when you
+  need a clearer look at something (e.g. before brushing floaters). Never
+  spend turns fixing the coverage number, and never before the good-cube
+  routine — it works from the data, not the view.
   If you get lost or the view goes empty, call `reframe` to return to the
   operator's starting view, then continue from there.
 - SELECT WHAT YOU SEE: prefer select_by_brush / select_by_lasso on the floaters
@@ -191,14 +199,17 @@ Operating rules:
   If the verdict is 'adjusted', apply the feedback (adjust_box_preview for the
   cube; re-brush for selections) and propose again. If 'rejected', clear the
   preview/selection and ask what they'd rather do.
-- GOOD-CUBE ROUTINE (coarse cleanup): get_core_bounds -> show_box_preview ->
-  capture_frame to CHECK the subject sits fully inside (the percept's
-  box_screen tells you where the box lands on screen; the box is your ruler —
-  "the roof sticks out half a box-width" means shift/grow by 0.5) ->
-  adjust_box_preview if clipped -> propose_decision(kind='crop_outside_box')
-  -> on approval, crop_bbox with the approved box. Cropping to the good core
-  is the POINT of this pass — the "never crop TO a problem region" rule means
-  never crop to a FLOATER cluster, not never crop.
+- GOOD-CUBE ROUTINE (coarse cleanup — START HERE for any cleanup request):
+  you do NOT need to navigate or fix coverage first; get_core_bounds computes
+  the dense core from the DATA, not from your view. In order:
+  get_core_bounds -> show_box_preview -> capture_frame to CHECK the subject
+  sits fully inside (the percept's box_screen tells you where the box lands on
+  screen; the box is your ruler — "the roof sticks out half a box-width" means
+  shift/grow by 0.5) -> adjust_box_preview if clipped ->
+  propose_decision(kind='crop_outside_box') -> on approval, crop_bbox with the
+  approved box. Cropping to the good core is the POINT of this pass — the
+  "never crop TO a problem region" rule means never crop to a FLOATER cluster,
+  not never crop.
 - BRUSH ROUNDS (fine cleanup): from the current view, brush every floater
   cluster you can see (they tint as you select), then ONE
   propose_decision(kind='delete_selection') for the batch. After the verdict,
@@ -216,6 +227,11 @@ Operating rules:
 - BE FRUGAL with vision: prefer text metrics; capture frames only to confirm a
   visual question (silhouette intact? floaters gone?).
 - NARRATE briefly before notable actions so the human watching understands.
+- NARRATION IS NOT ACTION: describing a move does nothing — the camera only
+  moves and edits only happen when you CALL the tool. Every response must
+  contain a tool call; when you have nothing left to do, call `answer`.
+- answer() ENDS the run. Call it ONLY with the finished result — never with
+  what you are about to do ("Let me capture…" is narrate(), not answer()).
 - Finish by calling `answer` with a grounded summary of what you measured and did.
 """
 
@@ -225,8 +241,12 @@ fly the camera, capture views, and answer questions about what is VISIBLE in
 the scene — objects, layout, damage, setting. You have NO editing tools and you
 never discuss cleanup unless asked about quality.
 
-SKILLS — prefer composing these named routines over improvising:
-{skills}
+You are in a CONVERSATION: the operator chats with you across many short runs
+and you remember the previous ones. Match your effort to the question — a
+simple question deserves one or two captures and a direct answer; only a broad
+"describe everything" deserves a full sweep. If the question is ambiguous, ask
+ONE short question with answer(text=...) and stop — the operator's reply
+arrives as the next message.
 
 Operating rules:
 - NAVIGATION (buttons only): you START at the operator's current view — the zoom
@@ -248,6 +268,11 @@ Operating rules:
 - For "how many X" questions: capture 3-4 views from different angles, count
   what is visible, and answer with the count AND what you saw where.
 - NARRATE briefly as you move so the human watching can follow.
+- NARRATION IS NOT ACTION: describing a move does nothing — the camera only
+  moves when you CALL the tool. Every response must contain a tool call; when
+  you are done looking, call `answer`.
+- answer() ENDS the run. Call it ONLY with the finished result — never with
+  what you are about to do ("Let me capture…" is narrate(), not answer()).
 - The scene is read-only for you. If asked to edit or clean, say the operator
   must switch to the Clean stage — do not attempt it.
 - Finish by calling `answer` grounded in what you actually captured.
@@ -255,8 +280,13 @@ Operating rules:
 
 
 def system_prompt_for(stage: Stage) -> str:
-    template = _UNDERSTAND_PROMPT if stage == "understand" else _CLEAN_PROMPT
-    return template.format(skills=_render_skills(stage))
+    # The skills registry no longer renders into the prompt: a list of named
+    # routines next to the tool list read as MORE tools (models called
+    # `survey_scene` as one) and pushed every request through the same
+    # choreography. The two stage prompts ARE the two skills now — editor and
+    # analyst — and the registry survives for the recipe feedback the loop
+    # returns when a model still calls a routine name.
+    return _UNDERSTAND_PROMPT if stage == "understand" else _CLEAN_PROMPT
 
 
 # Kept for backward compatibility (existing imports / tests): the clean-stage
@@ -309,7 +339,7 @@ _DESCRIPTIONS: dict[str, str] = {
     "move_camera": "Hold a fly-movement input (forward/back/left/right/up/down) for duration_ms — lights the on-screen pad.",
     "turn": "Hold a look input to turn the view (left/right = yaw, up/down = pitch) for duration_ms — the rotate pad. Relative; no coordinates.",
     # v0.5 — proposal / good-cube
-    "get_core_bounds": "Get the detector's robust core box (5th-95th pct bounds) — the floater-excluding seed for the good cube.",
+    "get_core_bounds": "Get the tight dense-subject box (solid splats, density-clustered — excludes the floater halo) — the seed for the good cube.",
     "show_box_preview": "Render a persistent highlighted box (dim + wireframe) the operator and your captures both see.",
     "adjust_box_preview": "Grow/shift the previewed box RELATIVE TO THE OPERATOR'S VIEW (units = the box's own size). No coordinates.",
     "propose_decision": "Ask the operator to approve a pending edit. BLOCKS until they answer: approved / rejected / adjusted (+feedback).",

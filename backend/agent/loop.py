@@ -27,7 +27,7 @@ from backend.providers import RateLimitError
 from .config import AgentConfig
 from .dispatch import ToolDispatcher
 from .grounding import GroundingError, GroundingLedger
-from .system_prompt import Stage, build_tool_specs, stage_tools, system_prompt_for
+from .system_prompt import Stage, build_tool_specs, skills_for, stage_tools, system_prompt_for
 from .types import (
     DESTRUCTIVE_TOOLS,
     VISION_TOOLS,
@@ -68,6 +68,33 @@ _BULK_SWEEPS: frozenset[str] = frozenset(
 # approval; void if the selection changes before the edit).
 _SELECTION_KINDS: frozenset[str] = frozenset({"delete_selection", "keep_only_selection"})
 
+# Phrases that mark text as a PLAN rather than a result. Judged on the tail of
+# the message: a report that ends by announcing the next move is a plan.
+_INTENT_MARKERS = ("i'll ", "i will ", "let me ", "i'm going to ", "i am going to ", "now i ", "next i ")
+
+
+def _looks_like_intent(text: str) -> bool:
+    """True when text announces future work ("Let me now clean up:") instead of
+    reporting done work — accepting it as an answer is how the agent 'says it
+    will do something and then just stops'."""
+    t = (text or "").strip().lower()
+    if t.endswith(":"):
+        return True
+    return any(m in t[-200:] for m in _INTENT_MARKERS)
+
+
+# Consecutive plan-without-action events (plan-shaped answer() calls or
+# text-only planning turns) before the run ends as honestly stalled. Any real
+# tool call resets the count. A plan must NEVER be accepted as the result —
+# ending with "Let me capture another frame:" reads as the agent giving up
+# mid-thought, and the operator can't even tell the run is over.
+_MAX_PLAN_STALLS = 4
+_STALL_MSG = (
+    "the model kept announcing plans ('Let me…') without executing them, "
+    "instead of calling tools. Send the request again, rephrase it, or "
+    "configure a stronger model in Settings."
+)
+
 
 class AgentLoop:
     def __init__(
@@ -87,10 +114,17 @@ class AgentLoop:
         self.system_prompt = system_prompt if system_prompt is not None else system_prompt_for(stage)
         self.tools = build_tool_specs(stage)
         self._allowed_tools = stage_tools(stage)
+        # Models routinely call skill NAMES as if they were tools (the prompt
+        # lists them right next to the tools). Map name -> recipe so that
+        # mistake gets answered with the actual steps, not a cryptic rejection.
+        self._skill_recipes = {s["name"]: s["recipe"] for s in skills_for(stage)}
 
         # per-run state (reset in run())
         self._messages: list[dict] = []
         self._pending_frames: list[bytes] = []
+        self._textonly_streak = 0  # consecutive no-tool text turns
+        self._plan_rejections = 0  # answers bounced for being plans, per run
+        self._last_narrate = ""    # normalized last narration (repeat guard)
         self._ledger = GroundingLedger()
         self._last_metrics: dict | None = None
         self._result = LoopResult(status="init")
@@ -109,13 +143,29 @@ class AgentLoop:
         self._approved_ids: frozenset[int] | None = None
 
     # -- public -----------------------------------------------------------
-    async def run(self, prompt: str) -> LoopResult:
+    async def run(
+        self,
+        prompt: str,
+        history: list[dict] | None = None,
+        ledger: GroundingLedger | None = None,
+    ) -> LoopResult:
+        """One agent run. `history` is the prior conversation for this scene
+        (from `transcript()` of an earlier run) so follow-ups have context —
+        without it every request starts amnesiac. `ledger` carries the prior
+        runs' grounding evidence for the same reason: what the agent measured
+        or saw earlier in the conversation still backs its answers now.
+        """
         self._messages = []
         if self.system_prompt:
             self._messages.append({"role": "system", "content": self.system_prompt})
+        if history:
+            self._messages.extend(dict(m) for m in history)
         self._messages.append({"role": "user", "content": prompt})
         self._pending_frames = []
-        self._ledger = GroundingLedger()
+        self._textonly_streak = 0
+        self._plan_rejections = 0
+        self._last_narrate = ""
+        self._ledger = ledger if ledger is not None else GroundingLedger()
         self._last_metrics = None
         self._result = LoopResult(status="running")
         self._approvals = {}
@@ -149,15 +199,33 @@ class AgentLoop:
                 self._messages.append({"role": "assistant", "content": response.text})
 
             if not response.tool_calls:
-                # Treat free-form text as an implicit answer attempt.
                 if response.text:
-                    done = await self._try_answer(response.text)
-                    if done:
-                        return self._result
+                    # Narrated intent ("I'll turn right...") with no tool call
+                    # used to complete the run as an implicit answer — the agent
+                    # announced a plan and then just stopped. Nudge it to act;
+                    # only a SECOND consecutive text-only turn that reads as a
+                    # RESULT (not another plan) is accepted as the answer.
+                    self._textonly_streak += 1
+                    if _looks_like_intent(response.text):
+                        self._plan_rejections += 1
+                        if self._plan_rejections >= _MAX_PLAN_STALLS:
+                            return await self._finish_error("stalled", _STALL_MSG)
+                    elif self._textonly_streak >= 2:
+                        done = await self._try_answer(response.text)
+                        if done:
+                            return self._result
+                        continue
+                    self._nudge_sync(
+                        "You said what you would do but executed nothing — "
+                        "actions only happen through tool calls. Call the tool "
+                        "you just described NOW, or call answer(text=...) if "
+                        "you are finished."
+                    )
                     continue
                 await self._nudge("Use a tool, or call answer() to finish.")
                 continue
 
+            self._textonly_streak = 0
             calls = list(response.tool_calls)
             for idx, call in enumerate(calls):
                 # Honor Stop/Pause BEFORE the action, not one action late.
@@ -260,6 +328,46 @@ class AgentLoop:
     # -- per-call handling ------------------------------------------------
     async def _handle_call(self, call: ToolCall, step: int) -> bool:
         await self._emit(ev_tool_call(call.name, call.args, step))
+
+        # Any real tool call is progress — only CONSECUTIVE planning stalls.
+        # (answer() is excluded: a plan-shaped answer is itself a stall event.
+        # narrate() too: talking is not acting, and a forced-tool-choice model
+        # uses narrate as its prose outlet.)
+        if call.name not in ("answer", "narrate"):
+            self._plan_rejections = 0
+
+        # Narrate-loop guard (observed live): the model repeats the same
+        # narration turn after turn instead of acting. A repeat is a stall
+        # event and is NOT delivered to the operator again.
+        if call.name == "narrate":
+            key = " ".join(str(call.args.get("text", "")).lower().split())[:60]
+            if key and key == self._last_narrate:
+                self._plan_rejections += 1
+                if self._plan_rejections >= _MAX_PLAN_STALLS:
+                    await self._finish_error("stalled", _STALL_MSG)
+                    return True
+                rejection = {
+                    "ok": False,
+                    "error": "you already said exactly that — no more narration; "
+                             "call an ACTION tool now, or answer(text=...) to finish",
+                }
+                await self._emit(ev_tool_result(call.name, rejection, step))
+                self._feed_back(call.name, rejection)
+                return False
+            self._last_narrate = key
+
+        # A skill name is a recipe, not a tool: execute nothing, hand back the
+        # steps so the model spends its next turn on real tool calls.
+        if call.name in self._skill_recipes and call.name not in self._allowed_tools:
+            rejection = {
+                "ok": False,
+                "error": f"{call.name} is a routine, not a tool — nothing ran. "
+                         f"Execute its recipe with real tool calls: "
+                         f"{self._skill_recipes[call.name]}",
+            }
+            await self._emit(ev_tool_result(call.name, rejection, step))
+            self._feed_back(call.name, rejection)
+            return False
 
         # Stage backstop (defense in depth, AE2): the spec filter already keeps
         # blocked tools out of the model's list, but a hallucinated call must
@@ -489,6 +597,23 @@ class AgentLoop:
 
     # -- answer / grounding ----------------------------------------------
     async def _try_answer(self, text: str) -> bool:
+        # A plan is NEVER the answer: "Let me now clean up the floaters:" would
+        # end the run with the work undone and read like the agent gave up
+        # mid-thought. Bounce it; a model that does nothing BUT plan ends the
+        # run as honestly stalled instead (visible error, not a fake result).
+        if _looks_like_intent(text):
+            self._plan_rejections += 1
+            if self._plan_rejections >= _MAX_PLAN_STALLS:
+                await self._finish_error("stalled", _STALL_MSG)
+                return True
+            await self._emit(ev_tool_result("answer", {"rejected": "reads like a plan, not a result"}, self._result.steps))
+            self._nudge_sync(
+                "That reads like a plan ('let me / I'll ...'), not a final answer. "
+                "answer() ENDS the run — call it only with the finished result. "
+                "Execute the plan NOW by calling the tool you named; to talk "
+                "while working, use narrate()."
+            )
+            return False
         if self.config.enforce_grounding:
             try:
                 self._ledger.check(text)
@@ -499,6 +624,12 @@ class AgentLoop:
                     "Measure or capture before asserting, then answer again."
                 )
                 return False
+        # Record the answer in the conversation — it's the part of a run a
+        # follow-up most needs to see. (The implicit text-only path already
+        # appended it as the assistant turn; don't duplicate.)
+        last = self._messages[-1] if self._messages else None
+        if not (last and last.get("role") == "assistant" and last.get("content") == text):
+            self._messages.append({"role": "assistant", "content": text})
         self._result.status = "answered"
         self._result.answer = text
         await self._emit(ev_complete("answered", answer=text, scene_changed=self._scene_changed()))
@@ -601,6 +732,26 @@ class AgentLoop:
 
     def _scene_changed(self) -> bool:
         return getattr(self.dispatcher, "edits_applied", 0) > 0
+
+    @property
+    def ledger(self) -> GroundingLedger:
+        """The run's grounding evidence — persist it next to the transcript so
+        follow-up runs may assert what earlier runs measured/saw."""
+        return self._ledger
+
+    def transcript(self) -> list[dict]:
+        """The conversation to carry into the next run: everything except the
+        system prompt and the per-run [scene] grounding seed (both are
+        re-injected fresh each run)."""
+        out: list[dict] = []
+        for m in self._messages:
+            if m.get("role") == "system":
+                continue
+            content = m.get("content")
+            if isinstance(content, str) and content.startswith("[scene]"):
+                continue
+            out.append(m)
+        return out
 
     async def _finish_status(self, status: str) -> LoopResult:
         self._result.status = status

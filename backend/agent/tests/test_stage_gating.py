@@ -92,16 +92,18 @@ def test_clean_loop_rejects_teleport_calls_without_dispatching():
     assert rejections, "expected a teleport rejection in the trace"
 
 
-def test_skills_split_by_stage_and_render_into_prompts():
+def test_skills_split_by_stage_but_stay_out_of_the_prompts():
     clean_names = {s["name"] for s in skills_for("clean")}
     understand_names = {s["name"] for s in skills_for("understand")}
     assert "clean_floaters" in clean_names and "clean_floaters" not in understand_names
     assert "count_objects" in understand_names and "count_objects" not in clean_names
-    # R11: the same names the endpoint serves appear verbatim in the prompt
+    # The registry no longer renders into the prompts: listed routines read as
+    # MORE tools (models called `survey_scene` as one). It survives only for
+    # the loop's recipe feedback when a model still calls a routine name.
     for stage_name, names in (("clean", clean_names), ("understand", understand_names)):
         prompt = system_prompt_for(stage_name)  # type: ignore[arg-type]
         for name in names:
-            assert name in prompt
+            assert name not in prompt
 
 
 def test_every_skill_recipe_names_only_stage_legal_tools():
