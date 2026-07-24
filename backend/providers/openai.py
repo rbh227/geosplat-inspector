@@ -43,6 +43,9 @@ class OpenAIProvider:
         self.max_attempts = max_attempts
         self.system_instruction = system_instruction
         self._client: Any = None
+        # Whether the server accepts tool_choice="required" — assumed until a
+        # 400 proves otherwise (see generate()).
+        self._tool_choice_required = True
 
     def _get_client(self) -> Any:
         if self._client is not None:
@@ -129,16 +132,51 @@ class OpenAIProvider:
         client = self._get_client()
 
         def _call() -> Any:
+            # tool_choice="required": the loop is tool-driven end to end (even
+            # finishing is the answer() tool), and weaker models drift into
+            # narrating plans in prose instead of acting — forcing a tool call
+            # per turn removes that failure mode structurally. Servers that
+            # don't support "required" get one 400, then we remember and fall
+            # back to auto for the life of this provider.
+            payload_tools = self._to_tools(tools) or None
+            # max_tokens is REQUIRED against vLLM: without it the server
+            # budgets KV for the full remaining context (~27K tokens), which
+            # cannot co-schedule at tight KV configs — measured live as a
+            # 150s hang vs 0.7s with the cap. A tool call is ~16 tokens and
+            # an answer a few hundred; 1024 is generous.
+            kwargs: dict[str, Any] = {"max_tokens": 1024}
+            if payload_tools and self._tool_choice_required:
+                kwargs["tool_choice"] = "required"
             try:
                 return client.chat.completions.create(
                     model=self.model,
                     messages=self._to_messages(messages, images),
-                    tools=self._to_tools(tools) or None,
+                    tools=payload_tools,
+                    **kwargs,
                 )
             except Exception as exc:  # noqa: BLE001
                 name = type(exc).__name__.lower()
                 if "ratelimit" in name or "429" in str(exc):
                     raise RateLimitError(f"OpenAI rate limit: {exc}") from exc
+                if "tool_choice" in kwargs:
+                    msg = str(exc)
+                    if "tool_choice" in msg:
+                        # Server rejects the parameter outright — remember.
+                        self._tool_choice_required = False
+                    elif not ("json_invalid" in msg or "Invalid JSON" in msg
+                              or "EOF while parsing" in msg):
+                        raise
+                    # Grammar degeneration (observed live on Qwen3-VL + vLLM):
+                    # forced into the tool-call grammar on a turn where it
+                    # wants prose, the model emits whitespace until the token
+                    # cap and the server 400s with invalid JSON. Retry THIS
+                    # turn unforced — the loop's stall guard handles prose.
+                    return client.chat.completions.create(
+                        model=self.model,
+                        messages=self._to_messages(messages, images),
+                        tools=payload_tools,
+                        max_tokens=1024,
+                    )
                 raise
 
         raw = with_retry(_call, max_attempts=self.max_attempts)
