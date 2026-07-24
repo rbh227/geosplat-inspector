@@ -72,6 +72,9 @@ def silhouette_intact(
     after: Metrics,
     min_core_retained: float = 0.5,
     max_total_drop: float = 0.9,
+    *,
+    approved: bool = False,
+    min_core_retained_approved: float = 0.01,
 ) -> bool:
     """Subject-aware guard: an edit is fine as long as it keeps the dense
     subject, even if it removes the majority of the *total* Gaussians (on messy
@@ -87,6 +90,16 @@ def silhouette_intact(
     A catastrophic-total-drop backstop always reverts when the edit deletes more
     than ``max_total_drop`` of the entire scene, regardless of the core ratio.
 
+    ``approved=True`` marks an operation the operator reviewed and approved (a
+    banked ``propose_decision`` bound to this exact edit). Their approval is
+    then the subject-protection mechanism, and only a catastrophic result
+    overrides it: the core must survive at ``min_core_retained_approved``. The
+    total-count backstop does NOT apply, because raw total is a meaningless
+    denominator on junk-dominated captures — measured on
+    ``public/demos/iona_park.ply``, 96.6% of the 2,000,000 splats are
+    near-transparent, so an opacity sweep that retains 100% of the visible core
+    still drops 96% of the scene and the backstop reverted it.
+
     Used by the flagship floater loop alongside the before/after capture check.
     """
     b = before["gaussianCount"]
@@ -94,12 +107,19 @@ def silhouette_intact(
     if b == 0:
         return True
 
+    core_before = solid_core(before)
+    core_after = solid_core(after)
+
+    if approved:
+        if core_before <= 0:
+            # Nothing visible to protect; only a total wipe is catastrophic.
+            return a > 0
+        return core_after / core_before >= min_core_retained_approved
+
     # Catastrophic backstop: never let a single edit wipe out almost everything.
     if (b - a) / b > max_total_drop:
         return False
 
-    core_before = solid_core(before)
-    core_after = solid_core(after)
     if core_before <= 0:
         # No solid subject to protect; fall back to total-count survival.
         return (b - a) / b <= max_total_drop

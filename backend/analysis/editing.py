@@ -23,7 +23,7 @@ from backend.contracts.constants import (
 from backend.contracts.splat_model import SplatModel
 
 from .history import ArrayPatch, History
-from .metrics import _axis_ratio, outlier_mask
+from .metrics import _axis_ratio, outlier_mask, robust_scene_diag
 from .selection import resolve_selection
 
 # f_rest coefficients kept per colour channel at each SH degree (channel-grouped layout).
@@ -80,10 +80,12 @@ class EditingEngine:
         return int(rows.size)
 
     def _scene_diag(self) -> float:
+        """Scene extent used to size the oversize threshold — the same robust
+        measure metrics reports against, so `prune_oversized` and
+        `scale.oversizedFraction` never disagree about what "oversized" means."""
         if int(self.model.alive.sum()) == 0:
             return 0.0
-        mn, mx = self.model.bounds()
-        return float(np.linalg.norm(mx - mn))
+        return robust_scene_diag(self.model.means[self.model.alive_indices()])
 
     # ------------------------------------------------------------------ #
     # deletion ops (alive mask) — each returns before/after counts

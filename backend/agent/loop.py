@@ -546,7 +546,11 @@ class AgentLoop:
         # the junk and wipes the object — and the per-tool metric still
         # "improves", so verify_edit alone would keep it. Revert and steer the
         # model toward targeted removal.
-        if not silhouette_intact(before, after):
+        # An approval-gated tool that reached dispatch had its banked, bound
+        # approval consumed above — the operator reviewed THIS operation, so the
+        # guard relaxes to its catastrophic floor (see verify.silhouette_intact).
+        approved = self.stage == "clean" and call.name in _APPROVAL_GATED
+        if not silhouette_intact(before, after, approved=approved):
             undo_res = await self.dispatcher.dispatch(ToolCall("undo", {}))
             self._result.edits_reverted += 1
             self._last_metrics = before

@@ -23,27 +23,51 @@ class SceneState:
         self.id = scene_id
         self.scene = scene
         self.source_path = source_path        # original uploaded .ply
-        self.dirty = False                    # alive set diverged from source?
+        self._source_count = scene.count()    # alive count as loaded from source
+        self._epoch = 0                       # bumped by mark_dirty()
+        self._exported: tuple[int, int] | None = None  # (epoch, count) last written
         self._export_path: str | None = None  # cached re-export of alive set
         self.lock = asyncio.Lock()            # serialize edits per scene
 
     def mark_dirty(self) -> None:
-        self.dirty = True
+        """Signal an edit. Optional: staleness is *derived* (see `dirty`), so a
+        path that forgets to call this still serves correctly. It only sharpens
+        cache invalidation when an edit leaves the alive count unchanged."""
+        self._epoch += 1
+
+    @property
+    def dirty(self) -> bool:
+        """Whether the alive set diverges from the source upload.
+
+        Derived from the scene's alive count rather than tracked by hand. The
+        agent edits through the tool dispatcher and never reaches the `/edit`
+        route, so a flag only that route set left `GET /scene/{id}.ply` serving
+        the original upload — and since the frontend reloads that URL after any
+        run reporting `scene_changed`, an approved crop was undone on screen.
+        Edits are removal-only, so `count == source_count` means everything is
+        alive and the source file is exactly right.
+        """
+        return self.scene.count() != self._source_count
 
     def current_ply_path(self) -> str:
         """Path to a `.ply` reflecting the current alive set (for serving).
 
         Unedited -> the source file. Edited -> a cached export, regenerated
-        only when `dirty`. Either way it's a real file on disk.
+        only when the alive set may have moved since the last write. Either way
+        it's a real file on disk, so serving streams instead of building the
+        `.ply` in memory.
         """
-        if not self.dirty:
+        count = self.scene.count()
+        if count == self._source_count:
             return self.source_path
         if self._export_path is None:
             fd, path = tempfile.mkstemp(suffix=".ply", prefix=f"scene_{self.id}_")
             os.close(fd)
             self._export_path = path
-        self.scene.export(self._export_path)
-        self.dirty = False
+        stamp = (self._epoch, count)
+        if self._exported != stamp:
+            self.scene.export(self._export_path)
+            self._exported = stamp
         return self._export_path
 
     def cleanup(self) -> None:

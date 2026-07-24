@@ -82,6 +82,28 @@ def _hist(values: np.ndarray, bins: int, rng: tuple[float, float] | None = None)
     return counts.astype(int).tolist()
 
 
+def robust_scene_diag(points: np.ndarray) -> float:
+    """Scene extent for the oversized-splat normalisation, robust to outliers.
+
+    The raw bounding-box diagonal is unusable on real captures: a handful of
+    far-flung Gaussians stretch it arbitrarily, and the oversize threshold —
+    ``OVERSIZED_SCENE_FRAC * diag`` — floats out of reach of every splat in the
+    scene. Measured on ``public/demos/iona_park.ply``: raw diagonal 284,977
+    world units against a subject roughly 10 across, putting the threshold at
+    14,248 so that ``prune_oversized`` matched nothing at all while the render
+    was full of splats streaking 20 units.
+
+    The interquartile diagonal tracks the bulk of the scene instead, so the
+    threshold stays proportional to where the Gaussians actually are (9.20 on
+    that scene, flagging 609 genuine streak-drawers).
+    """
+    if points.shape[0] == 0:
+        return 0.0
+    lo = np.percentile(points, 25, axis=0)
+    hi = np.percentile(points, 75, axis=0)
+    return float(np.linalg.norm(hi - lo))
+
+
 def _axis_ratio(scale_xyz: np.ndarray) -> np.ndarray:
     """max-axis / min-axis per Gaussian (>= 1)."""
     if scale_xyz.shape[0] == 0:
@@ -113,9 +135,11 @@ def compute_metrics(model: SplatModel, region: dict | None = None) -> Metrics:
     alive_pts = model.means[alive_idx]
 
     # Scene-level diagonal (always whole scene) for the oversized normalisation.
+    # Robust to far-flung outliers — see `robust_scene_diag`. `bounds()` is still
+    # what the reported `bounds` field carries; only the oversize basis changes.
     if alive_pts.shape[0] > 0:
         scene_min, scene_max = model.bounds()
-        scene_diag = float(np.linalg.norm(scene_max - scene_min))
+        scene_diag = robust_scene_diag(alive_pts)
     else:
         scene_min = scene_max = np.zeros(3, dtype=np.float32)
         scene_diag = 0.0
@@ -223,8 +247,8 @@ def list_problem_regions(
     ratio = _axis_ratio(scale_xyz)
     max_axis = scale_xyz.max(axis=1)
 
-    scene_min, scene_max = model.bounds()
-    scene_diag = float(np.linalg.norm(scene_max - scene_min))
+    scene_min, scene_max = model.bounds()          # voxel grid spans the whole scene
+    scene_diag = robust_scene_diag(pts)            # oversize basis ignores outliers
     oversize_thresh = OVERSIZED_SCENE_FRAC * scene_diag
 
     is_floater = opacity < FLOATER_ALPHA

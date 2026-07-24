@@ -87,3 +87,51 @@ def test_region_restriction_shrinks_count(messy_model):
     sub = compute_metrics(messy_model, region=region)
     assert sub["region"] == region
     assert sub["gaussianCount"] < full["gaussianCount"]
+
+
+# --------------------------------------------------------------------------
+# Oversize normalisation must survive far-flung outliers (v0.6)
+# --------------------------------------------------------------------------
+
+
+def test_robust_scene_diag_ignores_far_outliers():
+    """A few distant Gaussians must not inflate the oversize basis.
+
+    Real failure: public/demos/iona_park.ply has a raw bounding-box diagonal of
+    284,977 world units around a ~10-unit subject, so
+    OVERSIZED_SCENE_FRAC * diag = 14,248 and prune_oversized matched nothing
+    while the render was full of 20-unit streaks.
+    """
+    import numpy as np
+    import pytest
+
+    from backend.analysis.metrics import robust_scene_diag
+
+    bulk = np.random.default_rng(0).uniform(-1, 1, size=(1000, 3))
+    tight = robust_scene_diag(bulk)
+
+    strays = np.concatenate([bulk, np.array([[1e5, 1e5, 1e5], [-1e5, -1e5, -1e5]])])
+    assert robust_scene_diag(strays) == pytest.approx(tight, rel=0.05), (
+        "two distant splats moved the scene scale"
+    )
+    raw = float(np.linalg.norm(strays.max(axis=0) - strays.min(axis=0)))
+    assert raw > 1000 * tight, "raw diagonal should be the badly-behaved one"
+
+
+def test_robust_scene_diag_empty():
+    import numpy as np
+
+    from backend.analysis.metrics import robust_scene_diag
+
+    assert robust_scene_diag(np.zeros((0, 3))) == 0.0
+
+
+def test_oversized_fraction_survives_a_far_outlier(clean_model):
+    """oversizedFraction stays meaningful when one Gaussian sits far away."""
+    import numpy as np
+
+    base = compute_metrics(clean_model)["scale"]["oversizedFraction"]
+    clean_model.means[0] = np.array([5e4, 5e4, 5e4], dtype=clean_model.means.dtype)
+    after = compute_metrics(clean_model)["scale"]["oversizedFraction"]
+    # One relocated splat must not collapse the metric to a flat zero.
+    assert after >= base
