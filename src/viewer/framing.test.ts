@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { computeFraming, computeCoreBounds, computeCoreBox, nearFarForDistance, type Vec3 } from './framing'
+import { computeFraming, computeCoreBounds, computeCoreBox, computeTightCoreBox, nearFarForDistance, type Vec3 } from './framing'
 import { sceneCoverage } from '../../frontend/src/agent/camera.ts'
 
 /** Elevation of the camera above the target's horizontal plane, in degrees. */
@@ -199,5 +199,42 @@ describe('computeFraming agrees with the coverage percept', () => {
       framing.target[2] - core.center[2],
     )
     expect(dTarget).toBeLessThan(1e-9) // aimed at the dense-mass center, not the box midpoint
+  })
+})
+
+describe('computeTightCoreBox (the good-cube seed)', () => {
+  it('hugs the dense subject even when the halo outnumbers it (post-disaster shape)', () => {
+    // 30% dense flat "trailer park" core, 70% junk halo — the 5-95 box would
+    // cover the halo; the tight box must stay near the core's true extent.
+    let seed = 7
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 }
+    const pts: Vec3[] = []
+    for (let i = 0; i < 300; i++) {
+      pts.push({ x: rand() * 20 - 10, y: rand() * 2, z: rand() * 20 - 10 })
+    }
+    for (let i = 0; i < 700; i++) {
+      const r = 15 + rand() * 120
+      const u = rand() * 2 - 1
+      const phi = rand() * 2 * Math.PI
+      const s = Math.sqrt(1 - u * u)
+      pts.push({ x: r * s * Math.cos(phi), y: r * u, z: r * s * Math.sin(phi) })
+    }
+    const tight = computeTightCoreBox(pts)!
+    const wide = computeCoreBox(pts)!
+    const ext = (b: { min: number[]; max: number[] }, a: number) => b.max[a] - b.min[a]
+    // The wide box is halo-sized; the tight one must be several times smaller.
+    expect(ext(tight, 0)).toBeLessThan(ext(wide, 0) / 2)
+    expect(ext(tight, 2)).toBeLessThan(ext(wide, 2) / 2)
+    // And it must still contain the core (with its padding).
+    expect(tight.min[0]).toBeLessThanOrEqual(-9)
+    expect(tight.max[0]).toBeGreaterThanOrEqual(9)
+    expect(tight.min[2]).toBeLessThanOrEqual(-9)
+    expect(tight.max[2]).toBeGreaterThanOrEqual(9)
+  })
+
+  it('falls back gracefully on tiny inputs', () => {
+    expect(computeTightCoreBox([])).toBeNull()
+    const few: Vec3[] = Array.from({ length: 4 }, (_, i) => ({ x: i, y: 0, z: 0 }))
+    expect(computeTightCoreBox(few)).toBeNull()
   })
 })

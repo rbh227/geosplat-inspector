@@ -131,6 +131,103 @@ export function computeCoreBox(points: readonly Vec3[]): CoreBox | null {
 }
 
 /**
+ * TIGHT box around the dense subject — the good-cube seed.
+ *
+ * Percentile boxes (5-95) and distance trims both fail on floater-heavy
+ * captures: when the halo is the MAJORITY of the splats (post-disaster scenes
+ * run >90% junk), every percentile lands inside the halo, and the "core" box
+ * covers the whole scene. Density does not lie, whatever the halo fraction:
+ *   1. voxel-bin the points on a 32³ grid over the robust (2-98) extent,
+ *   2. keep cells at ≥8% of the peak cell's count — the dense subject
+ *      qualifies, the diffuse halo does not,
+ *   3. flood-fill the connected component of dense cells around the peak
+ *      (a detached dense floater cluster across the void stays excluded),
+ *   4. fit the component's points with a 1-99 percentile box + 4% padding.
+ * On a uniformly dense (clean) scene every cell passes and the box is simply
+ * the scene — the trim only bites when there is a halo to reject.
+ * Callers should still pre-filter to SOLID splats (opacity) when they can.
+ */
+export function computeTightCoreBox(points: readonly Vec3[]): CoreBox | null {
+  const n = points.length
+  if (n < 8) return null
+
+  const xs = points.map((p) => p.x).sort((a, b) => a - b)
+  const ys = points.map((p) => p.y).sort((a, b) => a - b)
+  const zs = points.map((p) => p.z).sort((a, b) => a - b)
+  const lo = [percentile(xs, 0.02), percentile(ys, 0.02), percentile(zs, 0.02)]
+  const hi = [percentile(xs, 0.98), percentile(ys, 0.98), percentile(zs, 0.98)]
+  const ext = [
+    Math.max(hi[0] - lo[0], 1e-6),
+    Math.max(hi[1] - lo[1], 1e-6),
+    Math.max(hi[2] - lo[2], 1e-6),
+  ]
+
+  const R = 32
+  const cellOf = (p: Vec3): number => {
+    const ix = Math.floor(((p.x - lo[0]) / ext[0]) * R)
+    const iy = Math.floor(((p.y - lo[1]) / ext[1]) * R)
+    const iz = Math.floor(((p.z - lo[2]) / ext[2]) * R)
+    if (ix < 0 || ix >= R || iy < 0 || iy >= R || iz < 0 || iz >= R) return -1
+    return ix + iy * R + iz * R * R
+  }
+
+  const counts = new Map<number, number>()
+  for (const p of points) {
+    const key = cellOf(p)
+    if (key >= 0) counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  let peakKey = -1
+  let peakCount = 0
+  for (const [key, count] of counts) {
+    if (count > peakCount) { peakKey = key; peakCount = count }
+  }
+  if (peakKey < 0) return computeCoreBox(points)
+
+  // Flood-fill dense cells (26-neighborhood) from the peak.
+  const threshold = Math.max(3, peakCount * 0.08)
+  const inComponent = new Set<number>([peakKey])
+  const queue = [peakKey]
+  while (queue.length > 0) {
+    const key = queue.pop()!
+    const ix = key % R
+    const iy = Math.floor(key / R) % R
+    const iz = Math.floor(key / (R * R))
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const nx = ix + dx, ny = iy + dy, nz = iz + dz
+          if (nx < 0 || nx >= R || ny < 0 || ny >= R || nz < 0 || nz >= R) continue
+          const nKey = nx + ny * R + nz * R * R
+          if (inComponent.has(nKey)) continue
+          if ((counts.get(nKey) ?? 0) >= threshold) {
+            inComponent.add(nKey)
+            queue.push(nKey)
+          }
+        }
+      }
+    }
+  }
+
+  const kept = points.filter((p) => inComponent.has(cellOf(p)))
+  if (kept.length < 8) return computeCoreBox(points)
+
+  const kxs = kept.map((p) => p.x).sort((a, b) => a - b)
+  const kys = kept.map((p) => p.y).sort((a, b) => a - b)
+  const kzs = kept.map((p) => p.z).sort((a, b) => a - b)
+  const pad = 0.04
+  const fit = (sorted: number[]): [number, number] => {
+    const fLo = percentile(sorted, 0.01)
+    const fHi = percentile(sorted, 0.99)
+    const fExt = Math.max(fHi - fLo, 1e-6)
+    return [fLo - fExt * pad, fHi + fExt * pad]
+  }
+  const [xLo, xHi] = fit(kxs)
+  const [yLo, yHi] = fit(kys)
+  const [zLo, zHi] = fit(kzs)
+  return { min: [xLo, yLo, zLo], max: [xHi, yHi, zHi] }
+}
+
+/**
  * Derive perspective near/far planes from the camera-to-target distance and the
  * scene's radius. A fixed near=0.1/far=1000 gives a 10000:1 ratio that wrecks
  * depth precision on large outdoor scenes (and clips them). Scaling both planes

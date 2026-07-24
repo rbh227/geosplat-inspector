@@ -10,7 +10,7 @@ import {
 } from '@sparkjsdev/spark'
 import type { ViewerHandle, ViewerState, ViewPreset, SceneStats } from '../types/viewer.ts'
 import { tweenCamera } from './camera.ts'
-import { computeFraming, computeCoreBounds, computeCoreBox, nearFarForDistance, type Vec3 } from './framing.ts'
+import { computeFraming, computeCoreBounds, computeTightCoreBox, nearFarForDistance, type Vec3 } from './framing.ts'
 import { IdMap } from './idMap.ts'
 import { transformPoints } from './selection.ts'
 import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
@@ -955,10 +955,12 @@ export class SceneManager implements ViewerHandle {
   }
 
   /**
-   * Robust percentile core box in BACKEND coordinates (mesh-local, pre-flip) —
-   * the "good cube" seed for the agent's crop proposal. Samples packedSplats
-   * centers directly (already backend space; see getSelectionSummary), fits the
-   * 5th-95th percentile box, then counts centers inside it. Null when no mesh.
+   * TIGHT core box in BACKEND coordinates (mesh-local, pre-flip) — the "good
+   * cube" seed for the agent's crop proposal. Fits SOLID splats only (the junk
+   * halo is mostly near-transparent, and on post-disaster captures it can be
+   * >90% of the scene — a percentile box over everything just re-derives the
+   * whole scene), then density-clusters away solid stragglers
+   * (computeTightCoreBox). Null when no mesh.
    */
   getCoreBoundsBox(): { min: number[]; max: number[]; count: number } | null {
     const packed = this.splatMesh?.packedSplats
@@ -971,11 +973,24 @@ export class SceneManager implements ViewerHandle {
     // back by the stride — an estimate above 100k splats, exact below.
     const stride = Math.max(1, Math.floor(n / 100_000))
     const pts: Vec3[] = []
+    const solid: Vec3[] = []
+    const faint: Vec3[] = []
     for (let i = 0; i < n; i += stride) {
-      const c = packed.getSplat(i).center
-      pts.push({ x: c.x, y: c.y, z: c.z })
+      const s = packed.getSplat(i)
+      const p = { x: s.center.x, y: s.center.y, z: s.center.z }
+      pts.push(p)
+      if (s.opacity >= 0.3) solid.push(p)
+      else if (s.opacity >= 0.03) faint.push(p)
     }
-    const box = computeCoreBox(pts)
+    // Opacity ladder: prefer solid structure; a scene stored with globally low
+    // opacities falls back to non-near-transparent, then to everything.
+    const minSample = Math.max(200, pts.length * 0.005)
+    const fitPts = solid.length >= minSample
+      ? solid
+      : solid.length + faint.length >= minSample
+        ? solid.concat(faint)
+        : pts
+    const box = computeTightCoreBox(fitPts)
     if (!box) return null
     const [minX, minY, minZ] = box.min
     const [maxX, maxY, maxZ] = box.max
