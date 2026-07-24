@@ -219,8 +219,9 @@ class GaussianSplatModel:
         Indices are into the alive-only subset.
         """
         tree = self._ensure_kdtree()
-        # k+1 because the closest neighbor is the point itself
-        dist, idx = tree.query(tree.data, k=k + 1)
+        # k+1 because the closest neighbor is the point itself. workers=-1:
+        # parallel query — single-threaded, 2M splats × k=17 takes minutes.
+        dist, idx = tree.query(tree.data, k=k + 1, workers=-1)
         # Drop self-match (column 0)
         return dist[:, 1:].astype(np.float32), idx[:, 1:]
 

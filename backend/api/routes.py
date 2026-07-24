@@ -98,14 +98,18 @@ def create_router(
         except Exception as exc:
             os.remove(tmp_path)
             raise HTTPException(status_code=400, detail=f"failed to load scene: {exc}")
-        return UploadResponse(id=state.id, metrics=state.scene.metrics())
+        # Threaded (as is every metrics/edit call in these handlers): full
+        # metrics runs k-NN over every splat — minutes on a 2M-splat scene —
+        # and inline it would freeze the event loop for the whole computation.
+        metrics = await asyncio.to_thread(state.scene.metrics)
+        return UploadResponse(id=state.id, metrics=metrics)
 
     # ---- GET /scene/{id}.ply : chunked serve of the current alive set ---- #
     @router.get("/scene/{scene_id}.ply")
     async def get_scene_ply(scene_id: str):
         state = _require(scene_id)
         async with state.lock:
-            path = state.current_ply_path()
+            path = await asyncio.to_thread(state.current_ply_path)  # may export 2M splats
         return FileResponse(
             path,
             media_type="application/octet-stream",
@@ -119,7 +123,7 @@ def create_router(
     async def get_alive_ids(scene_id: str = Query(...)):
         state = _require(scene_id)
         async with state.lock:
-            ids = state.scene.alive_ids()
+            ids = await asyncio.to_thread(state.scene.alive_ids)
         return {"ids": ids}
 
     # ---- GET /metrics : compute metrics (optional region) ---------------- #
@@ -135,7 +139,7 @@ def create_router(
                 parsed = json.loads(region)
             except json.JSONDecodeError:
                 raise HTTPException(status_code=400, detail="region must be JSON")
-        return state.scene.metrics(parsed)
+        return await asyncio.to_thread(state.scene.metrics, parsed)
 
     # ---- POST /edit : mutate alive set -> counts + metrics --------------- #
     @router.post("/edit", response_model=EditResponse)
@@ -143,11 +147,13 @@ def create_router(
         state = _require(req.scene_id)
         async with state.lock:
             try:
-                before, after = state.scene.edit(req.op, req.params, req.selection)
+                before, after = await asyncio.to_thread(
+                    state.scene.edit, req.op, req.params, req.selection
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
             state.mark_dirty()
-            metrics = state.scene.metrics()
+            metrics = await asyncio.to_thread(state.scene.metrics)
         return EditResponse(before=before, after=after, metrics=metrics)
 
     # ---- POST /undo, /redo ----------------------------------------------- #
@@ -155,20 +161,20 @@ def create_router(
     async def undo(req: SceneRequest):
         state = _require(req.scene_id)
         async with state.lock:
-            ok = state.scene.undo()
+            ok = await asyncio.to_thread(state.scene.undo)
             if ok:
                 state.mark_dirty()
-            metrics = state.scene.metrics()
+            metrics = await asyncio.to_thread(state.scene.metrics)
         return HistoryResponse(ok=ok, count=state.scene.count(), metrics=metrics)
 
     @router.post("/redo", response_model=HistoryResponse)
     async def redo(req: SceneRequest):
         state = _require(req.scene_id)
         async with state.lock:
-            ok = state.scene.redo()
+            ok = await asyncio.to_thread(state.scene.redo)
             if ok:
                 state.mark_dirty()
-            metrics = state.scene.metrics()
+            metrics = await asyncio.to_thread(state.scene.metrics)
         return HistoryResponse(ok=ok, count=state.scene.count(), metrics=metrics)
 
     # ---- GET /agent/skills : the shared skills vocabulary (R10/R11) ------ #

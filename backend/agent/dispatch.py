@@ -15,6 +15,7 @@ bind the real engine at integration — no contract or loop change required.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Protocol, runtime_checkable
 
 from backend.contracts import FrontendChannel, ToolCall
@@ -146,7 +147,12 @@ class ToolDispatcher:
 
         snapshotted = False
         if call.name in DESTRUCTIVE_TOOLS:
-            self.executor.snapshot()
+            # snapshot() copies the whole model — threads, like every executor
+            # call below: heavy numpy on a multi-million-splat scene run inline
+            # would FREEZE the event loop (no WS events, no HTTP, dead pings)
+            # for its whole duration. The server must stay responsive while the
+            # engine grinds.
+            await asyncio.to_thread(self.executor.snapshot)
             self.snapshots_taken += 1
             snapshotted = True
 
@@ -154,7 +160,7 @@ class ToolDispatcher:
         if method is None:
             return {"ok": False, "name": call.name, "error": f"executor missing {call.name}"}
         try:
-            result = method(**args)
+            result = await asyncio.to_thread(method, **args)
         except TypeError as exc:
             return {"ok": False, "name": call.name, "error": f"bad args: {exc}"}
         except Exception as exc:  # noqa: BLE001 - surface engine errors to the loop

@@ -63,7 +63,9 @@ class SceneStore:
         self._lock = asyncio.Lock()
 
     async def create(self, source_path: str) -> SceneState:
-        scene = self._backend.load(source_path)
+        # Threaded: parsing a multi-million-splat .ply inline would freeze the
+        # event loop (and with it every WS/HTTP request) for the whole parse.
+        scene = await asyncio.to_thread(self._backend.load, source_path)
         scene_id = uuid.uuid4().hex[:12]
         state = SceneState(scene_id, scene, source_path)
         async with self._lock:
