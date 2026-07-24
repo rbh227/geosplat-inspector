@@ -14,12 +14,15 @@ The proposal/approval machinery from v0.5 is kept and reused; only the
 The agent cannot reliably clean a scene end to end. Four structural causes,
 each verified in the code:
 
-1. **`get_core_bounds` returns one connected component.**
+1. **`get_core_bounds` returns a box that clips the subject.**
    `computeTightCoreBox` (`src/viewer/framing.ts:150-225`) voxel-bins the solid
-   splats on a 32³ grid, then flood-fills the dense component containing the
-   single **peak** cell. In a settlement scene, building clusters separated by a
-   street or a void are separate components, so the "core box" covers one
-   subsection rather than the whole subject.
+   splats on a 32³ grid, flood-fills the dense component containing the single
+   **peak** cell, and fits a 1-99 percentile box to it. Measured on the demo
+   scene (§11), that box retains only **61.1%** of the visible core: the
+   8%-of-peak density threshold plus the percentile fit is too aggressive on a
+   subject whose density is uneven. It is *not* a multi-component problem — see
+   §11; the missed splats are a halo hugging the subject, 81% of them within one
+   box-diagonal of the box.
 
 2. **The Clean agent gets the entire editing surface.** `AgentLoop` builds the
    full 40-tool v0.2 registry for the clean stage (`backend/agent/loop.py:115-116`).
@@ -37,13 +40,20 @@ each verified in the code:
    stages have different tool permissions but identical memory; they are not
    separate agents.
 
-**The interaction is what actually breaks the demo.** A *correct* good-cube crop
-on a scene that is >90% junk deletes most of the scene. `silhouette_intact`
-(`backend/agent/verify.py:70-106`) reverts any edit that drops the solid core
-below 50%, and it runs on **operator-approved** crops too. So: cause (1) yields a
-box covering one cluster → the approved crop drops the other clusters' solid core
-below the threshold → the guard reverts it → cause (3) redirects the model into
-bulk sweeps → cause (2) supplies the tools to do damage with.
+**The interaction is what actually breaks the demo.** Cause (1) yields a box that
+visibly clips the subject, so the operator rejects it or the model keeps
+adjusting; cause (3) then redirects the model into bulk sweeps; cause (2)
+supplies the tools to do damage with. That is the observed
+1.16-million-Gaussian selection.
+
+A fifth cause is latent rather than observed, and must be fixed before it fires
+(§11 measured it): `silhouette_intact` also carries a `max_total_drop = 0.9`
+catastrophic backstop measured against **total** splat count. On a scene that is
+96.6% near-transparent, an edit that removes 96% of the splats while retaining
+100% of the visible core is the *correct* result and would be reverted as
+catastrophic. Total count is a meaningless denominator on junk-dominated scenes.
+(On the demo scene the 50%-core rule itself passes at 61.1%, so it is not what
+ate the observed crops — but it leaves only 11 points of margin.)
 
 ## 2. Goals
 
@@ -122,7 +132,8 @@ choose_box(label: "A" | "B" | "C", reason: string)
 ```
 Images are captioned with their label and stats. If the model returns an invalid
 label, retry once with the constraint restated; on a second failure, default to
-candidate A (settlement) and note the fallback in the run report.
+candidate B (grown — the measured best on the demo scene) and note the fallback
+in the run report.
 
 **Model call 4 — `adjust_box`**
 
@@ -146,9 +157,10 @@ round, then the controller proceeds to the proposal regardless.
 
 **Guard change.** `silhouette_intact` gains an approved-operation path: for an
 operator-approved crop, only a *catastrophic* backstop applies — revert if the
-crop leaves under 1% of splats or zero solid core. Operator approval is the
-subject-protection mechanism for that operation; the 50%-core rule is what
-silently ate the correct crops.
+crop leaves zero solid core, or under 1% of the visible core. The
+`max_total_drop = 0.9` total-count backstop does **not** apply to an approved
+operation (see §1, cause 5: on a 96.6%-junk scene it reverts correct results).
+Operator approval is the subject-protection mechanism for that operation.
 
 **Revert-hint change.** The hint at `backend/agent/loop.py:564-568` stops naming
 alternative cleanup tools. It states what was reverted and why, and nothing more.
@@ -156,29 +168,35 @@ alternative cleanup tools. It states what was reverted and why, and nothing more
 
 ## 6. Component: candidate geometry
 
-`src/viewer/framing.ts` — new `computeCoreCandidates(points)`. It reuses the
-existing voxel binning of `computeTightCoreBox` but labels **all** connected
-dense components rather than only the peak's. `computeTightCoreBox` itself is
-left untouched (other callers depend on it).
+`src/viewer/framing.ts` — new `computeCoreCandidates(points)`.
+`computeTightCoreBox` itself is left untouched (other callers depend on it).
 
-Returns three candidates, each with a box and stats:
+Returns three candidates, each with a box and stats. The definitions below are
+the ones the §11 probe validated on the real demo scene — an earlier draft
+proposed a union-of-dense-components candidate, which the probe **refuted**
+(the scene has one dominant component at 43.5% of solid points and twelve at
+≤0.4%, so a union is identical to the peak box).
 
-- **A — settlement:** union of every dense component whose point count is ≥10% of
-  the peak component's. This is the direct fix for cause (1).
-- **B — core:** the current single-peak box. Correct when there really is one
-  dense object and the rest is junk.
-- **C — wide:** the robust 2–98 percentile box over solid splats. Deliberately
-  generous; it is the escape hatch when density clustering is wrong, and its
-  presence makes the model's choice a real discrimination rather than a rubber
-  stamp.
+- **A — core:** the current single-peak box. Tight. Correct when the subject is
+  one uniformly dense object. Measured: retains 61.1% of the visible core, keeps
+  24.0% of all splats.
+- **B — grown:** the peak-component box expanded to fit every solid point within
+  one box-diagonal of its center, then re-fit. This is the direct fix for cause
+  (1) — it recovers the halo that hugs the subject without reaching for far-field
+  junk. Measured: retains **90.9%** of the visible core, keeps 41.9% of all
+  splats. Expected to be the right answer on most scenes.
+- **C — wide:** the robust 2–98 percentile box over solid splats. Measured:
+  89.9% core, 39.9% of all splats. Nearly ties B on this scene but is derived
+  differently, so it is the escape hatch when density clustering misleads, and
+  its presence makes the model's choice a real discrimination.
 
 Stats per candidate (shown to the model as text beside its image): splats inside,
-solid splats inside, fraction of the scene's solid core retained, number of
-components merged.
+visible-core splats inside, fraction of the scene's visible core retained, box
+volume.
 
-**Runaway-union guard.** A single stray dense cluster far from the subject could
-clear the 10% bar and balloon candidate A. Drop any component whose inclusion more
-than doubles the union's volume while adding under 10% more solid splats. The
+**Runaway-growth guard.** Candidate B's one-diagonal radius could still swallow a
+far-field junk cluster on a different scene. Reject the grown box if it more than
+triples the peak box's volume while adding under 10% more visible core. The
 model's visual check is the second line of defence.
 
 Input sampling is unchanged: `SceneManager.getCoreBoundsBox` already strides to a
@@ -255,25 +273,77 @@ Reused unchanged: proposal machinery, `ProposalCard`, WS events, `ToolDispatcher
   than switching cleanup method.
 - Scripted-provider test for `AnalystController`: 4 captures, one `report_scene`,
   no edit tools reachable.
-- Geometry unit test: synthetic two-cluster scene where the single-peak box
-  provably excludes cluster two and the union box includes both; plus a
-  runaway-union case that the volume guard rejects.
+- Geometry unit test: synthetic scene with a dense core plus a hugging halo of
+  solid points, where the peak box provably clips the halo and the grown box
+  recovers it; plus a far-field junk cluster that the runaway-growth volume guard
+  rejects; plus a clean uniform scene where all three candidates converge.
 - Contract drift tests (existing) cover the v0.6 tool additions.
 - Per-stage history test: a Clean run's transcript is absent from a subsequent
   Understand run.
 
 **Manual (cannot be skipped):** a live run with Qwen against a real
-post-disaster `.ply` (candidates in `public/demos/`), confirming it picks the
-settlement candidate. If it does not, the tuning surface is one enum and three
-images — far smaller than a 40-tool prompt.
+`.ply` (`public/demos/iona_park.ply`), confirming it picks the grown candidate
+(B). If it does not, the tuning surface is one enum and three images — far
+smaller than a 40-tool prompt.
 
-## 11. Pre-implementation check
+## 11. Pre-implementation check — DONE (2026-07-24)
 
-Before writing the controllers, compute `computeCoreCandidates` offline against
-the actual demo `.ply` and confirm the union candidate recovers the whole
-settlement. The whole design hinges on that geometry being right; it is a short
-check that de-risks everything downstream.
+Ran offline against `public/demos/iona_park.ply`, replicating
+`SceneManager.getCoreBoundsBox` + `computeTightCoreBox` exactly (100k strided
+sample, opacity ladder, 32³ grid, ≥8% of peak, 26-neighbour flood fill, 1-99
+percentile fit + 4% pad).
 
-Also: the backend was not running at the time of writing (nothing on :8000).
-Start it and reproduce the current failure before changing code, so the fix is
-measured against an observed baseline.
+**Scene profile — 2,000,000 splats:**
+
+| measure | value |
+|---|---|
+| visible core (opacity ≥ `VISIBILITY_ALPHA` 0.10) | 3,369 / 100,000 sampled → ~67,000 full-scene (3.37%) |
+| `nearTransparentFraction` | 0.9663 |
+| raw opacity logits | p25 −6.93, median −6.87, p75 −6.77, max 13.56 |
+| solid-splat extent | ~10 units |
+| all-splat extent | ±250 units |
+| max-axis scale | median 0.0102, p99 0.0513, max 19.58 |
+
+96% of the scene shares essentially one opacity logit (≈ −6.87) — an
+unoptimised/initialisation value, not a trained distribution — spread over a
+volume 25-50× the subject's.
+
+**Candidate comparison (guard = `silhouette_intact`):**
+
+| candidate | visible core kept | guard | all splats kept | volume |
+|---|---|---|---|---|
+| A — peak (today) | 61.1% | pass | 24.0% | 66.9 |
+| B — grown (peak + 1 diagonal) | **90.9%** | pass | 41.9% | 610.8 |
+| C — solid 2-98 | 89.9% | pass | 39.9% | 717.5 |
+
+**Component structure (refutes the union hypothesis):** 13 connected dense
+components — #0 holds 43.5% of solid points, #1 holds 0.4%, the rest ≤0.3%. A
+union at any sane threshold selects only #0. Stable across opacity thresholds
+0.3 / 0.1 / 0.05 / 0.01.
+
+**Halo, not a second settlement:** 1,096 of 2,701 solid points fall outside box
+A; 81% of them lie within one box-diagonal of it (median 0.63 diagonals).
+
+**Consequence accepted by the operator (2026-07-24):** cropping alone leaves the
+scene ~93% near-transparent inside the box (2M → ~838k splats). An
+`opacity_threshold` sweep would be the dramatic win (2M → ~67k, 100% of core
+retained) but is **out of scope** for this pass by explicit decision — crop is
+the whole pass. The `max_total_drop` fix in §5 is still required so that decision
+stays reversible later.
+
+Probe scripts are checked in at `scripts/probes/` — run from that directory:
+
+```bash
+cd scripts/probes
+../../.venv-api/bin/python core_candidates_probe.py           ../../public/demos/iona_park.ply
+../../.venv-api/bin/python core_candidates_diagnostics.py     ../../public/demos/iona_park.ply
+../../.venv-api/bin/python core_candidates_guard_and_svg.py   ../../public/demos/iona_park.ply
+```
+
+Note they encode the *pre-change* algorithm (single-peak). Re-point them at the
+new candidate definitions when §6 lands, so the numbers in this section stay
+reproducible.
+
+Environment at time of writing: backend was down; restarted on :8000 (provider
+`openai`, model `Qwen/Qwen3-VL-8B-Instruct-FP8`), vLLM live on :8001, Vite on
+:5173.
