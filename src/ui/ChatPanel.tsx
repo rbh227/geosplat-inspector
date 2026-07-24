@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, SendHorizonal, Play } from 'lucide-react'
+import { X, SendHorizonal, ChevronRight, Square } from 'lucide-react'
 import type { ChatMessage } from '../types/agent'
-import type { SkillInfo } from '../backend/client'
 import type { ProposalState } from '@agent'
 import ActionCard from './ActionCard'
 import ProposalCard from './ProposalCard'
@@ -10,15 +9,23 @@ import Button from './Button'
 interface ChatPanelProps {
   isOpen: boolean
   stage: 'clean' | 'understand'
-  /** The shared skills vocabulary (R11) — clickable entries, not chat bubbles. */
-  skills: SkillInfo[]
   messages: ChatMessage[]
   isThinking: boolean
+  /** The agent's latest narration/thought — the live "what I'm doing" line. */
+  narration: string
   /** A parked crop/edit proposal awaiting the operator's decision, or null. */
   proposal: ProposalState | null
   onProposalDecide: (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => void
   onSend: (text: string) => void
+  /** Stop the active run (user_interrupt). Shown while the agent is thinking. */
+  onStop: () => void
   onClose: () => void
+}
+
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
 const EMPTY_HINTS: Record<'clean' | 'understand', string> = {
@@ -29,17 +36,34 @@ const EMPTY_HINTS: Record<'clean' | 'understand', string> = {
 export default function ChatPanel({
   isOpen,
   stage,
-  skills,
   messages,
   isThinking,
+  narration,
   proposal,
   onProposalDecide,
   onSend,
+  onStop,
   onClose,
 }: ChatPanelProps) {
   const [input, setInput] = useState('')
+  const [elapsed, setElapsed] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Elapsed-run clock: a long run should LOOK long ("thinking · 2m 14s"),
+  // not like a frozen indicator. The zero-delay timeout resets the clock
+  // asynchronously when a run starts (the indicator is hidden when idle).
+  useEffect(() => {
+    if (!isThinking) return
+    const start = Date.now()
+    const update = () => setElapsed(Date.now() - start)
+    const t0 = setTimeout(update, 0)
+    const t = setInterval(update, 1000)
+    return () => {
+      clearTimeout(t0)
+      clearInterval(t)
+    }
+  }, [isThinking])
 
   // Auto-scroll to bottom when messages change or thinking state changes
   useEffect(() => {
@@ -47,7 +71,7 @@ export default function ChatPanel({
     if (el) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages, isThinking])
+  }, [messages, isThinking, narration])
 
   // Focus input when panel opens
   useEffect(() => {
@@ -88,26 +112,6 @@ export default function ChatPanel({
         </Button>
       </div>
 
-      {/* Skills: compact pills in a dedicated strip — the same routines the
-          agent composes; clicking one runs it (AE5). */}
-      {skills.length > 0 && (
-        <div className="shrink-0 flex flex-wrap gap-1.5 px-4 py-2.5 border-b border-border-subtle">
-          {skills.map((s) => (
-            <button
-              key={s.name}
-              type="button"
-              title={`${s.description}\n${s.recipe}`}
-              disabled={isThinking}
-              onClick={() => onSend(s.description)}
-              className="inline-flex items-center gap-1 rounded-full border border-border-active bg-bg-elevated px-2.5 py-1 font-mono text-[10.5px] text-text-secondary hover:text-text-primary hover:border-accent-cyan/50 transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-default"
-            >
-              <Play size={9} />
-              {s.name}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Messages */}
       <div
         ref={scrollRef}
@@ -140,13 +144,20 @@ export default function ChatPanel({
               {msg.content}
             </div>
 
-            {/* Action cards for assistant messages */}
+            {/* What the agent did, folded away — the reply is the product,
+                the steps are the receipt. */}
             {msg.role === 'assistant' && msg.actions && msg.actions.length > 0 && (
-              <div className="w-full max-w-[85%] flex flex-col">
-                {msg.actions.map((action, idx) => (
-                  <ActionCard key={`${msg.id}-action-${idx}`} action={action} />
-                ))}
-              </div>
+              <details className="w-full max-w-[85%] mt-1 group">
+                <summary className="flex items-center gap-1 cursor-pointer list-none text-[11px] font-mono text-text-dim hover:text-text-secondary select-none">
+                  <ChevronRight size={11} className="transition-transform group-open:rotate-90" />
+                  {msg.actions.length} step{msg.actions.length === 1 ? '' : 's'}
+                </summary>
+                <div className="flex flex-col">
+                  {msg.actions.map((action, idx) => (
+                    <ActionCard key={`${msg.id}-action-${idx}`} action={action} />
+                  ))}
+                </div>
+              </details>
             )}
 
             {/* Thumbnail preview */}
@@ -168,14 +179,26 @@ export default function ChatPanel({
           </div>
         ))}
 
-        {/* Thinking indicator */}
+        {/* Thinking indicator + the agent's live narration + elapsed clock */}
         {isThinking && (
           <div className="animate-fade-in flex items-start">
-            <div className="bg-bg-elevated border border-border-subtle rounded-lg rounded-bl-sm px-3 py-2">
-              <div className="thinking-dots flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan inline-block" />
-                <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan inline-block" />
-                <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan inline-block" />
+            <div className="bg-bg-elevated border border-border-subtle rounded-lg rounded-bl-sm px-3 py-2 max-w-[85%]">
+              <div className="flex items-center gap-2">
+                <div className="thinking-dots flex gap-1 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan inline-block" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan inline-block" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan inline-block" />
+                </div>
+                {elapsed >= 5000 && (
+                  <span className="text-[10px] font-mono text-text-dim shrink-0">
+                    {formatElapsed(elapsed)}
+                  </span>
+                )}
+                {narration && (
+                  <span className="text-xs text-text-dim italic leading-snug">
+                    {narration}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -207,15 +230,28 @@ export default function ChatPanel({
               transition-all duration-200
             "
           />
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handleSend}
-            disabled={!input.trim()}
-            aria-label="Send message"
-          >
-            <SendHorizonal size={16} />
-          </Button>
+          {/* While a proposal is parked, typed text is adjustment feedback —
+              keep Send. Otherwise a running agent shows Stop. */}
+          {isThinking && !proposal ? (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={onStop}
+              aria-label="Stop the run"
+            >
+              <Square size={14} fill="currentColor" />
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleSend}
+              disabled={!input.trim()}
+              aria-label="Send message"
+            >
+              <SendHorizonal size={16} />
+            </Button>
+          )}
         </div>
       </div>
     </div>

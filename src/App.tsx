@@ -6,7 +6,7 @@ import { createAgent, WebSocketTransport, PanelBus } from '@agent'
 import type { Agent, TraceEntry, ProposalState } from '@agent'
 import {
   uploadScene, runAgent, sceneWsUrl, scenePlyUrl, isBackendLoadable,
-  editByIds, historyOp, getAliveIds, getSkills, type SkillInfo,
+  editByIds, historyOp, getAliveIds,
   getModelConfig, type ModelConfig,
 } from './backend/client'
 import { makeRendererBridge } from './backend/bridge'
@@ -45,14 +45,12 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isThinking, setIsThinking] = useState(false)
   const [narration, setNarration] = useState('')
-  const [agentStep, setAgentStep] = useState(0)
   // Start "has scene" true when a persisted record exists so the restore effect
   // shows the viewport (not the empty state) without a synchronous setState.
   const [hasScene, setHasScene] = useState(() => loadPersistedScene() !== null)
 
   // ── Editor state (v0.2) ──
   const [stage, setStage] = useState<Stage>('clean')
-  const [skills, setSkills] = useState<SkillInfo[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null)
   const [settingsAttention, setSettingsAttention] = useState(false)
@@ -93,6 +91,10 @@ export default function App() {
   // (confirmed: 675MB/3M-gaussian scene ≈ 60s). Without this, a prompt typed
   // during that window sees sceneId===null and wrongly reports "view-only".
   const registeringSceneRef = useRef(false)
+  /** The last backend-loadable file — retried when its upload failed. */
+  const lastPlyFileRef = useRef<File | null>(null)
+  /** Local edits made while unregistered — a retried upload would desync them. */
+  const localOnlyEditsRef = useRef(false)
   const stageRef = useRef<Stage>('clean') // mirrors stage for stable handleSend
   const unsubsRef = useRef<Array<() => void>>([])
   const processedTraceRef = useRef(0)
@@ -185,16 +187,6 @@ export default function App() {
     window.addEventListener('pagehide', onHide)
     return () => window.removeEventListener('pagehide', onHide)
   }, [])
-
-  // One skills vocabulary, two invokers (R11): fetched per stage, shown as
-  // clickable entries, and rendered into the agent's system prompt backend-side.
-  useEffect(() => {
-    let cancelled = false
-    void getSkills(stage).then((list) => {
-      if (!cancelled) setSkills(list)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [stage])
 
   // Model picker (in-app settings): fetch the current selection once on mount
   // and nudge the gear icon if nothing usable is configured yet. The app is
@@ -299,9 +291,15 @@ export default function App() {
     sceneIdRef.current = null
     setBackendSceneId(null)
     if (!isBackendLoadable(file.name)) {
+      lastPlyFileRef.current = null
       clearPersistedScene() // view-only scene: nothing restorable, drop any stale record
       return
     }
+    // Kept for transparent retry: if this upload fails (backend restarting is
+    // the common case), the next chat send re-attempts it instead of wrongly
+    // telling the operator their .ply is a view-only .splat.
+    lastPlyFileRef.current = file
+    localOnlyEditsRef.current = false
     registeringSceneRef.current = true
     setStatus('Uploading scene to backend…')
     try {
@@ -331,7 +329,12 @@ export default function App() {
   const commitEdit = useCallback((op: 'delete_by_ids' | 'keep_only_ids', ids: Uint32Array) => {
     if (ids.length === 0) return
     const sceneId = sceneIdRef.current
-    if (!sceneId) return // view-only scene: local edit stands alone
+    if (!sceneId) {
+      // view-only scene: local edit stands alone — and blocks a transparent
+      // re-upload (the original file no longer matches what's on screen)
+      localOnlyEditsRef.current = true
+      return
+    }
     void editByIds(sceneId, op, ids).catch(async (err) => {
       console.warn('[backend] edit rejected; restoring authoritative scene:', err)
       await reloadAuthoritative(sceneId)
@@ -444,6 +447,7 @@ export default function App() {
     setHasScene(true)
     disposeAgent()
     sceneIdRef.current = null
+    lastPlyFileRef.current = null // a stale .ply must never be retried over this scene
     setBackendSceneId(null)
     clearPersistedScene() // view-only: not restorable across refresh
     void (async () => {
@@ -490,7 +494,6 @@ export default function App() {
           label: name,
           detail: e.detail?.args ? JSON.stringify(e.detail.args) : undefined,
         })
-        setAgentStep(runActionsRef.current.length)
         if (e.text) setNarration(e.text)
       } else if ((e.kind === 'thought' || e.kind === 'narrate') && e.text) {
         setNarration(e.text)
@@ -506,7 +509,6 @@ export default function App() {
           actions: actions.length > 0 ? actions : undefined,
         }])
         setNarration(content)
-        setAgentStep(0)
         runActionsRef.current = []
         // Reload the served .ply whenever the run actually edited the backend
         // model (scene_changed) — a read-only survey must not reload/reframe.
@@ -543,7 +545,6 @@ export default function App() {
       disposeAgent()
       setIsThinking(false)
       setAgentPaused(false)
-      setAgentStep(0)
       showStatus('Agent connection lost — the run was stopped. Send again to reconnect.')
     })
 
@@ -567,8 +568,7 @@ export default function App() {
       content: text,
       timestamp: Date.now(),
     }])
-    setNarration(text)
-    setAgentStep(0)
+    setNarration('') // the live line belongs to the agent's activity, not the ask
 
     // While a proposal is parked, the run is blocked on the operator's verdict.
     // Typing in chat during review IS adjustment feedback — resolve the parked
@@ -594,12 +594,64 @@ export default function App() {
       return
     }
 
+    const startRun = (sceneId: string) => {
+      runActionsRef.current = []
+      setIsThinking(true)
+      // Snapshot the operator's current view as the run's "home" — the agent
+      // can return here (reframe) if it gets lost. Captured before it moves.
+      viewerRef.current?.setHomePose(viewerRef.current.getCameraPose())
+      ensureAgent()
+        .then(() => {
+          // Re-assert AFTER ensureAgent: the first ensureAgent() subscribes
+          // panels.running, whose subscribe REPLAYS the current value (false)
+          // — without this the whole first run shows no thinking indicator.
+          setIsThinking(true)
+          return runAgent(sceneId, text, stageRef.current)
+        })
+        .catch((err) => {
+          const errMsg = `Error: ${err instanceof Error ? err.message : String(err)}. Is the backend running on :8000?`
+          setMessages((prev) => [...prev, {
+            id: `msg-${Date.now()}-error`,
+            role: 'assistant',
+            content: errMsg,
+            timestamp: Date.now(),
+          }])
+          setIsThinking(false)
+          setNarration(errMsg)
+        })
+    }
+
     if (!sceneIdRef.current) {
+      // A .ply whose backend upload failed (backend down/restarting when the
+      // scene loaded) is RETRIED here, then the request runs — the operator
+      // shouldn't have to diagnose that. Blocked only by local edits made
+      // while unregistered (re-uploading the original file would desync them).
+      const retryFile = lastPlyFileRef.current
+      if (!registeringSceneRef.current && retryFile && !localOnlyEditsRef.current) {
+        setIsThinking(true)
+        setNarration('Reconnecting the scene to the backend…')
+        void registerScene(retryFile).then(() => {
+          if (sceneIdRef.current) {
+            startRun(sceneIdRef.current)
+          } else {
+            setIsThinking(false)
+            setMessages((prev) => [...prev, {
+              id: `msg-${Date.now()}-assistant`,
+              role: 'assistant',
+              content: "Can't reach the backend on :8000 — is it running? Once it's up, send your message again.",
+              timestamp: Date.now(),
+            }])
+          }
+        })
+        return
+      }
       const content = registeringSceneRef.current
         ? "Still uploading this scene to the backend — large scenes can take up to a minute. Try again in a moment."
-        : hasSceneRef.current
-          ? "This scene is view-only — it's a .splat the renderer can show but the backend can't edit. The agent works on .ply scenes; load a .ply from Samples or drag one in."
-          : 'Load a .ply scene first — the agent inspects and cleans .ply splats.'
+        : retryFile
+          ? 'The backend upload for this .ply failed earlier and you have made local edits since — reload the file to reconnect the agent.'
+          : hasSceneRef.current
+            ? "This scene is view-only — it's a .splat the renderer can show but the backend can't edit. The agent works on .ply scenes; load a .ply from Samples or drag one in."
+            : 'Load a .ply scene first — the agent inspects and cleans .ply splats.'
       setMessages((prev) => [...prev, {
         id: `msg-${Date.now()}-assistant`,
         role: 'assistant',
@@ -609,27 +661,8 @@ export default function App() {
       return
     }
 
-    const sceneId = sceneIdRef.current
-    runActionsRef.current = []
-    setIsThinking(true)
-    // Snapshot the operator's current view as the run's "home" — the agent can
-    // return here (reframe) if it gets lost. Captured now, before it moves.
-    viewerRef.current?.setHomePose(viewerRef.current.getCameraPose())
-    ensureAgent()
-      .then(() => runAgent(sceneId, text, stageRef.current))
-      .catch((err) => {
-        const errMsg = `Error: ${err instanceof Error ? err.message : String(err)}. Is the backend running on :8000?`
-        setMessages((prev) => [...prev, {
-          id: `msg-${Date.now()}-error`,
-          role: 'assistant',
-          content: errMsg,
-          timestamp: Date.now(),
-        }])
-        setIsThinking(false)
-        setNarration(errMsg)
-        setAgentStep(0)
-      })
-  }, [ensureAgent])
+    startRun(sceneIdRef.current)
+  }, [ensureAgent, registerScene])
 
   // Understand is look-only (R15): leaving Clean drops any active tool/selection.
   const handleStageChange = useCallback((next: Stage) => {
@@ -803,13 +836,7 @@ export default function App() {
               />
             )}
           </div>
-          <NarrationBar
-            state={viewerState}
-            isRunning={isThinking}
-            narration={narration}
-            step={agentStep}
-            maxSteps={15}
-          />
+          <NarrationBar state={viewerState} />
         </div>
 
         {/* Right: settings takes priority over chat when both would show
@@ -828,12 +855,13 @@ export default function App() {
           <ChatPanel
             isOpen={rightOpen}
             stage={stage}
-            skills={skills}
             messages={messages}
             isThinking={isThinking}
+            narration={narration}
             proposal={proposal}
             onProposalDecide={handleProposalDecide}
             onSend={handleSend}
+            onStop={handleStopAgent}
             onClose={() => setRightOpen(false)}
           />
         )}
