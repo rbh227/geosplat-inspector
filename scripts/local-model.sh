@@ -25,7 +25,23 @@ REMOTE_PORT="${VLLM_REMOTE_PORT:-8000}"   # server-side, bound to 127.0.0.1
 LOCAL_PORT="${VLLM_LOCAL_PORT:-8001}"     # Mac-side (FastAPI backend owns 8000)
 TMUX_SESSION="${VLLM_TMUX_SESSION:-vllm-qwen3}"
 REMOTE_LOG="${VLLM_REMOTE_LOG:-~/vllm_qwen3.log}"
-SERVE_ARGS="${VLLM_SERVE_ARGS:---gpu-memory-utilization 0.92 --max-model-len 32768 --enable-auto-tool-choice --tool-call-parser hermes}"
+# Memory budget on a 24GB card, tuned against two opposite failures:
+#   - at 0.92 / 32768, a single full-resolution viewport capture (2044x1316 ->
+#     13,724 patches) OOM'd inside qwen3_vl._process_image_input and killed the
+#     engine mid-run: the KV cache is reserved up-front, the vision tower
+#     allocates per-request, and only 49 MiB was left for a 122 MiB allocation.
+#   - at 0.85 / 32768 the engine refuses to start at all: a 32768 context needs
+#     4.50 GiB of KV cache and only 3.21 GiB is left after weights.
+# 0.90 / 24576 clears both: ~1 GiB of KV headroom plus ~2.4 GiB of card left
+# outside the budget for vision activations. The frontend also caps capture size
+# (frontend/src/agent/capture.ts MAX_CAPTURE_EDGE), cutting that activation ~4x.
+#
+# A server-side pixel cap (--mm-processor-kwargs '{"max_pixels":...}') is
+# deliberately NOT set here: the launch line below passes SERVE_ARGS through
+# ssh -> remote sh -> tmux -> sh, and the JSON's quotes do not survive that many
+# layers (vLLM would receive {max_pixels:1048576} and refuse to start). Set it
+# via VLLM_SERVE_ARGS if you need it and can verify the quoting on your host.
+SERVE_ARGS="${VLLM_SERVE_ARGS:---gpu-memory-utilization 0.90 --max-model-len 24576 --enable-auto-tool-choice --tool-call-parser hermes}"
 TUNNEL_PATTERN="${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}"
 
 ssh_run() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_HOST" "$@"; }
