@@ -184,10 +184,26 @@ IDs, the `/edit` route.
 - `EditorToolbar` test: every entry in `TOOLS` has a non-empty description; the
   `?` toggle shows and hides them.
 
-## 9. Open question
+## 9. The agent's role (resolved 2026-07-25)
 
-Whether the agent should seed the box at all, or the tool should always start
-from `computeTightCoreBox` on activation and the agent simply never touch it.
-The latter is simpler and removes the last coupling between the model and the
-crop; the former keeps the "agent proposes, human disposes" demo beat. Decide
-before implementing §4 — §3 is unaffected either way.
+The agent stays in every beat except the one that destroys data. Operator
+decision: keep the agent in the flow; author's call on where exactly.
+
+| beat | actor | can it fail destructively? |
+|---|---|---|
+| Inspect: `get_metrics`, `capture_frame`, narrate what it sees | agent | no |
+| Seed the box: `get_core_bounds` → `show_box_preview` | agent | no — the operator edits it next |
+| Adjust the box and confirm | **operator** | this is the only irreversible decision |
+| Crop to the confirmed box | agent (bound to the operator's box, §4) | no — the box is the operator's |
+| Verify: re-measure, recapture, report before/after | agent | no |
+| Read the cleaned scene (Understand stage) | agent | no |
+
+The model therefore inspects, proposes, executes, verifies and explains — it
+simply never decides what to destroy. That is a stronger agentic story than
+"the model chose a box", not a weaker one: it is the difference between an agent
+that could be pointed at real data and one that could not. It also means no beat
+in the demo can fail destructively, whatever the model does.
+
+Practical consequence: §4's handoff is **kept**. A bad seed costs the operator a
+drag; it cannot cost them the scene. The Clean stage still makes no model call
+that gates an edit.
