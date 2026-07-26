@@ -496,7 +496,7 @@ class AgentLoop:
             payload = result.get("result")
             if isinstance(payload, dict) and payload.get("verdict") == "approved":
                 kind = str(call.args.get("kind", ""))
-                refusal = await self._bank_approval(kind, call.args)
+                refusal = await self._bank_approval(kind, call.args, payload)
                 if refusal:
                     self._nudge_sync(refusal)
 
@@ -654,7 +654,9 @@ class AgentLoop:
         return metrics
 
     # -- approval banking (v0.5) ------------------------------------------
-    async def _bank_approval(self, kind: str, args: dict) -> str | None:
+    async def _bank_approval(
+        self, kind: str, args: dict, decision: dict | None = None
+    ) -> str | None:
         """Bank an approved proposal, capturing the reviewed artifact.
 
         Returns a refusal message (and banks nothing) when the approval would
@@ -662,12 +664,27 @@ class AgentLoop:
         operator couldn't have meaningfully reviewed.
         """
         if kind == "crop_outside_box":
-            if self._previewed_box is None:
+            # v0.6: the operator can move/resize the box before approving, and
+            # the reply carries what they finally looked at. Prefer it over the
+            # agent's preview — the approval must bind the reviewed artifact,
+            # and the reviewed artifact is theirs.
+            operator_box = (decision or {}).get("box")
+            if (
+                isinstance(operator_box, dict)
+                and _is_vec3(operator_box.get("min"))
+                and _is_vec3(operator_box.get("max"))
+            ):
+                self._approved_box = {
+                    "min": [float(v) for v in operator_box["min"]],
+                    "max": [float(v) for v in operator_box["max"]],
+                }
+            elif self._previewed_box is None:
                 return (
                     "[system] approval not banked: no box was previewed. Call "
                     "show_box_preview, verify with a capture, then propose again."
                 )
-            self._approved_box = dict(self._previewed_box)
+            else:
+                self._approved_box = dict(self._previewed_box)
         elif kind == "bulk_edit":
             op = args.get("operation")
             tool = op.get("tool") if isinstance(op, dict) else None
