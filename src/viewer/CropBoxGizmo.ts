@@ -39,7 +39,7 @@ export class CropBoxGizmo {
   }
 
   attach(box: Box): void {
-    this.detachProxy()
+    this.detach()
     const t = transformFromBox(box)
     const proxy = new THREE.Mesh(
       new THREE.BoxGeometry(1, 1, 1),

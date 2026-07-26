@@ -85,6 +85,22 @@ describe('CropBoxGizmo', () => {
     expect(setOrbitEnabled).toHaveBeenLastCalledWith(true)
   })
 
+  it('restores orbit when re-attached mid-drag (re-seed/re-target during an active handle drag)', () => {
+    const { g, setOrbitEnabled } = makeGizmo()
+    g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+    emit('dragging-changed', true)
+    setOrbitEnabled.mockClear()
+    g.attach({ min: [2, 2, 2], max: [3, 3, 3] })
+    expect(setOrbitEnabled).toHaveBeenLastCalledWith(true)
+    // A drag that "ended" via re-attach must not still look active afterward:
+    // the next real dragging-changed:false should not be treated as a no-op
+    // that was already accounted for, and detach() must not re-fire restore
+    // logic for a drag that attach() already unwound.
+    setOrbitEnabled.mockClear()
+    g.detach()
+    expect(setOrbitEnabled).not.toHaveBeenCalled()
+  })
+
   it('restores orbit when detached mid-drag', () => {
     const { g, setOrbitEnabled } = makeGizmo()
     g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
