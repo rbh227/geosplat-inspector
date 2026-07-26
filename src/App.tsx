@@ -364,7 +364,10 @@ export default function App() {
     const before = viewerRef.current?.getSplatCount() ?? 0
     const ids = viewerRef.current?.cropToBox() ?? new Uint32Array(0)
     if (ids.length === 0) {
+      // cropToBox() already ended the session (endCropBox()) — the tool
+      // button must not read as active with no gizmo left to resume it.
       showStatus('Box contains no splats — nothing cropped')
+      setActiveTool(null)
       return
     }
     if (ids.length === before) {

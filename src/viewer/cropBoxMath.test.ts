@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  boxFromTransform, transformFromBox, normalizeBox, countInsideSampled,
+  boxFromTransform, transformFromBox, normalizeBox, countInsideSampled, isInsideBox,
 } from './cropBoxMath.ts'
 
 describe('boxFromTransform / transformFromBox', () => {
@@ -52,5 +52,31 @@ describe('countInsideSampled', () => {
 
   it('counts a point exactly on the boundary as inside', () => {
     expect(countInsideSampled(new Float32Array([1, 1, 1]), { min: [0, 0, 0], max: [1, 1, 1] })).toBe(1)
+  })
+})
+
+describe('isInsideBox', () => {
+  // The shared predicate behind both countInsideSampled (sampled readout) and
+  // SceneManager.cropToBox (exact commit) — covered directly so the two can
+  // never silently diverge.
+  const box: import('./cropBoxMath.ts').Box = { min: [0, 0, 0], max: [1, 1, 1] }
+
+  it('treats every face of the boundary as inside', () => {
+    expect(isInsideBox(0, 0, 0, box)).toBe(true)
+    expect(isInsideBox(1, 1, 1, box)).toBe(true)
+    expect(isInsideBox(0, 0.5, 1, box)).toBe(true)
+  })
+
+  it('rejects a point just outside the boundary', () => {
+    expect(isInsideBox(1.0001, 0.5, 0.5, box)).toBe(false)
+    expect(isInsideBox(0.5, -0.0001, 0.5, box)).toBe(false)
+  })
+
+  it('handles an inverted box the same as its normalized form', () => {
+    const inverted: import('./cropBoxMath.ts').Box = { min: [5, 5, 5], max: [0, 0, 0] }
+    const normalized = normalizeBox(inverted)
+    expect(isInsideBox(2, 2, 2, inverted)).toBe(isInsideBox(2, 2, 2, normalized))
+    expect(isInsideBox(2, 2, 2, inverted)).toBe(true)
+    expect(isInsideBox(10, 10, 10, inverted)).toBe(false)
   })
 })

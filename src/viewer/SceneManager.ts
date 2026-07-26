@@ -16,7 +16,7 @@ import { transformPoints } from './selection.ts'
 import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
 import { TintStore, tintedColor } from './selectionTint.ts'
 import { CropBoxGizmo } from './CropBoxGizmo.ts'
-import { countInsideSampled, type Box } from './cropBoxMath.ts'
+import { countInsideSampled, isInsideBox, type Box } from './cropBoxMath.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -207,6 +207,10 @@ export class SceneManager implements ViewerHandle {
     el.removeEventListener('pointermove', this.onLookMove)
     window.removeEventListener('pointerup', this.onLookEnd)
     this.controls.dispose()
+    // Dispose the crop gizmo's TransformControls helper — it owns its own
+    // pointer/keyboard listeners on the DOM element (MINOR 7).
+    this.cropGizmo?.dispose()
+    this.cropGizmo = null
     this.renderer.domElement.remove()
     this.renderer.dispose()
     this.spark.dispose()
@@ -1223,14 +1227,20 @@ export class SceneManager implements ViewerHandle {
       })
       this.cropGizmo.onChange = (b) => {
         this.showProposalBox(b.min, b.max)   // wireframe + SDF dim of the outside
-        this.cropCount = countInsideSampled(this.cropSample!, b) * this.cropStride
+        // cropSample can be null if buildCropSample() found nothing to sample
+        // (MINOR 8 — no non-null assertion on a field endCropBox() nulls).
+        this.cropCount = this.cropSample ? countInsideSampled(this.cropSample, b) * this.cropStride : 0
       }
     }
     this.cropGizmo.attach({ min: box.min as Box['min'], max: box.max as Box['max'] })
   }
 
+  /** No-op when no crop-box session is active (IMPORTANT 4) — otherwise every
+   *  tool switch (and first render) would clear a parked agent proposal box
+   *  via clearProposalBox(), which this tool's live preview also drives. */
   endCropBox(): void {
-    this.cropGizmo?.detach()
+    if (!this.cropGizmo || this.cropGizmo.getBox() === null) return
+    this.cropGizmo.detach()
     this.clearProposalBox()
     this.cropSample = null
     this.cropCount = 0
@@ -1253,14 +1263,19 @@ export class SceneManager implements ViewerHandle {
     const keep: number[] = []
     for (let i = 0; i < packed.numSplats; i++) {
       const c = packed.getSplat(i).center
-      if (
-        c.x >= box.min[0] && c.x <= box.max[0] &&
-        c.y >= box.min[1] && c.y <= box.max[1] &&
-        c.z >= box.min[2] && c.z <= box.max[2]
-      ) keep.push(this.idMap.idAt(i))
+      // Shared predicate with countInsideSampled (IMPORTANT 6) — normalizes
+      // internally, so an inverted box crops exactly what the readout showed.
+      if (isInsideBox(c.x, c.y, c.z, box)) keep.push(this.idMap.idAt(i))
     }
     const ids = new Uint32Array(keep)
-    if (ids.length > 0) this.keepOnlyIds(ids)
+    // Skip the mutation (and its undo snapshot) when the box already contains
+    // every alive splat: keepOnlyIds would be a no-op edit that still pushes
+    // a local history entry with no backend counterpart. The next Undo would
+    // pop that entry (no visible change) and still fire historyOp('undo'),
+    // rolling back the backend's PREVIOUS edit instead (CRITICAL 2).
+    if (ids.length > 0 && ids.length < packed.numSplats) {
+      this.keepOnlyIds(ids)
+    }
     this.endCropBox()
     return ids
   }
@@ -1278,6 +1293,20 @@ export class SceneManager implements ViewerHandle {
       out.push(c.x, c.y, c.z)
     }
     this.cropSample = new Float32Array(out)
+  }
+
+  /** Re-sample the crop-box readout after the splat buffer changes shape
+   *  in place (compaction from ANY edit path, e.g. an agent cleanup while the
+   *  operator has the tool open) — without this, `cropSample` keeps stale
+   *  centers/count from before the edit even though the mesh instance and
+   *  gizmo session are unchanged (IMPORTANT 3). No-op when the tool isn't
+   *  active, and cheap when it is (bounded to the same 100k sample cap). */
+  private refreshCropSampleIfActive(): void {
+    if (!this.cropGizmo) return
+    const box = this.cropGizmo.getBox()
+    if (!box) return
+    this.buildCropSample()
+    this.cropCount = this.cropSample ? countInsideSampled(this.cropSample, box) * this.cropStride : 0
   }
 
   /* ---------------------------------------------------------------- */
@@ -1339,6 +1368,7 @@ export class SceneManager implements ViewerHandle {
     packed.numSplats = writeIdx
     this.idMap.setLive(writeIdx)
     this.markSplatDirty()
+    this.refreshCropSampleIfActive() // IMPORTANT 3 — every compaction path runs through here
     this.emitStateChange()
     return removed
   }
@@ -1711,6 +1741,16 @@ export class SceneManager implements ViewerHandle {
 
   private disposeSplatMesh(): void {
     if (this.splatMesh) {
+      // The crop gizmo's box proxy is parented to `splatMesh` (CRITICAL 1):
+      // caching the gizmo across a mesh swap would re-parent `attach()` onto
+      // a disposed, scene-detached mesh next time the tool opens, so its
+      // matrixWorld would never be traversed and the box would render at a
+      // stale transform. Dispose it here and null the field — the next
+      // beginCropBox() builds a fresh one against the new mesh.
+      this.cropGizmo?.dispose()
+      this.cropGizmo = null
+      this.cropSample = null
+      this.cropCount = 0
       this.clearSelectionPreview()
       this.clearProposalBox()
       // Drop remembered tint colors — they belong to the buffer being torn

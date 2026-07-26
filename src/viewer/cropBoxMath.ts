@@ -64,20 +64,31 @@ export function normalizeBox(box: Box): Box {
 }
 
 /**
+ * Point-in-box test, boundary inclusive. Handles an inverted box (min/max
+ * flipped on any axis, e.g. mid-drag) directly via per-axis min/max instead
+ * of requiring a pre-normalized box — the single shared predicate every
+ * containment check (the sampled readout AND the exact commit) goes through,
+ * so the two can never drift apart.
+ */
+export function isInsideBox(x: number, y: number, z: number, box: Box): boolean {
+  const minX = Math.min(box.min[0], box.max[0])
+  const maxX = Math.max(box.min[0], box.max[0])
+  const minY = Math.min(box.min[1], box.max[1])
+  const maxY = Math.max(box.min[1], box.max[1])
+  const minZ = Math.min(box.min[2], box.max[2])
+  const maxZ = Math.max(box.min[2], box.max[2])
+  return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ
+}
+
+/**
  * Centers inside the box, boundary inclusive. `centers` is flat xyz triples.
  * Returns the count of centers found; callers multiply by their sampling
  * stride to estimate the full-scene total.
  */
 export function countInsideSampled(centers: Float32Array, box: Box): number {
-  const b = normalizeBox(box)
   let n = 0
   for (let i = 0; i < centers.length; i += 3) {
-    const x = centers[i], y = centers[i + 1], z = centers[i + 2]
-    if (
-      x >= b.min[0] && x <= b.max[0] &&
-      y >= b.min[1] && y <= b.max[1] &&
-      z >= b.min[2] && z <= b.max[2]
-    ) n++
+    if (isInsideBox(centers[i], centers[i + 1], centers[i + 2], box)) n++
   }
   return n
 }
