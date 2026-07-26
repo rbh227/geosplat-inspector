@@ -57,6 +57,7 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<SelectionTool | null>(null)
   const [eraseMode, setEraseMode] = useState(false)
   const [selectionCount, setSelectionCount] = useState(0)
+  const [cropBoxCount, setCropBoxCount] = useState(0)
   const [activeDirections, setActiveDirections] = useState<ReadonlySet<MoveDirection>>(new Set())
   const [activeRotations, setActiveRotations] = useState<ReadonlySet<RotateDirection>>(new Set())
   const [status, setStatus] = useState<string | null>(null)
@@ -358,6 +359,44 @@ export default function App() {
     const ids = viewerRef.current?.keepSelection() ?? new Uint32Array(0)
     commitEdit('keep_only_ids', ids)
   }, [commitEdit])
+
+  const handleCropToBox = useCallback(() => {
+    const before = viewerRef.current?.getSplatCount() ?? 0
+    const ids = viewerRef.current?.cropToBox() ?? new Uint32Array(0)
+    if (ids.length === 0) {
+      showStatus('Box contains no splats — nothing cropped')
+      return
+    }
+    if (ids.length === before) {
+      // Everything was already inside: a keep_only_ids here is a no-op that still
+      // costs a history entry, so the operator's Undo would appear to do nothing.
+      showStatus('Box already contains the whole scene — nothing to crop')
+      setActiveTool(null)
+      return
+    }
+    commitEdit('keep_only_ids', ids)
+    setActiveTool(null)
+  }, [commitEdit, showStatus])
+
+  // Crop-box tool lifecycle: start/stop the gizmo with the tool, polling the
+  // count while active (the gizmo mutates the box on drag, outside React).
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (activeTool !== 'cropBox') {
+      viewer?.endCropBox()
+      return
+    }
+    viewer?.beginCropBox()
+    const id = window.setInterval(
+      () => setCropBoxCount(viewer?.cropBoxCount() ?? 0),
+      120,
+    )
+    return () => {
+      window.clearInterval(id)
+      viewer?.endCropBox()
+      setCropBoxCount(0)
+    }
+  }, [activeTool])
 
   const handleInvertSelection = useCallback(() => {
     setSelectionCount(viewerRef.current?.invertSelection() ?? 0)
@@ -756,6 +795,8 @@ export default function App() {
                 onClearSelection={handleClearSelection}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
+                cropBoxCount={cropBoxCount}
+                onCropToBox={handleCropToBox}
               />
             )}
 

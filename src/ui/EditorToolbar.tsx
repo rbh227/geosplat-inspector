@@ -14,6 +14,7 @@ import {
   FlipHorizontal2,
   Crop,
   HelpCircle,
+  Scissors,
 } from 'lucide-react'
 import type { SelectionTool } from '../viewer/SelectionOverlay.tsx'
 
@@ -35,6 +36,8 @@ interface EditorToolbarProps {
   onUndo: () => void
   onRedo: () => void
   disabled?: boolean
+  cropBoxCount?: number
+  onCropToBox?: () => void
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -49,6 +52,7 @@ export const TOOLS: Array<{
   { tool: 'polygon', icon: Hexagon, title: 'Polygon select', description: 'Click points to outline a region; double-click to close it.' },
   { tool: 'sphere', icon: CircleDashed, title: 'Sphere select', description: 'Drag out a sphere; splats inside it are selected.' },
   { tool: 'box', icon: Box, title: 'Box select', description: 'Drag out a box; splats inside it are selected.' },
+  { tool: 'cropBox', icon: Scissors, title: 'Crop box', description: 'Place a box, move and resize it, then delete everything outside it.' },
 ]
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -204,6 +208,8 @@ export default function EditorToolbar({
   onUndo,
   onRedo,
   disabled = false,
+  cropBoxCount,
+  onCropToBox,
 }: EditorToolbarProps) {
   const hasSelection = selectionCount > 0
   const [showHelp, setShowHelp] = useState(false)
@@ -245,6 +251,22 @@ export default function EditorToolbar({
           <Icon size={15} />
         </RailRow>
       ))}
+
+      {activeTool === 'cropBox' && (
+        <div className="flex flex-col items-stretch gap-1 px-[3px] py-1">
+          <button
+            type="button"
+            onClick={onCropToBox}
+            disabled={disabled || !cropBoxCount}
+            className="rounded-[2px] bg-accent-cyan/90 px-1 py-1 text-[9px] font-medium text-white disabled:opacity-35"
+          >
+            Crop to box
+          </button>
+          <div className="text-center font-mono text-[9px] text-text-dim">
+            ~{(cropBoxCount ?? 0).toLocaleString()} inside
+          </div>
+        </div>
+      )}
 
       {/* Erase mode: a modifier on the tools above — gestures delete on commit (R1) */}
       <RailRow

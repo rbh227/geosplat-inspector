@@ -15,6 +15,8 @@ import { IdMap } from './idMap.ts'
 import { transformPoints } from './selection.ts'
 import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
 import { TintStore, tintedColor } from './selectionTint.ts'
+import { CropBoxGizmo } from './CropBoxGizmo.ts'
+import { countInsideSampled, type Box } from './cropBoxMath.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -1151,6 +1153,12 @@ export class SceneManager implements ViewerHandle {
   private proposalWire: THREE.LineSegments | null = null
   private proposalBoxState: { min: number[]; max: number[] } | null = null
 
+  /* ---- Operator crop-box tool ---- */
+  private cropGizmo: CropBoxGizmo | null = null
+  private cropSample: Float32Array | null = null   // strided centers, backend coords
+  private cropStride = 1
+  private cropCount = 0
+
   /** Persistent SDF dim + crisp wireframe, parented to the splat mesh so both
    *  live in backend coords and appear in captures. Stays until cleared. */
   showProposalBox(min: number[], max: number[]): void {
@@ -1194,6 +1202,82 @@ export class SceneManager implements ViewerHandle {
 
   getProposalBox(): { min: number[]; max: number[] } | null {
     return this.proposalBoxState
+  }
+
+  /* ---- Operator crop-box tool ---- */
+
+  /** Start the crop-box tool. `seed` defaults to the tight core box. */
+  beginCropBox(seed?: Box): void {
+    const mesh = this.splatMesh
+    if (!mesh) return
+    const box = seed ?? this.getCoreBoundsBox() ?? null
+    if (!box) return
+    this.buildCropSample()
+    if (!this.cropGizmo) {
+      this.cropGizmo = new CropBoxGizmo({
+        camera: this.camera,
+        domElement: this.renderer.domElement,
+        scene: this.scene,
+        parent: mesh,
+        setOrbitEnabled: (on) => { this.controls.enabled = on },
+      })
+      this.cropGizmo.onChange = (b) => {
+        this.showProposalBox(b.min, b.max)   // wireframe + SDF dim of the outside
+        this.cropCount = countInsideSampled(this.cropSample!, b) * this.cropStride
+      }
+    }
+    this.cropGizmo.attach({ min: box.min as Box['min'], max: box.max as Box['max'] })
+  }
+
+  endCropBox(): void {
+    this.cropGizmo?.detach()
+    this.clearProposalBox()
+    this.cropSample = null
+    this.cropCount = 0
+  }
+
+  getCropBox(): Box | null {
+    return this.cropGizmo?.getBox() ?? null
+  }
+
+  /** Approximate splat count inside the box, from the strided sample. */
+  cropBoxCount(): number {
+    return this.cropCount
+  }
+
+  /** Keep only splats inside the box. Returns the kept stable IDs (exact). */
+  cropToBox(): Uint32Array {
+    const box = this.getCropBox()
+    const packed = this.splatMesh?.packedSplats
+    if (!box || !packed || !this.idMap) return new Uint32Array(0)
+    const keep: number[] = []
+    for (let i = 0; i < packed.numSplats; i++) {
+      const c = packed.getSplat(i).center
+      if (
+        c.x >= box.min[0] && c.x <= box.max[0] &&
+        c.y >= box.min[1] && c.y <= box.max[1] &&
+        c.z >= box.min[2] && c.z <= box.max[2]
+      ) keep.push(this.idMap.idAt(i))
+    }
+    const ids = new Uint32Array(keep)
+    if (ids.length > 0) this.keepOnlyIds(ids)
+    this.endCropBox()
+    return ids
+  }
+
+  /** Strided centers for the live readout — an exact per-frame count is O(N)
+   *  and unusable at 2M splats (same 100k cap as getCoreBoundsBox). */
+  private buildCropSample(): void {
+    const packed = this.splatMesh?.packedSplats
+    if (!packed) return
+    const n = packed.numSplats
+    this.cropStride = Math.max(1, Math.floor(n / 100_000))
+    const out: number[] = []
+    for (let i = 0; i < n; i += this.cropStride) {
+      const c = packed.getSplat(i).center
+      out.push(c.x, c.y, c.z)
+    }
+    this.cropSample = new Float32Array(out)
   }
 
   /* ---------------------------------------------------------------- */
