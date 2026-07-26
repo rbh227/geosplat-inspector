@@ -68,3 +68,19 @@ def test_clean_recipes_route_through_propose_decision():
     assert "propose_decision" in clean["trim_background"]["recipe"]
     assert "get_core_bounds" in clean["cleanup_scene"]["recipe"]
     assert "propose_decision(kind='crop_outside_box')" in clean["cleanup_scene"]["recipe"]
+
+
+# ── v0.6: box sizing belongs to the operator ─────────────────────────────
+def test_cleanup_recipe_hands_the_box_to_the_operator():
+    """The model seeds the box and stops; the operator sizes it (v0.6)."""
+    prompt = system_prompt_for("clean")
+    lowered = prompt.lower()
+
+    assert "the operator" in lowered
+    # It must not promise to size the box itself.
+    assert "adjust_box_preview only if the subject is clipped" not in lowered
+
+
+def test_cleanup_recipe_no_longer_prescribes_brush_rounds():
+    clean = {s["name"]: s for s in skills_for("clean")}
+    assert "select_by_brush" not in clean["cleanup_scene"]["recipe"]
