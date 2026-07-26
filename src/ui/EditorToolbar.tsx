@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Box,
   Brush,
@@ -12,6 +13,7 @@ import {
   XCircle,
   FlipHorizontal2,
   Crop,
+  HelpCircle,
 } from 'lucide-react'
 import type { SelectionTool } from '../viewer/SelectionOverlay.tsx'
 
@@ -35,13 +37,30 @@ interface EditorToolbarProps {
   disabled?: boolean
 }
 
-const TOOLS: Array<{ tool: SelectionTool; icon: typeof Brush; title: string }> = [
-  { tool: 'brush', icon: Brush, title: 'Brush select (resize with [ ])' },
-  { tool: 'lasso', icon: Lasso, title: 'Lasso select' },
-  { tool: 'polygon', icon: Hexagon, title: 'Polygon select (double-click to close)' },
-  { tool: 'sphere', icon: CircleDashed, title: 'Sphere select (drag to size)' },
-  { tool: 'box', icon: Box, title: 'Box select (drag to size)' },
+// eslint-disable-next-line react-refresh/only-export-components
+export const TOOLS: Array<{
+  tool: SelectionTool
+  icon: typeof Brush
+  title: string
+  description: string
+}> = [
+  { tool: 'brush', icon: Brush, title: 'Brush select', description: 'Paint over splats to select them. [ and ] resize the brush.' },
+  { tool: 'lasso', icon: Lasso, title: 'Lasso select', description: 'Draw a freehand outline; everything inside it is selected.' },
+  { tool: 'polygon', icon: Hexagon, title: 'Polygon select', description: 'Click points to outline a region; double-click to close it.' },
+  { tool: 'sphere', icon: CircleDashed, title: 'Sphere select', description: 'Drag out a sphere; splats inside it are selected.' },
+  { tool: 'box', icon: Box, title: 'Box select', description: 'Drag out a box; splats inside it are selected.' },
 ]
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const ACTION_DESCRIPTIONS = {
+  erase: 'Selections delete the moment you finish the gesture, instead of building up.',
+  delete: 'Delete the selected splats.',
+  keep: 'Delete everything except the selection.',
+  invert: 'Swap what is selected for what is not.',
+  clear: 'Deselect everything; nothing is deleted.',
+  undo: 'Step back one edit.',
+  redo: 'Re-apply the edit you just undid.',
+} as const
 
 function RailButton({
   title, onClick, active = false, disabled = false, activeClass = 'bg-accent-cyan/90 text-white', children,
@@ -88,8 +107,9 @@ export default function EditorToolbar({
   disabled = false,
 }: EditorToolbarProps) {
   const hasSelection = selectionCount > 0
+  const [showHelp, setShowHelp] = useState(false)
   return (
-    <div className="absolute left-0 top-0 bottom-0 z-20 flex w-[34px] flex-col items-center gap-0.5 border-r border-border-panel bg-bg-topbar pt-2">
+    <div className={`absolute left-0 top-0 bottom-0 z-20 flex ${showHelp ? 'w-[230px]' : 'w-[34px]'} flex-col items-stretch gap-0.5 border-r border-border-panel bg-bg-topbar pt-2 transition-[width] duration-100`}>
       {/* Pointer mode: no tool active — drags reach the camera controls (R4/R5) */}
       <RailButton
         title="Pointer / navigate (drag rotates the view)"
@@ -102,16 +122,23 @@ export default function EditorToolbar({
 
       <div className="my-1 h-px w-5 bg-border-mid" />
 
-      {TOOLS.map(({ tool, icon: Icon, title }) => (
-        <RailButton
-          key={tool}
-          title={title}
-          active={activeTool === tool}
-          disabled={disabled}
-          onClick={() => onToolChange(activeTool === tool ? null : tool)}
-        >
-          <Icon size={15} />
-        </RailButton>
+      {TOOLS.map(({ tool, icon: Icon, title, description }) => (
+        <div key={tool} className="flex items-center gap-2 px-[3px]">
+          <RailButton
+            title={showHelp ? title : `${title} — ${description}`}
+            active={activeTool === tool}
+            disabled={disabled}
+            onClick={() => onToolChange(activeTool === tool ? null : tool)}
+          >
+            <Icon size={15} />
+          </RailButton>
+          {showHelp && (
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="text-[10px] font-medium text-text-primary">{title}</div>
+              <div className="text-[9px] text-text-dim">{description}</div>
+            </div>
+          )}
+        </div>
       ))}
 
       {/* Erase mode: a modifier on the tools above — gestures delete on commit (R1) */}
@@ -148,6 +175,17 @@ export default function EditorToolbar({
       <RailButton title="Redo" disabled={disabled} onClick={onRedo}>
         <Redo2 size={15} />
       </RailButton>
+
+      <div className="mt-auto mb-2 flex items-center gap-2 px-[3px]">
+        <RailButton
+          title={showHelp ? 'Hide tool descriptions' : 'Show tool descriptions'}
+          active={showHelp}
+          onClick={() => setShowHelp(!showHelp)}
+        >
+          <HelpCircle size={15} />
+        </RailButton>
+        {showHelp && <div className="text-[9px] text-text-dim">Hide descriptions</div>}
+      </div>
 
       {hasSelection && (
         <div className="mt-1 px-0.5 text-center font-mono text-[9px] leading-tight text-text-dim">
