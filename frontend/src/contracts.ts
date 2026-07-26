@@ -155,6 +155,14 @@ export type WSCommandType =
   // v0.5: blocking proposal — reply is parked until the operator decides
   | "proposal";
 
+/**
+ * v0.6 — fields a proposal reply may carry. `box` is the operator's edited crop
+ * box in BACKEND coordinates; when present on an `approved` verdict the backend
+ * rebinds the approval to it, so the crop runs on the box the operator actually
+ * looked at rather than the one the agent previewed.
+ */
+export const PROPOSAL_DECISION_FIELDS = ['verdict', 'feedback', 'box'] as const
+
 export interface WSCommand {
   type: WSCommandType;
   id: string;          // correlation ID for request/response

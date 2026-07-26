@@ -66,3 +66,12 @@ def test_param_schemas_are_objects():
 def test_ws_type_sets_carry_v02():
     assert {"get_selection", "selection_tool", "movement_input"} <= COMMAND_TYPES
     assert {"agent_pause", "agent_resume", "selection", "tool_result"} <= REPLY_TYPES
+
+
+def test_proposal_decision_fields_v06():
+    """The operator's edited box rides back with an approved verdict (v0.6)."""
+    from backend.contracts.tools import PROPOSAL_DECISION_FIELDS
+
+    assert "verdict" in PROPOSAL_DECISION_FIELDS
+    assert "feedback" in PROPOSAL_DECISION_FIELDS
+    assert "box" in PROPOSAL_DECISION_FIELDS

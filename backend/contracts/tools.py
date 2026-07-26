@@ -361,7 +361,21 @@ TOOL_REGISTRY: list[ToolEntry] = [
     }, "ends run"),
 ]
 
+# v0.6 — fields a proposal reply may carry. `box` is the operator's edited crop
+# box in backend coordinates; on an `approved` verdict the backend rebinds the
+# approval to it (mirror: frontend/src/contracts.ts PROPOSAL_DECISION_FIELDS).
+PROPOSAL_DECISION_FIELDS: tuple[str, ...] = ("verdict", "feedback", "box")
+
 # Quick lookups
 TOOL_BY_NAME: dict[str, ToolEntry] = {t.name: t for t in TOOL_REGISTRY}
 FRONTEND_TOOLS: set[str] = {t.name for t in TOOL_REGISTRY if t.runs_on == "frontend"}
 BACKEND_TOOLS: set[str] = {t.name for t in TOOL_REGISTRY if t.runs_on == "backend"}
+
+__all__ = [
+    "ToolEntry",
+    "TOOL_REGISTRY",
+    "TOOL_BY_NAME",
+    "FRONTEND_TOOLS",
+    "BACKEND_TOOLS",
+    "PROPOSAL_DECISION_FIELDS",
+]
