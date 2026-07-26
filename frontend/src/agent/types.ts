@@ -54,6 +54,10 @@ export interface RendererBridge {
   showProposalBox(min: number[], max: number[]): void
   clearProposalBox(): void
   getProposalBox(): { min: number[]; max: number[] } | null
+  /** The operator's editable crop box (cyan gizmo channel, `CropBoxGizmo` via
+   *  `SceneManager.getCropBox()`) — separate from `getProposalBox()`, which
+   *  stays the agent's amber-wireframe preview and must not be repurposed. */
+  getCropBox(): { min: number[]; max: number[] } | null
   setMovementInput(direction: MoveDirection, active: boolean): void
   /** Hold a rotate-pad look input (yaw/pitch) — the agent `turn` tool. */
   setRotationInput(direction: RotateDirection, active: boolean): void

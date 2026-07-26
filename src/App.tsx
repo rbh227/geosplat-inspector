@@ -429,6 +429,24 @@ export default function App() {
     }
   }, [activeTool])
 
+  // v0.6: while a `crop_outside_box` proposal is parked, hand the operator an
+  // editable copy of the box the agent previewed (cyan gizmo, same channel as
+  // the manual crop-box tool above) so their approval binds to the box they
+  // actually looked at, not the one the model chose. The amber proposal
+  // wireframe (`showProposalBox`, the agent's own record) is untouched — this
+  // seeds a second, independent overlay on top of it and the two diverge as
+  // the operator drags. Detach as soon as the proposal resolves or changes
+  // kind; ws-client reads the live box back via `getCropBox()`.
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (proposal?.kind === 'crop_outside_box') {
+      const box = viewer?.getProposalBox()
+      if (box) viewer?.beginCropBox(box)
+    } else {
+      viewer?.endCropBox()
+    }
+  }, [proposal])
+
   const handleInvertSelection = useCallback(() => {
     setSelectionCount(viewerRef.current?.invertSelection() ?? 0)
   }, [])

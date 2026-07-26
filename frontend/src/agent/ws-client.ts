@@ -198,9 +198,17 @@ export class AgentWSClient {
             resolve: (verdict, feedback) => {
               if (done) return
               done = true
+              // v0.6: on approval, return the box as it stands NOW — the
+              // operator's editable crop-box gizmo (cyan channel), falling
+              // back to the agent's originally-previewed box (amber channel)
+              // if the operator never engaged the gizmo. Never the reverse:
+              // getProposalBox() stays the agent's own record.
+              const box = verdict === 'approved'
+                ? (this.bridge.getCropBox() ?? this.bridge.getProposalBox())
+                : null
               this.transport.send({
                 type: 'tool_result', id,
-                payload: { ok: true, verdict, ...(feedback ? { feedback } : {}) },
+                payload: { ok: true, verdict, ...(feedback ? { feedback } : {}), ...(box ? { box } : {}) },
               } as WSResponse)
               this.panels.clearProposal()
             },
