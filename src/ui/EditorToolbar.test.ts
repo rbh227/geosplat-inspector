@@ -91,7 +91,7 @@ describe('EditorToolbar rendered output (guards against `description={descriptio
     }
   })
 
-  function mount() {
+  function mount(overrides: Record<string, unknown> = {}) {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -107,6 +107,7 @@ describe('EditorToolbar rendered output (guards against `description={descriptio
       onClearSelection: () => {},
       onUndo: () => {},
       onRedo: () => {},
+      ...overrides,
     }
     act(() => {
       root!.render(createElement(EditorToolbar, props))
@@ -140,5 +141,73 @@ describe('EditorToolbar rendered output (guards against `description={descriptio
     for (const [key, description] of Object.entries(ACTION_DESCRIPTIONS)) {
       expect(el.textContent, `missing description for action "${key}"`).toContain(description)
     }
+  })
+})
+
+describe('crop-to-box commit button (fix pass 3, FINDING 3 — gated on box existence, not the sampled count estimate)', () => {
+  beforeAll(() => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  })
+
+  let container: HTMLDivElement | null = null
+  let root: Root | null = null
+
+  afterEach(() => {
+    if (root) {
+      act(() => {
+        root!.unmount()
+      })
+      root = null
+    }
+    if (container) {
+      container.remove()
+      container = null
+    }
+  })
+
+  function mount(overrides: Record<string, unknown>) {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = {
+      activeTool: 'cropBox' as const,
+      onToolChange: () => {},
+      eraseMode: false,
+      onEraseModeChange: () => {},
+      selectionCount: 0,
+      onDeleteSelection: () => {},
+      onKeepSelection: () => {},
+      onInvertSelection: () => {},
+      onClearSelection: () => {},
+      onUndo: () => {},
+      onRedo: () => {},
+      onCropToBox: () => {},
+      ...overrides,
+    }
+    act(() => {
+      root!.render(createElement(EditorToolbar, props))
+    })
+    return container
+  }
+
+  function commitButton(el: HTMLElement) {
+    const btn = Array.from(el.querySelectorAll('button')).find((b) => b.textContent === 'Crop to box')
+    if (!btn) throw new Error('Crop to box button not found')
+    return btn
+  }
+
+  it('is disabled with no box and a zero sampled count', () => {
+    const el = mount({ hasCropBox: false, cropBoxCount: 0 })
+    expect(commitButton(el).disabled).toBe(true)
+  })
+
+  it('stays enabled when a box exists but the strided sample happens to hit zero splats (large-scene regression case)', () => {
+    const el = mount({ hasCropBox: true, cropBoxCount: 0 })
+    expect(commitButton(el).disabled).toBe(false)
+  })
+
+  it('is disabled once the box is gone even if a stale non-zero count is still passed in', () => {
+    const el = mount({ hasCropBox: false, cropBoxCount: 42 })
+    expect(commitButton(el).disabled).toBe(true)
   })
 })

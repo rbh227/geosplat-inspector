@@ -1268,7 +1268,11 @@ export class SceneManager implements ViewerHandle {
         domElement: this.renderer.domElement,
         scene: this.scene,
         parent: mesh,
-        setOrbitEnabled: (on) => { this.controls.enabled = on },
+        // Only ever RE-enable orbit while actually in orbit mode — fly mode
+        // intentionally holds controls.enabled = false, and a gizmo drag (or
+        // a mid-drag detach()) ending while in fly mode must not resurrect
+        // OrbitControls (ORBIT invariant). Disabling always takes effect.
+        setOrbitEnabled: (on) => { this.controls.enabled = on && this.navigationMode === 'orbit' },
       })
       this.cropGizmo.onChange = (b) => {
         this.cropBoxOverlay.show(b.min, b.max)   // wireframe + SDF dim of the outside

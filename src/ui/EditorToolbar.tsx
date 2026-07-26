@@ -37,6 +37,11 @@ interface EditorToolbarProps {
   onRedo: () => void
   disabled?: boolean
   cropBoxCount?: number
+  /** Whether a crop box session/gizmo currently exists. `cropBoxCount` is a
+   *  SAMPLED estimate (strided, capped) — on very large scenes a small but
+   *  legitimate box can sample zero splats, so the commit button must gate
+   *  on box existence, not on the estimate (fix pass 3, FINDING 3). */
+  hasCropBox?: boolean
   onCropToBox?: () => void
 }
 
@@ -209,6 +214,7 @@ export default function EditorToolbar({
   onRedo,
   disabled = false,
   cropBoxCount,
+  hasCropBox = false,
   onCropToBox,
 }: EditorToolbarProps) {
   const hasSelection = selectionCount > 0
@@ -257,7 +263,7 @@ export default function EditorToolbar({
           <button
             type="button"
             onClick={onCropToBox}
-            disabled={disabled || !cropBoxCount}
+            disabled={disabled || !hasCropBox}
             className="rounded-[2px] bg-accent-cyan/90 px-1 py-1 text-[9px] font-medium text-white disabled:opacity-35"
           >
             Crop to box

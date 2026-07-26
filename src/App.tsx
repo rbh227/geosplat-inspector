@@ -58,6 +58,14 @@ export default function App() {
   const [eraseMode, setEraseMode] = useState(false)
   const [selectionCount, setSelectionCount] = useState(0)
   const [cropBoxCount, setCropBoxCount] = useState(0)
+  const [hasCropBox, setHasCropBox] = useState(false)
+  // Set right before a crop commit tears down the gizmo (cropToBox() calls
+  // endCropBox() internally on every path, including the empty/no-op ones)
+  // and cleared when the 120ms poll (re)starts for a fresh session. Guards
+  // the poll against re-seeding a brand-new box in the gap between the
+  // commit running and React actually unmounting/clearing this effect
+  // (fix pass 3, FINDING 2).
+  const cropCommitPendingRef = useRef(false)
   const [activeDirections, setActiveDirections] = useState<ReadonlySet<MoveDirection>>(new Set())
   const [activeRotations, setActiveRotations] = useState<ReadonlySet<RotateDirection>>(new Set())
   const [status, setStatus] = useState<string | null>(null)
@@ -362,6 +370,7 @@ export default function App() {
 
   const handleCropToBox = useCallback(() => {
     const before = viewerRef.current?.getSplatCount() ?? 0
+    cropCommitPendingRef.current = true
     const ids = viewerRef.current?.cropToBox() ?? new Uint32Array(0)
     if (ids.length === 0) {
       // cropToBox() already ended the session (endCropBox()) — the tool
@@ -401,17 +410,22 @@ export default function App() {
       viewer?.endCropBox()
       return
     }
+    cropCommitPendingRef.current = false
     viewer?.beginCropBox()
+    setHasCropBox(viewer?.getCropBox() !== null)
     const id = window.setInterval(() => {
+      if (cropCommitPendingRef.current) return
       if (viewer?.getCropBox() === null) {
         viewer?.beginCropBox()
       }
       setCropBoxCount(viewer?.cropBoxCount() ?? 0)
+      setHasCropBox(viewer?.getCropBox() !== null)
     }, 120)
     return () => {
       window.clearInterval(id)
       viewer?.endCropBox()
       setCropBoxCount(0)
+      setHasCropBox(false)
     }
   }, [activeTool])
 
@@ -813,6 +827,7 @@ export default function App() {
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 cropBoxCount={cropBoxCount}
+                hasCropBox={hasCropBox}
                 onCropToBox={handleCropToBox}
               />
             )}
