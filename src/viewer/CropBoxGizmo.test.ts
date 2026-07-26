@@ -33,6 +33,11 @@ function makeGizmo() {
   return { g, setOrbitEnabled, parent }
 }
 
+/** Grabs the proxy object3D passed to controls.attach() for the given call index. */
+function attachedProxy(callIndex = 0): THREE.Object3D {
+  return fake.attach.mock.calls[callIndex][0] as THREE.Object3D
+}
+
 beforeEach(() => {
   for (const k of Object.keys(listeners)) delete listeners[k]
   vi.clearAllMocks()
@@ -44,6 +49,31 @@ describe('CropBoxGizmo', () => {
     g.attach({ min: [-1, -1, -1], max: [1, 1, 1] })
     expect(parent.children.length).toBe(1)
     expect(g.getBox()).toEqual({ min: [-1, -1, -1], max: [1, 1, 1] })
+  })
+
+  it('attach() drives TransformControls.attach with the proxy parented into deps.parent', () => {
+    const { g, parent } = makeGizmo()
+    g.attach({ min: [-1, -1, -1], max: [1, 1, 1] })
+    expect(fake.attach).toHaveBeenCalledTimes(1)
+    expect(attachedProxy()).toBe(parent.children[0])
+  })
+
+  it('detach() drives TransformControls.detach', () => {
+    const { g } = makeGizmo()
+    g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+    g.detach()
+    expect(fake.detach).toHaveBeenCalled()
+  })
+
+  it('repeated attach/detach cycles do not leak proxies into deps.parent', () => {
+    const { g, parent } = makeGizmo()
+    g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+    g.attach({ min: [1, 1, 1], max: [2, 2, 2] })
+    expect(parent.children.length).toBe(1)
+    g.detach()
+    expect(parent.children.length).toBe(0)
+    g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+    expect(parent.children.length).toBe(1)
   })
 
   it('suspends orbit while a handle is dragged and restores it after', () => {
@@ -77,7 +107,8 @@ describe('CropBoxGizmo', () => {
     const seen: unknown[] = []
     g.onChange = (b) => seen.push(b)
     g.attach({ min: [0, 0, 0], max: [2, 2, 2] })
-    g.proxyForTest!.position.set(5, 5, 5)
+    const proxy = attachedProxy()
+    proxy.position.set(5, 5, 5)
     emit('objectChange', false)
     expect(seen.at(-1)).toEqual({ min: [4, 4, 4], max: [6, 6, 6] })
   })
@@ -85,5 +116,39 @@ describe('CropBoxGizmo', () => {
   it('getBox is null before attach', () => {
     const { g } = makeGizmo()
     expect(g.getBox()).toBeNull()
+  })
+
+  it('setMode forwards the mode to TransformControls.setMode', () => {
+    const { g } = makeGizmo()
+    g.setMode('scale')
+    expect(fake.setMode).toHaveBeenCalledWith('scale')
+    g.setMode('translate')
+    expect(fake.setMode).toHaveBeenCalledWith('translate')
+  })
+
+  describe('dispose', () => {
+    it('calls controls.dispose()', () => {
+      const { g } = makeGizmo()
+      g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+      g.dispose()
+      expect(fake.dispose).toHaveBeenCalled()
+    })
+
+    it('removes the proxy from the parent', () => {
+      const { g, parent } = makeGizmo()
+      g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+      g.dispose()
+      expect(parent.children.length).toBe(0)
+      expect(g.getBox()).toBeNull()
+    })
+
+    it('restores orbit if a drag was in progress', () => {
+      const { g, setOrbitEnabled } = makeGizmo()
+      g.attach({ min: [0, 0, 0], max: [1, 1, 1] })
+      emit('dragging-changed', true)
+      setOrbitEnabled.mockClear()
+      g.dispose()
+      expect(setOrbitEnabled).toHaveBeenCalledWith(true)
+    })
   })
 })

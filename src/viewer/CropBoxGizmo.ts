@@ -23,8 +23,6 @@ export interface GizmoDeps {
  */
 export class CropBoxGizmo {
   onChange: ((box: Box) => void) | null = null
-  /** Exposed for tests only. */
-  proxyForTest: THREE.Object3D | null = null
 
   private controls: TransformControls
   private proxy: THREE.Mesh | null = null
@@ -51,7 +49,6 @@ export class CropBoxGizmo {
     proxy.scale.set(t.scale[0], t.scale[1], t.scale[2])
     this.deps.parent.add(proxy)
     this.proxy = proxy
-    this.proxyForTest = proxy
     this.controls.attach(proxy)
     this.emit()
   }
@@ -94,6 +91,5 @@ export class CropBoxGizmo {
       ;(this.proxy.material as THREE.Material).dispose()
     }
     this.proxy = null
-    this.proxyForTest = null
   }
 }
