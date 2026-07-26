@@ -85,11 +85,35 @@ export function describedTooltip(title: string, description?: string): string {
   return description ? `${title} — ${description}` : title
 }
 
-/** Collapsed tooltip for an action-button row, built from the same title/description this component renders. */
+/** The six selection/history actions that render below the erase toggle. */
+type SelectionActionKey = Exclude<keyof typeof ACTION_DESCRIPTIONS, 'erase'>
+
+/**
+ * Data-driven action rows — mirrors `TOOLS`. The component maps over this
+ * instead of hand-writing a `<RailRow>` per action, so a row physically
+ * cannot exist without its title/description, and can't silently drop one.
+ */
 // eslint-disable-next-line react-refresh/only-export-components
-export function actionTooltip(key: keyof typeof ACTION_DESCRIPTIONS): string {
-  return describedTooltip(ACTION_TITLES[key], ACTION_DESCRIPTIONS[key])
-}
+export const ACTIONS: Array<{
+  key: SelectionActionKey
+  icon: typeof Trash2
+  title: string
+  description: string
+  /** Which divider-separated group the row renders in. */
+  group: 'edit' | 'history'
+  /** Whether this row is disabled given selection state (on top of the whole-rail `disabled` prop). */
+  disabledWhen: (ctx: { hasSelection: boolean }) => boolean
+}> = [
+  { key: 'delete', icon: Trash2, title: ACTION_TITLES.delete, description: ACTION_DESCRIPTIONS.delete, group: 'edit', disabledWhen: ({ hasSelection }) => !hasSelection },
+  { key: 'keep', icon: Crop, title: ACTION_TITLES.keep, description: ACTION_DESCRIPTIONS.keep, group: 'edit', disabledWhen: ({ hasSelection }) => !hasSelection },
+  { key: 'invert', icon: FlipHorizontal2, title: ACTION_TITLES.invert, description: ACTION_DESCRIPTIONS.invert, group: 'edit', disabledWhen: () => false },
+  { key: 'clear', icon: XCircle, title: ACTION_TITLES.clear, description: ACTION_DESCRIPTIONS.clear, group: 'edit', disabledWhen: ({ hasSelection }) => !hasSelection },
+  { key: 'undo', icon: Undo2, title: ACTION_TITLES.undo, description: ACTION_DESCRIPTIONS.undo, group: 'history', disabledWhen: () => false },
+  { key: 'redo', icon: Redo2, title: ACTION_TITLES.redo, description: ACTION_DESCRIPTIONS.redo, group: 'history', disabledWhen: () => false },
+]
+
+/** Shared wrapper classes for one rail row — `RailRow` and the standalone help-toggle row both use this. */
+const ROW_WRAPPER_CLASS = 'flex items-center gap-2 px-[3px]'
 
 function RailButton({
   title, onClick, active = false, disabled = false, activeClass = 'bg-accent-cyan/90 text-white', children,
@@ -147,7 +171,7 @@ function RailRow({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex items-center gap-2 px-[3px]">
+    <div className={ROW_WRAPPER_CLASS}>
       <RailButton
         title={showHelp ? title : describedTooltip(title, description)}
         active={active}
@@ -183,6 +207,16 @@ export default function EditorToolbar({
 }: EditorToolbarProps) {
   const hasSelection = selectionCount > 0
   const [showHelp, setShowHelp] = useState(false)
+
+  const actionHandlers: Record<SelectionActionKey, () => void> = {
+    delete: onDeleteSelection,
+    keep: onKeepSelection,
+    invert: onInvertSelection,
+    clear: onClearSelection,
+    undo: onUndo,
+    redo: onRedo,
+  }
+
   return (
     <div className={`absolute left-0 top-0 bottom-0 z-20 flex ${showHelp ? 'w-[230px]' : 'w-[34px]'} flex-col items-stretch gap-0.5 border-r border-border-panel bg-bg-topbar pt-2 transition-[width] duration-100`}>
       {/* Pointer mode: no tool active — drags reach the camera controls (R4/R5) */}
@@ -214,7 +248,7 @@ export default function EditorToolbar({
 
       {/* Erase mode: a modifier on the tools above — gestures delete on commit (R1) */}
       <RailRow
-        title={eraseMode ? `${ACTION_TITLES.erase}: ON` : ACTION_TITLES.erase}
+        title={eraseMode ? `${ACTION_TITLES.erase}: ON (click to turn off)` : ACTION_TITLES.erase}
         description={ACTION_DESCRIPTIONS.erase}
         showHelp={showHelp}
         active={eraseMode}
@@ -227,65 +261,35 @@ export default function EditorToolbar({
 
       <div className="my-1 h-px w-5 bg-border-mid" />
 
-      <RailRow
-        title={ACTION_TITLES.delete}
-        description={ACTION_DESCRIPTIONS.delete}
-        showHelp={showHelp}
-        disabled={disabled || !hasSelection}
-        onClick={onDeleteSelection}
-      >
-        <Trash2 size={15} />
-      </RailRow>
-      <RailRow
-        title={ACTION_TITLES.keep}
-        description={ACTION_DESCRIPTIONS.keep}
-        showHelp={showHelp}
-        disabled={disabled || !hasSelection}
-        onClick={onKeepSelection}
-      >
-        <Crop size={15} />
-      </RailRow>
-      <RailRow
-        title={ACTION_TITLES.invert}
-        description={ACTION_DESCRIPTIONS.invert}
-        showHelp={showHelp}
-        disabled={disabled}
-        onClick={onInvertSelection}
-      >
-        <FlipHorizontal2 size={15} />
-      </RailRow>
-      <RailRow
-        title={ACTION_TITLES.clear}
-        description={ACTION_DESCRIPTIONS.clear}
-        showHelp={showHelp}
-        disabled={disabled || !hasSelection}
-        onClick={onClearSelection}
-      >
-        <XCircle size={15} />
-      </RailRow>
+      {ACTIONS.filter((a) => a.group === 'edit').map(({ key, icon: Icon, title, description, disabledWhen }) => (
+        <RailRow
+          key={key}
+          title={title}
+          description={description}
+          showHelp={showHelp}
+          disabled={disabled || disabledWhen({ hasSelection })}
+          onClick={actionHandlers[key]}
+        >
+          <Icon size={15} />
+        </RailRow>
+      ))}
 
       <div className="my-1 h-px w-5 bg-border-mid" />
 
-      <RailRow
-        title={ACTION_TITLES.undo}
-        description={ACTION_DESCRIPTIONS.undo}
-        showHelp={showHelp}
-        disabled={disabled}
-        onClick={onUndo}
-      >
-        <Undo2 size={15} />
-      </RailRow>
-      <RailRow
-        title={ACTION_TITLES.redo}
-        description={ACTION_DESCRIPTIONS.redo}
-        showHelp={showHelp}
-        disabled={disabled}
-        onClick={onRedo}
-      >
-        <Redo2 size={15} />
-      </RailRow>
+      {ACTIONS.filter((a) => a.group === 'history').map(({ key, icon: Icon, title, description, disabledWhen }) => (
+        <RailRow
+          key={key}
+          title={title}
+          description={description}
+          showHelp={showHelp}
+          disabled={disabled || disabledWhen({ hasSelection })}
+          onClick={actionHandlers[key]}
+        >
+          <Icon size={15} />
+        </RailRow>
+      ))}
 
-      <div className="mt-auto mb-2 flex items-center gap-2 px-[3px]">
+      <div className={`mt-auto mb-2 ${ROW_WRAPPER_CLASS}`}>
         <RailButton
           title={showHelp ? 'Hide tool descriptions' : 'Show tool descriptions'}
           active={showHelp}

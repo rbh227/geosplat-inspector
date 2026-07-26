@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TOOLS, ACTION_DESCRIPTIONS, ACTION_TITLES, describedTooltip, actionTooltip } from './EditorToolbar.tsx'
+import { TOOLS, ACTIONS, ACTION_DESCRIPTIONS, ACTION_TITLES, describedTooltip } from './EditorToolbar.tsx'
 
 describe('tool rail descriptions', () => {
   it('every tool carries a non-empty description', () => {
@@ -16,15 +16,42 @@ describe('tool rail descriptions', () => {
     }
   })
 
-  it('every action button has a description', () => {
-    for (const key of ['delete', 'keep', 'invert', 'clear', 'undo', 'redo', 'erase'] as const) {
-      expect(ACTION_DESCRIPTIONS[key], `${key} missing`).toBeTruthy()
+  it('erase mode has a title and description', () => {
+    expect(ACTION_TITLES.erase, 'erase has no title').toBeTruthy()
+    expect(ACTION_DESCRIPTIONS.erase, 'erase has no description').toBeTruthy()
+  })
+})
+
+describe('ACTIONS (data-driven action rows — EditorToolbar maps over this array, so a row cannot exist without its description)', () => {
+  it('covers exactly the six selection/history actions', () => {
+    expect(ACTIONS.map((a) => a.key).sort()).toEqual(['clear', 'delete', 'invert', 'keep', 'redo', 'undo'])
+  })
+
+  it('every action row carries a non-empty description, distinct from its title', () => {
+    for (const a of ACTIONS) {
+      expect(a.description, `${a.key} has no description`).toBeTruthy()
+      expect(a.description).not.toBe(a.title)
     }
   })
 
-  it('every action button has a title to pair with its description', () => {
-    for (const key of Object.keys(ACTION_DESCRIPTIONS) as Array<keyof typeof ACTION_DESCRIPTIONS>) {
-      expect(ACTION_TITLES[key], `${key} has no title`).toBeTruthy()
+  it('title/description come from the shared ACTION_TITLES/ACTION_DESCRIPTIONS constants the rest of the app reads', () => {
+    for (const a of ACTIONS) {
+      expect(a.title).toBe(ACTION_TITLES[a.key])
+      expect(a.description).toBe(ACTION_DESCRIPTIONS[a.key])
+    }
+  })
+
+  it('Delete/Keep/Clear are disabled with no selection; Invert/Undo/Redo are not', () => {
+    const byKey = Object.fromEntries(ACTIONS.map((a) => [a.key, a])) as Record<string, (typeof ACTIONS)[number]>
+
+    for (const key of ['delete', 'keep', 'clear']) {
+      expect(byKey[key].disabledWhen({ hasSelection: false }), `${key} should disable with no selection`).toBe(true)
+      expect(byKey[key].disabledWhen({ hasSelection: true }), `${key} should enable with a selection`).toBe(false)
+    }
+
+    for (const key of ['invert', 'undo', 'redo']) {
+      expect(byKey[key].disabledWhen({ hasSelection: false }), `${key} should not depend on selection`).toBe(false)
+      expect(byKey[key].disabledWhen({ hasSelection: true }), `${key} should not depend on selection`).toBe(false)
     }
   })
 })
@@ -36,25 +63,5 @@ describe('describedTooltip (collapsed-rail tooltip builder used by every rail ro
 
   it('falls back to the bare title when there is no description', () => {
     expect(describedTooltip('Pointer / navigate')).toBe('Pointer / navigate')
-  })
-})
-
-describe('actionTooltip (the exact helper EditorToolbar calls to build each action row\'s collapsed title)', () => {
-  it('produces "title — description" for every action, using the same ACTION_TITLES/ACTION_DESCRIPTIONS the component renders', () => {
-    for (const key of Object.keys(ACTION_DESCRIPTIONS) as Array<keyof typeof ACTION_DESCRIPTIONS>) {
-      const tooltip = actionTooltip(key)
-      expect(tooltip).toBe(`${ACTION_TITLES[key]} — ${ACTION_DESCRIPTIONS[key]}`)
-      // Regression guard for the "ACTION_DESCRIPTIONS is dead data" finding: the
-      // description text must actually reach the tooltip the rail shows, not just
-      // exist in the constant.
-      expect(tooltip).toContain(ACTION_DESCRIPTIONS[key])
-    }
-  })
-
-  it('matches the erase row\'s OFF-state tooltip built by the component', () => {
-    // EditorToolbar renders the erase row's collapsed title as
-    // `${ACTION_TITLES.erase}: ON` when active, or ACTION_TITLES.erase otherwise,
-    // paired with ACTION_DESCRIPTIONS.erase via describedTooltip — same as here.
-    expect(actionTooltip('erase')).toBe(describedTooltip(ACTION_TITLES.erase, ACTION_DESCRIPTIONS.erase))
   })
 })
