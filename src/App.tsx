@@ -383,6 +383,18 @@ export default function App() {
 
   // Crop-box tool lifecycle: start/stop the gizmo with the tool, polling the
   // count while active (the gizmo mutates the box on drag, outside React).
+  //
+  // Re-seed on a stranded reload (IMPORTANT 3): a reload while the tool is
+  // active — Redo, a failed-edit rollback, or an agent scene_changed reload —
+  // disposes and rebuilds the splat mesh, which tears down the gizmo
+  // (SceneManager.disposeSplatMesh -> cropGizmo.dispose()). None of those
+  // reload paths change `activeTool`, so this effect would not otherwise
+  // re-run. The existing 120ms poll already touches the viewer on a cadence
+  // that isn't the render loop, so it's a natural place to detect
+  // `getCropBox() === null` (session torn down, tool still selected) and
+  // re-seed against the fresh scene — cheaper than adding a second effect
+  // dependency and correct even for reload paths that don't bump a
+  // load-generation counter (e.g. reloadAuthoritative).
   useEffect(() => {
     const viewer = viewerRef.current
     if (activeTool !== 'cropBox') {
@@ -390,10 +402,12 @@ export default function App() {
       return
     }
     viewer?.beginCropBox()
-    const id = window.setInterval(
-      () => setCropBoxCount(viewer?.cropBoxCount() ?? 0),
-      120,
-    )
+    const id = window.setInterval(() => {
+      if (viewer?.getCropBox() === null) {
+        viewer?.beginCropBox()
+      }
+      setCropBoxCount(viewer?.cropBoxCount() ?? 0)
+    }, 120)
     return () => {
       window.clearInterval(id)
       viewer?.endCropBox()

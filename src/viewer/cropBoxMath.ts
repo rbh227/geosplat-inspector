@@ -92,3 +92,17 @@ export function countInsideSampled(centers: Float32Array, box: Box): number {
   }
   return n
 }
+
+/**
+ * Whether a crop should actually mutate the scene and be recorded in
+ * history. `keptCount` is the exact number of splats inside the box (out of
+ * `totalCount` alive splats); committing when `keptCount === 0` (empty box)
+ * or `keptCount === totalCount` (box contains everything) would push a
+ * no-op edit onto local history with no backend counterpart — the next Undo
+ * would pop that entry with no visible change and still roll back the
+ * backend's PREVIOUS edit instead. This predicate is the guard that caused
+ * that undo-corruption bug, extracted so it can be tested directly.
+ */
+export function shouldCommitCrop(keptCount: number, totalCount: number): boolean {
+  return keptCount > 0 && keptCount < totalCount
+}

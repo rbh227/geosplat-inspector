@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   boxFromTransform, transformFromBox, normalizeBox, countInsideSampled, isInsideBox,
+  shouldCommitCrop,
 } from './cropBoxMath.ts'
 
 describe('boxFromTransform / transformFromBox', () => {
@@ -78,5 +79,22 @@ describe('isInsideBox', () => {
     expect(isInsideBox(2, 2, 2, inverted)).toBe(isInsideBox(2, 2, 2, normalized))
     expect(isInsideBox(2, 2, 2, inverted)).toBe(true)
     expect(isInsideBox(10, 10, 10, inverted)).toBe(false)
+  })
+})
+
+describe('shouldCommitCrop', () => {
+  // The history guard behind cropToBox() (fix pass 2, TEST GAP) — the finding
+  // that caused the undo-corruption bug: a no-op crop must never mutate or
+  // push a local history entry with no backend counterpart.
+  it('is false for an empty box (nothing kept)', () => {
+    expect(shouldCommitCrop(0, 100)).toBe(false)
+  })
+
+  it('is false when the box already contains every alive splat', () => {
+    expect(shouldCommitCrop(100, 100)).toBe(false)
+  })
+
+  it('is true for a normal partial crop', () => {
+    expect(shouldCommitCrop(40, 100)).toBe(true)
   })
 })

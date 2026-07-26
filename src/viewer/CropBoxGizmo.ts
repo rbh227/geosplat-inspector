@@ -27,6 +27,11 @@ export class CropBoxGizmo {
   private controls: TransformControls
   private proxy: THREE.Mesh | null = null
   private dragging = false
+  // Captured once, not re-read via getHelper() in dispose(): in three r184
+  // TransformControls.dispose() does not remove the helper from the scene
+  // itself, so dispose() must remove the SAME object it added (fix pass 2,
+  // MINOR 4) rather than assume getHelper() is idempotent.
+  private helper: THREE.Object3D
 
   constructor(private deps: GizmoDeps) {
     this.controls = new TransformControls(deps.camera, deps.domElement)
@@ -35,7 +40,8 @@ export class CropBoxGizmo {
       deps.setOrbitEnabled(!e.value)
     })
     this.controls.addEventListener('objectChange', () => this.emit())
-    deps.scene.add(this.controls.getHelper())
+    this.helper = this.controls.getHelper()
+    deps.scene.add(this.helper)
   }
 
   attach(box: Box): void {
@@ -75,6 +81,11 @@ export class CropBoxGizmo {
 
   dispose(): void {
     this.detach()
+    // TransformControls.dispose() (r184) does not remove its helper from the
+    // scene — without this, every reload while the crop tool is active (now
+    // that dispose() runs on every reload) leaks an orphan root that is still
+    // traversed every frame (fix pass 2, MINOR 4).
+    this.deps.scene.remove(this.helper)
     this.controls.dispose()
   }
 

@@ -23,14 +23,15 @@ import { CropBoxGizmo } from './CropBoxGizmo.ts'
 function makeGizmo() {
   const setOrbitEnabled = vi.fn()
   const parent = new THREE.Object3D()
+  const scene = new THREE.Object3D()
   const g = new CropBoxGizmo({
     camera: new THREE.PerspectiveCamera(),
     domElement: document.createElement('div'),
-    scene: new THREE.Object3D(),
+    scene,
     parent,
     setOrbitEnabled,
   })
-  return { g, setOrbitEnabled, parent }
+  return { g, setOrbitEnabled, parent, scene }
 }
 
 /** Grabs the proxy object3D passed to controls.attach() for the given call index. */
@@ -165,6 +166,17 @@ describe('CropBoxGizmo', () => {
       setOrbitEnabled.mockClear()
       g.dispose()
       expect(setOrbitEnabled).toHaveBeenCalledWith(true)
+    })
+
+    it('removes the TransformControls helper from the scene (MINOR 4)', () => {
+      // In three r184 TransformControls.dispose() does NOT remove the helper
+      // it added to the scene — dispose() must do it explicitly, or every
+      // reload while the crop tool is active leaks an orphan root that is
+      // still traversed every frame.
+      const { g, scene } = makeGizmo()
+      expect(scene.children.length).toBe(1)
+      g.dispose()
+      expect(scene.children.length).toBe(0)
     })
   })
 })
