@@ -15,6 +15,8 @@ import { IdMap } from './idMap.ts'
 import { transformPoints } from './selection.ts'
 import { composeMove, composeLook, type MoveDirection, type RotateDirection } from './flyController.ts'
 import { TintStore, tintedColor } from './selectionTint.ts'
+import { CropBoxGizmo } from './CropBoxGizmo.ts'
+import { countInsideSampled, isInsideBox, shouldCommitCrop, type Box } from './cropBoxMath.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                         */
@@ -34,6 +36,77 @@ interface UndoEntry {
   numSplats: number
   /** ID-map state captured with the buffer — restored together on undo. */
   idMapSnap: { data: Uint32Array; live: number } | null
+}
+
+/* ------------------------------------------------------------------ */
+/*  Box overlay (SDF dim + wireframe)                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Persistent SDF dim + crisp wireframe, parented to the splat mesh so both
+ * live in backend coords and appear in captures. Pure rendering — no
+ * knowledge of who owns it. Two independent instances back the agent's
+ * proposal-box channel and the operator's crop-box channel (fix pass 2,
+ * IMPORTANT 1): before this class existed, both tools drove ONE shared pair
+ * of scene objects, so opening the crop tool destroyed a parked agent
+ * proposal and `getProposalBox()` started returning the operator's box.
+ */
+class BoxOverlay {
+  private edit: SplatEdit | null = null
+  private wire: THREE.LineSegments | null = null
+  private state: { min: number[]; max: number[] } | null = null
+
+  constructor(
+    private getMesh: () => SplatMesh | null,
+    private wireColor: number,
+    private sdfColor: THREE.Color,
+  ) {}
+
+  show(min: number[], max: number[]): void {
+    const mesh = this.getMesh()
+    if (!mesh) return
+    this.clear()
+    const center = [(min[0]+max[0])/2, (min[1]+max[1])/2, (min[2]+max[2])/2]
+    const half = [(max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2]
+    const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY })
+    const sdf = new SplatEditSdf({
+      type: SplatEditSdfType.BOX,
+      opacity: 0.25,
+      color: this.sdfColor.clone(),
+    })
+    edit.addSdf(sdf); edit.add(sdf); mesh.add(edit)
+    sdf.position.set(center[0], center[1], center[2])
+    sdf.radius = 0
+    sdf.scale.set(Math.max(half[0], 1e-4), Math.max(half[1], 1e-4), Math.max(half[2], 1e-4))
+    const geom = new THREE.BoxGeometry(max[0]-min[0], max[1]-min[1], max[2]-min[2])
+    const wire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geom),
+      new THREE.LineBasicMaterial({ color: this.wireColor }),
+    )
+    geom.dispose()
+    wire.position.set(center[0], center[1], center[2])
+    mesh.add(wire)
+    this.edit = edit
+    this.wire = wire
+    this.state = { min: [...min], max: [...max] }
+  }
+
+  clear(): void {
+    const mesh = this.getMesh()
+    if (mesh) {
+      if (this.edit) mesh.remove(this.edit)
+      if (this.wire) mesh.remove(this.wire)
+    }
+    this.wire?.geometry.dispose()
+    ;(this.wire?.material as THREE.LineBasicMaterial | undefined)?.dispose()
+    this.edit = null
+    this.wire = null
+    this.state = null
+  }
+
+  getState(): { min: number[]; max: number[] } | null {
+    return this.state
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -205,6 +278,10 @@ export class SceneManager implements ViewerHandle {
     el.removeEventListener('pointermove', this.onLookMove)
     window.removeEventListener('pointerup', this.onLookEnd)
     this.controls.dispose()
+    // Dispose the crop gizmo's TransformControls helper — it owns its own
+    // pointer/keyboard listeners on the DOM element (MINOR 7).
+    this.cropGizmo?.dispose()
+    this.cropGizmo = null
     this.renderer.domElement.remove()
     this.renderer.dispose()
     this.spark.dispose()
@@ -1147,53 +1224,148 @@ export class SceneManager implements ViewerHandle {
   }
 
   /* ---- Persistent proposal box (v0.5, agent-cleanup-proposals) ---- */
-  private proposalEdit: SplatEdit | null = null
-  private proposalWire: THREE.LineSegments | null = null
-  private proposalBoxState: { min: number[]; max: number[] } | null = null
+  // Amber/warm — the agent's parked review box (fix pass 2, IMPORTANT 1: own
+  // channel, independent of the operator's crop-box tool below).
+  private proposalBoxOverlay = new BoxOverlay(() => this.splatMesh, 0xffcc44, new THREE.Color(1.4, 1.4, 0.6))
+
+  /* ---- Operator crop-box tool ---- */
+  // Cyan/cool — visually distinct from the agent's amber proposal box so the
+  // operator can tell the two channels apart at a glance.
+  private cropBoxOverlay = new BoxOverlay(() => this.splatMesh, 0x44ccff, new THREE.Color(0.6, 1.4, 1.4))
+  private cropGizmo: CropBoxGizmo | null = null
+  private cropSample: Float32Array | null = null   // strided centers, backend coords
+  private cropStride = 1
+  private cropCount = 0
 
   /** Persistent SDF dim + crisp wireframe, parented to the splat mesh so both
-   *  live in backend coords and appear in captures. Stays until cleared. */
+   *  live in backend coords and appear in captures. Stays until cleared.
+   *  Agent-only channel (see `bridge.ts`) — never touched by the crop-box
+   *  tool, which drives its own `cropBoxOverlay` instance (IMPORTANT 1). */
   showProposalBox(min: number[], max: number[]): void {
-    const mesh = this.splatMesh
-    if (!mesh) return
-    this.clearProposalBox()
-    const center = [(min[0]+max[0])/2, (min[1]+max[1])/2, (min[2]+max[2])/2]
-    const half = [(max[0]-min[0])/2, (max[1]-min[1])/2, (max[2]-min[2])/2]
-    const edit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY })
-    const sdf = new SplatEditSdf({
-      type: SplatEditSdfType.BOX,
-      opacity: 0.25,
-      color: new THREE.Color(1.4, 1.4, 0.6),
-    })
-    edit.addSdf(sdf); edit.add(sdf); mesh.add(edit)
-    sdf.position.set(center[0], center[1], center[2])
-    sdf.radius = 0
-    sdf.scale.set(Math.max(half[0], 1e-4), Math.max(half[1], 1e-4), Math.max(half[2], 1e-4))
-    const geom = new THREE.BoxGeometry(max[0]-min[0], max[1]-min[1], max[2]-min[2])
-    const wire = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geom),
-      new THREE.LineBasicMaterial({ color: 0xffcc44 }),
-    )
-    geom.dispose()
-    wire.position.set(center[0], center[1], center[2])
-    mesh.add(wire)
-    this.proposalEdit = edit; this.proposalWire = wire
-    this.proposalBoxState = { min: [...min], max: [...max] }
+    this.proposalBoxOverlay.show(min, max)
   }
 
   clearProposalBox(): void {
-    if (this.splatMesh) {
-      if (this.proposalEdit) this.splatMesh.remove(this.proposalEdit)
-      if (this.proposalWire) this.splatMesh.remove(this.proposalWire)
-    }
-    this.proposalWire?.geometry.dispose()
-    ;(this.proposalWire?.material as THREE.LineBasicMaterial | undefined)?.dispose()
-    this.proposalEdit = null; this.proposalWire = null
-    this.proposalBoxState = null
+    this.proposalBoxOverlay.clear()
   }
 
   getProposalBox(): { min: number[]; max: number[] } | null {
-    return this.proposalBoxState
+    return this.proposalBoxOverlay.getState()
+  }
+
+  /* ---- Operator crop-box tool ---- */
+
+  /** Start the crop-box tool. `seed` defaults to the tight core box. */
+  beginCropBox(seed?: Box): void {
+    const mesh = this.splatMesh
+    if (!mesh) return
+    const box = seed ?? this.getCoreBoundsBox() ?? null
+    if (!box) return
+    this.buildCropSample()
+    if (!this.cropGizmo) {
+      this.cropGizmo = new CropBoxGizmo({
+        camera: this.camera,
+        domElement: this.renderer.domElement,
+        scene: this.scene,
+        parent: mesh,
+        // Only ever RE-enable orbit while actually in orbit mode — fly mode
+        // intentionally holds controls.enabled = false, and a gizmo drag (or
+        // a mid-drag detach()) ending while in fly mode must not resurrect
+        // OrbitControls (ORBIT invariant). Disabling always takes effect.
+        setOrbitEnabled: (on) => { this.controls.enabled = on && this.navigationMode === 'orbit' },
+      })
+      this.cropGizmo.onChange = (b) => {
+        this.cropBoxOverlay.show(b.min, b.max)   // wireframe + SDF dim of the outside
+        // cropSample can be null if buildCropSample() found nothing to sample
+        // (MINOR 8 — no non-null assertion on a field endCropBox() nulls).
+        this.cropCount = this.cropSample ? countInsideSampled(this.cropSample, b) * this.cropStride : 0
+      }
+    }
+    this.cropGizmo.attach({ min: box.min as Box['min'], max: box.max as Box['max'] })
+  }
+
+  /** No-op when no crop-box session is active (IMPORTANT 4) — otherwise every
+   *  tool switch (and first render) would clear the live crop-box preview. */
+  endCropBox(): void {
+    if (!this.cropGizmo || this.cropGizmo.getBox() === null) return
+    this.cropGizmo.detach()
+    this.cropBoxOverlay.clear()
+    this.cropSample = null
+    this.cropCount = 0
+  }
+
+  getCropBox(): Box | null {
+    return this.cropGizmo?.getBox() ?? null
+  }
+
+  /** Approximate splat count inside the box, from the strided sample. */
+  cropBoxCount(): number {
+    return this.cropCount
+  }
+
+  /** Keep only splats inside the box. Returns the kept stable IDs (exact). */
+  cropToBox(): Uint32Array {
+    const box = this.getCropBox()
+    const packed = this.splatMesh?.packedSplats
+    if (!box || !packed || !this.idMap) return new Uint32Array(0)
+    const keep: number[] = []
+    for (let i = 0; i < packed.numSplats; i++) {
+      const c = packed.getSplat(i).center
+      // Shared predicate with countInsideSampled (IMPORTANT 6) — normalizes
+      // internally, so an inverted box crops exactly what the readout showed.
+      if (isInsideBox(c.x, c.y, c.z, box)) keep.push(this.idMap.idAt(i))
+    }
+    const ids = new Uint32Array(keep)
+    // End the session BEFORE mutating (fix pass 2, MINOR 5): keepOnlyIds()
+    // below runs through markSplatDirty() -> refreshCropSampleIfActive(),
+    // which rebuilds the O(N) cropSample whenever the gizmo still reports a
+    // box. Detaching first (endCropBox() clears the gizmo's box) makes that
+    // refresh a no-op instead of doing a full rebuild this method immediately
+    // throws away.
+    this.endCropBox()
+    // Skip the mutation (and its undo snapshot) when the box already contains
+    // every alive splat, or contains nothing: keepOnlyIds would be a no-op
+    // edit that still pushes a local history entry with no backend
+    // counterpart. The next Undo would pop that entry (no visible change) and
+    // still fire historyOp('undo'), rolling back the backend's PREVIOUS edit
+    // instead (CRITICAL 2). Extracted to a named predicate (fix pass 2, TEST
+    // GAP) and unit-tested directly — this is the guard that caused that bug.
+    if (shouldCommitCrop(ids.length, packed.numSplats)) {
+      this.keepOnlyIds(ids)
+    }
+    return ids
+  }
+
+  /** Strided centers for the live readout — an exact per-frame count is O(N)
+   *  and unusable at 2M splats (same 100k cap as getCoreBoundsBox). */
+  private buildCropSample(): void {
+    const packed = this.splatMesh?.packedSplats
+    if (!packed) return
+    const n = packed.numSplats
+    this.cropStride = Math.max(1, Math.floor(n / 100_000))
+    const out: number[] = []
+    for (let i = 0; i < n; i += this.cropStride) {
+      const c = packed.getSplat(i).center
+      out.push(c.x, c.y, c.z)
+    }
+    this.cropSample = new Float32Array(out)
+  }
+
+  /** Re-sample the crop-box readout after the splat buffer changes shape
+   *  in place. Called from the single choke point every mutating path already
+   *  runs through — `markSplatDirty()` (fix pass 2, IMPORTANT 2) — so undo(),
+   *  cleanOpacity/removeOutliers/cropBbox/filterBy*, and compaction all keep
+   *  the readout current, not just compaction. Without this, `cropSample`
+   *  would keep stale centers/count from before the edit even though the mesh
+   *  instance and gizmo session are unchanged. No-op when the tool isn't
+   *  active, and cheap when it is (bounded to the same 100k sample cap), and
+   *  never runs from the frame loop — only from these edit paths. */
+  private refreshCropSampleIfActive(): void {
+    if (!this.cropGizmo) return
+    const box = this.cropGizmo.getBox()
+    if (!box) return
+    this.buildCropSample()
+    this.cropCount = this.cropSample ? countInsideSampled(this.cropSample, box) * this.cropStride : 0
   }
 
   /* ---------------------------------------------------------------- */
@@ -1254,7 +1426,7 @@ export class SceneManager implements ViewerHandle {
     const removed = total - writeIdx
     packed.numSplats = writeIdx
     this.idMap.setLive(writeIdx)
-    this.markSplatDirty()
+    this.markSplatDirty() // also refreshes the crop-box readout, see markSplatDirty()
     this.emitStateChange()
     return removed
   }
@@ -1627,8 +1799,22 @@ export class SceneManager implements ViewerHandle {
 
   private disposeSplatMesh(): void {
     if (this.splatMesh) {
+      // The crop gizmo's box proxy is parented to `splatMesh` (CRITICAL 1):
+      // caching the gizmo across a mesh swap would re-parent `attach()` onto
+      // a disposed, scene-detached mesh next time the tool opens, so its
+      // matrixWorld would never be traversed and the box would render at a
+      // stale transform. Dispose it here and null the field — the next
+      // beginCropBox() builds a fresh one against the new mesh.
+      this.cropGizmo?.dispose()
+      this.cropGizmo = null
+      this.cropSample = null
+      this.cropCount = 0
       this.clearSelectionPreview()
       this.clearProposalBox()
+      // Both overlay channels are parented to THIS mesh (IMPORTANT 1) — clear
+      // the crop-box one too, or it would keep a stale wireframe/SDF alive
+      // referencing an object about to be disposed.
+      this.cropBoxOverlay.clear()
       // Drop remembered tint colors — they belong to the buffer being torn
       // down; a fresh scene reuses the same original-ID space.
       this.tint.clear()
@@ -1792,6 +1978,13 @@ export class SceneManager implements ViewerHandle {
 
   /**
    * Mark the SplatMesh as needing a GPU re-upload after in-place edits.
+   *
+   * Single choke point for every path that changes the alive-splat count in
+   * place — cleanOpacity, removeOutliers, cropBbox, compactByIds (delete/keep/
+   * crop), filterByScale/Color/Density/Height, and undo() (fix pass 2,
+   * IMPORTANT 2: verified each of those calls this method). Also refreshing
+   * the crop-box readout here means an operator with the tool open never sees
+   * a stale `~N inside` count after ANY of those paths — not just compaction.
    */
   private markSplatDirty(): void {
     if (!this.splatMesh?.packedSplats) return
@@ -1801,6 +1994,7 @@ export class SceneManager implements ViewerHandle {
     // Edits can move the scene's extent; refresh the cached core so near/far
     // tracking and agent framing stay accurate.
     this.cacheSceneCore()
+    this.refreshCropSampleIfActive()
   }
 
   /** Monotonic scene revision (bumps on every edit). Tags captured percepts. */

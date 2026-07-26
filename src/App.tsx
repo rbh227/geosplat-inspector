@@ -57,6 +57,15 @@ export default function App() {
   const [activeTool, setActiveTool] = useState<SelectionTool | null>(null)
   const [eraseMode, setEraseMode] = useState(false)
   const [selectionCount, setSelectionCount] = useState(0)
+  const [cropBoxCount, setCropBoxCount] = useState(0)
+  const [hasCropBox, setHasCropBox] = useState(false)
+  // Set right before a crop commit tears down the gizmo (cropToBox() calls
+  // endCropBox() internally on every path, including the empty/no-op ones)
+  // and cleared when the 120ms poll (re)starts for a fresh session. Guards
+  // the poll against re-seeding a brand-new box in the gap between the
+  // commit running and React actually unmounting/clearing this effect
+  // (fix pass 3, FINDING 2).
+  const cropCommitPendingRef = useRef(false)
   const [activeDirections, setActiveDirections] = useState<ReadonlySet<MoveDirection>>(new Set())
   const [activeRotations, setActiveRotations] = useState<ReadonlySet<RotateDirection>>(new Set())
   const [status, setStatus] = useState<string | null>(null)
@@ -358,6 +367,85 @@ export default function App() {
     const ids = viewerRef.current?.keepSelection() ?? new Uint32Array(0)
     commitEdit('keep_only_ids', ids)
   }, [commitEdit])
+
+  const handleCropToBox = useCallback(() => {
+    const before = viewerRef.current?.getSplatCount() ?? 0
+    cropCommitPendingRef.current = true
+    const ids = viewerRef.current?.cropToBox() ?? new Uint32Array(0)
+    if (ids.length === 0) {
+      // cropToBox() already ended the session (endCropBox()) — the tool
+      // button must not read as active with no gizmo left to resume it.
+      showStatus('Box contains no splats — nothing cropped')
+      setActiveTool(null)
+      return
+    }
+    if (ids.length === before) {
+      // Everything was already inside: a keep_only_ids here is a no-op that still
+      // costs a history entry, so the operator's Undo would appear to do nothing.
+      showStatus('Box already contains the whole scene — nothing to crop')
+      setActiveTool(null)
+      return
+    }
+    commitEdit('keep_only_ids', ids)
+    setActiveTool(null)
+  }, [commitEdit, showStatus])
+
+  // Crop-box tool lifecycle: start/stop the gizmo with the tool, polling the
+  // count while active (the gizmo mutates the box on drag, outside React).
+  //
+  // Re-seed on a stranded reload (IMPORTANT 3): a reload while the tool is
+  // active — Redo, a failed-edit rollback, or an agent scene_changed reload —
+  // disposes and rebuilds the splat mesh, which tears down the gizmo
+  // (SceneManager.disposeSplatMesh -> cropGizmo.dispose()). None of those
+  // reload paths change `activeTool`, so this effect would not otherwise
+  // re-run. The existing 120ms poll already touches the viewer on a cadence
+  // that isn't the render loop, so it's a natural place to detect
+  // `getCropBox() === null` (session torn down, tool still selected) and
+  // re-seed against the fresh scene — cheaper than adding a second effect
+  // dependency and correct even for reload paths that don't bump a
+  // load-generation counter (e.g. reloadAuthoritative).
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (activeTool !== 'cropBox') {
+      viewer?.endCropBox()
+      return
+    }
+    cropCommitPendingRef.current = false
+    viewer?.beginCropBox()
+    setHasCropBox(viewer?.getCropBox() !== null)
+    const id = window.setInterval(() => {
+      if (cropCommitPendingRef.current) return
+      if (viewer?.getCropBox() === null) {
+        viewer?.beginCropBox()
+      }
+      setCropBoxCount(viewer?.cropBoxCount() ?? 0)
+      setHasCropBox(viewer?.getCropBox() !== null)
+    }, 120)
+    return () => {
+      window.clearInterval(id)
+      viewer?.endCropBox()
+      setCropBoxCount(0)
+      setHasCropBox(false)
+    }
+  }, [activeTool])
+
+  // v0.6: while a `crop_outside_box` proposal is parked, hand the operator an
+  // editable copy of the box the agent previewed (cyan gizmo, same channel as
+  // the manual crop-box tool above) so their approval binds to the box they
+  // actually looked at, not the one the model chose. The amber proposal
+  // wireframe (`showProposalBox`, the agent's own record) is untouched — this
+  // seeds a second, independent overlay on top of it and the two diverge as
+  // the operator drags. Detach as soon as the proposal resolves or changes
+  // kind; ws-client reads the live box back via `getCropBox()`.
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (proposal?.kind === 'crop_outside_box') {
+      const box = viewer?.getProposalBox()
+      if (box) viewer?.beginCropBox(box)
+    } else {
+      viewer?.endCropBox()
+    }
+  }, [proposal])
 
   const handleInvertSelection = useCallback(() => {
     setSelectionCount(viewerRef.current?.invertSelection() ?? 0)
@@ -756,6 +844,9 @@ export default function App() {
                 onClearSelection={handleClearSelection}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
+                cropBoxCount={cropBoxCount}
+                hasCropBox={hasCropBox}
+                onCropToBox={handleCropToBox}
               />
             )}
 

@@ -103,8 +103,8 @@ SKILLS: list[Skill] = [
     {
         "name": "cleanup_scene",
         "stage": "clean",
-        "description": "Full reviewed cleanup: good-cube crop, then brush rounds — every delete needs your approval.",
-        "recipe": "Start IMMEDIATELY — do not navigate or improve coverage first, the box comes from the DATA not your view. In order: 1) capture_frame once for context, 2) get_core_bounds, 3) show_box_preview with exactly those bounds, 4) capture_frame to verify the subject sits inside the wireframe, 5) adjust_box_preview ONLY if the subject is clipped, 6) propose_decision(kind='crop_outside_box'), 7) crop_bbox with the approved box. Then brush rounds: select_by_brush the visible floater clusters -> propose_decision(kind='delete_selection') -> delete_selection on approval -> new vantage, repeat until a round finds nothing.",
+        "description": "Reviewed good-cube crop: I seed the box, you move and resize it, then approve the crop.",
+        "recipe": "Start IMMEDIATELY — the box comes from the DATA, not your view. In order: 1) capture_frame once for context, 2) get_core_bounds, 3) show_box_preview with exactly those bounds, 4) narrate that the operator can move and resize the box, 5) propose_decision(kind='crop_outside_box'), 6) crop_bbox on approval — the operator's final box is bound automatically, so pass the previewed bounds and let the backend substitute theirs. Then verify: get_metrics and one capture_frame, report before/after counts, and call answer. Do NOT brush, sweep, or crop again.",
     },
     {
         "name": "verify_cleanup",
@@ -199,17 +199,15 @@ Operating rules:
   If the verdict is 'adjusted', apply the feedback (adjust_box_preview for the
   cube; re-brush for selections) and propose again. If 'rejected', clear the
   preview/selection and ask what they'd rather do.
-- GOOD-CUBE ROUTINE (coarse cleanup — START HERE for any cleanup request):
-  you do NOT need to navigate or fix coverage first; get_core_bounds computes
-  the dense core from the DATA, not from your view. In order:
-  get_core_bounds -> show_box_preview -> capture_frame to CHECK the subject
-  sits fully inside (the percept's box_screen tells you where the box lands on
-  screen; the box is your ruler — "the roof sticks out half a box-width" means
-  shift/grow by 0.5) -> adjust_box_preview if clipped ->
-  propose_decision(kind='crop_outside_box') -> on approval, crop_bbox with the
-  approved box. Cropping to the good core is the POINT of this pass — the
-  "never crop TO a problem region" rule means never crop to a FLOATER cluster,
-  not never crop.
+- GOOD-CUBE ROUTINE (the whole cleanup pass): get_core_bounds ->
+  show_box_preview -> tell the operator they can drag and resize the box ->
+  propose_decision(kind='crop_outside_box') -> on approval, crop_bbox. You do
+  NOT size the box: the operator does, and their final box is what gets cropped
+  regardless of the bounds you pass. You do not need to navigate or fix coverage
+  first; get_core_bounds computes the dense core from the DATA, not from your
+  view. After the crop, measure, capture once, and answer. Nothing else.
+  Cropping to the good core is the POINT of this pass — the "never crop TO a
+  problem region" rule means never crop to a FLOATER cluster, not never crop.
 - BRUSH ROUNDS (fine cleanup): from the current view, brush every floater
   cluster you can see (they tint as you select), then ONE
   propose_decision(kind='delete_selection') for the batch. After the verdict,

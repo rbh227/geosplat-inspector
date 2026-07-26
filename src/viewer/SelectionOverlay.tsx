@@ -15,7 +15,7 @@ import { composeMatrices, projectToScreen, selectInBox, selectInMask, selectInPo
  * shields it from pointer events — camera controls are inert by construction.
  */
 
-export type SelectionTool = 'brush' | 'lasso' | 'polygon' | 'sphere' | 'box'
+export type SelectionTool = 'brush' | 'lasso' | 'polygon' | 'sphere' | 'box' | 'cropBox'
 
 const FIRST_POINT_SNAP_PX = 10
 const MIN_POLYGON_VERTICES = 3
@@ -365,7 +365,10 @@ export default function SelectionOverlay({
     resetInteraction()
   }, [tool, resetInteraction])
 
-  if (!tool) return null
+  // cropBox is a 3D gizmo tool, not a screen-space selection gesture — the
+  // gizmo (TransformControls) owns the pointer directly on the renderer's
+  // canvas, so this overlay must not mount and steal events from it.
+  if (!tool || tool === 'cropBox') return null
 
   return (
     <canvas

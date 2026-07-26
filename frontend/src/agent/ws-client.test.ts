@@ -152,8 +152,15 @@ describe('runSelectionTool v0.5 proposal tools', () => {
 class ProposalCleanupBridge {
   clearedProposalBox = 0
   clearedSelection = 0
+  // v0.6: the operator's editable crop box (cyan gizmo channel) and the
+  // agent's originally-previewed box (amber channel) are separate — the
+  // resolver must read the former, falling back to the latter.
+  cropBox: { min: number[]; max: number[] } | null = null
+  proposalBox: { min: number[]; max: number[] } | null = null
   clearProposalBox(): void { this.clearedProposalBox++ }
   clearSelection(): number { this.clearedSelection++; return 0 }
+  getCropBox() { return this.cropBox }
+  getProposalBox() { return this.proposalBox }
 }
 
 describe('ws-client proposal command (parked reply)', () => {
@@ -247,6 +254,34 @@ describe('ws-client proposal command (parked reply)', () => {
     expect(transport.sent[1]).toEqual({
       type: 'tool_result', id: 'p5', payload: { ok: true, verdict: 'approved' },
     })
+  })
+
+  it('an approved verdict carries the current (operator-edited) box from getCropBox()', async () => {
+    await transport.handler!(proposalCmd('p9', 'crop_outside_box', 'crop it'))
+    bridge.cropBox = { min: [0, 0, 0], max: [1, 1, 1] }
+    panels.proposal.get()!.resolve('approved')
+    expect(transport.sent).toEqual([
+      { type: 'tool_result', id: 'p9', payload: { ok: true, verdict: 'approved', box: { min: [0, 0, 0], max: [1, 1, 1] } } },
+    ])
+  })
+
+  it('an approved verdict falls back to getProposalBox() when getCropBox() is null (operator never touched the gizmo)', async () => {
+    await transport.handler!(proposalCmd('p10', 'crop_outside_box', 'crop it'))
+    bridge.cropBox = null
+    bridge.proposalBox = { min: [2, 2, 2], max: [3, 3, 3] }
+    panels.proposal.get()!.resolve('approved')
+    expect(transport.sent).toEqual([
+      { type: 'tool_result', id: 'p10', payload: { ok: true, verdict: 'approved', box: { min: [2, 2, 2], max: [3, 3, 3] } } },
+    ])
+  })
+
+  it('a rejected verdict carries no box even when a crop box is live', async () => {
+    await transport.handler!(proposalCmd('p11', 'crop_outside_box', 'crop it'))
+    bridge.cropBox = { min: [0, 0, 0], max: [1, 1, 1] }
+    panels.proposal.get()!.resolve('rejected', 'no')
+    expect(transport.sent).toEqual([
+      { type: 'tool_result', id: 'p11', payload: { ok: true, verdict: 'rejected', feedback: 'no' } },
+    ])
   })
 
   it('complete trace with a pending proposal clears the signal without sending and calls clearProposalBox', async () => {

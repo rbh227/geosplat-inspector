@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BACKEND_TOOLS, FRONTEND_TOOLS } from '../contracts.ts'
+import { BACKEND_TOOLS, FRONTEND_TOOLS, PROPOSAL_DECISION_FIELDS } from '../contracts.ts'
 import type { WSCommandType } from '../contracts.ts'
 
 // Mirror-drift guard: these counts and names must match the Python registry
@@ -50,5 +50,13 @@ describe('contracts v0.2 mirror', () => {
   it('has no duplicate names across the registry', () => {
     const all = [...FRONTEND_TOOLS, ...BACKEND_TOOLS]
     expect(new Set(all).size).toBe(all.length)
+  })
+})
+
+describe('v0.6 proposal decision', () => {
+  it('carries the operator-edited box alongside the verdict', () => {
+    expect(PROPOSAL_DECISION_FIELDS).toContain('verdict')
+    expect(PROPOSAL_DECISION_FIELDS).toContain('feedback')
+    expect(PROPOSAL_DECISION_FIELDS).toContain('box')
   })
 })

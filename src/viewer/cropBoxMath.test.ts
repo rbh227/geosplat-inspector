@@ -1,0 +1,100 @@
+import { describe, it, expect } from 'vitest'
+import {
+  boxFromTransform, transformFromBox, normalizeBox, countInsideSampled, isInsideBox,
+  shouldCommitCrop,
+} from './cropBoxMath.ts'
+
+describe('boxFromTransform / transformFromBox', () => {
+  it('round-trips a box through a unit-cube transform', () => {
+    const box = { min: [-1, 2, -3] as [number,number,number], max: [3, 6, 1] as [number,number,number] }
+    const t = transformFromBox(box)
+    expect(t.position).toEqual([1, 4, -1])
+    expect(t.scale).toEqual([4, 4, 4])
+    expect(boxFromTransform(t.position, t.scale)).toEqual(box)
+  })
+
+  it('never produces a zero-sized scale', () => {
+    const t = transformFromBox({ min: [0, 0, 0], max: [0, 0, 0] })
+    expect(t.scale[0]).toBeGreaterThan(0)
+    expect(t.scale[1]).toBeGreaterThan(0)
+    expect(t.scale[2]).toBeGreaterThan(0)
+  })
+})
+
+describe('normalizeBox', () => {
+  it('repairs an inverted axis rather than returning an empty box', () => {
+    // A negative scale drag flips an axis; min/max must be rebuilt componentwise.
+    expect(normalizeBox({ min: [5, 0, 2], max: [1, 3, -4] })).toEqual({
+      min: [1, 0, -4], max: [5, 3, 2],
+    })
+  })
+
+  it('leaves an already-ordered box untouched', () => {
+    const box = { min: [-1, -1, -1] as [number,number,number], max: [1, 1, 1] as [number,number,number] }
+    expect(normalizeBox(box)).toEqual(box)
+  })
+})
+
+describe('countInsideSampled', () => {
+  const centers = new Float32Array([
+    0, 0, 0,      // inside
+    0.5, 0.5, 0.5,// inside
+    5, 5, 5,      // outside
+    -5, 0, 0,     // outside
+  ])
+
+  it('counts only centers within the box, inclusive of the boundary', () => {
+    expect(countInsideSampled(centers, { min: [-1, -1, -1], max: [1, 1, 1] })).toBe(2)
+  })
+
+  it('returns 0 for a box containing nothing', () => {
+    expect(countInsideSampled(centers, { min: [100, 100, 100], max: [101, 101, 101] })).toBe(0)
+  })
+
+  it('counts a point exactly on the boundary as inside', () => {
+    expect(countInsideSampled(new Float32Array([1, 1, 1]), { min: [0, 0, 0], max: [1, 1, 1] })).toBe(1)
+  })
+})
+
+describe('isInsideBox', () => {
+  // The shared predicate behind both countInsideSampled (sampled readout) and
+  // SceneManager.cropToBox (exact commit) — covered directly so the two can
+  // never silently diverge.
+  const box: import('./cropBoxMath.ts').Box = { min: [0, 0, 0], max: [1, 1, 1] }
+
+  it('treats every face of the boundary as inside', () => {
+    expect(isInsideBox(0, 0, 0, box)).toBe(true)
+    expect(isInsideBox(1, 1, 1, box)).toBe(true)
+    expect(isInsideBox(0, 0.5, 1, box)).toBe(true)
+  })
+
+  it('rejects a point just outside the boundary', () => {
+    expect(isInsideBox(1.0001, 0.5, 0.5, box)).toBe(false)
+    expect(isInsideBox(0.5, -0.0001, 0.5, box)).toBe(false)
+  })
+
+  it('handles an inverted box the same as its normalized form', () => {
+    const inverted: import('./cropBoxMath.ts').Box = { min: [5, 5, 5], max: [0, 0, 0] }
+    const normalized = normalizeBox(inverted)
+    expect(isInsideBox(2, 2, 2, inverted)).toBe(isInsideBox(2, 2, 2, normalized))
+    expect(isInsideBox(2, 2, 2, inverted)).toBe(true)
+    expect(isInsideBox(10, 10, 10, inverted)).toBe(false)
+  })
+})
+
+describe('shouldCommitCrop', () => {
+  // The history guard behind cropToBox() (fix pass 2, TEST GAP) — the finding
+  // that caused the undo-corruption bug: a no-op crop must never mutate or
+  // push a local history entry with no backend counterpart.
+  it('is false for an empty box (nothing kept)', () => {
+    expect(shouldCommitCrop(0, 100)).toBe(false)
+  })
+
+  it('is false when the box already contains every alive splat', () => {
+    expect(shouldCommitCrop(100, 100)).toBe(false)
+  })
+
+  it('is true for a normal partial crop', () => {
+    expect(shouldCommitCrop(40, 100)).toBe(true)
+  })
+})

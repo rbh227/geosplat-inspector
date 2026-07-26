@@ -9,6 +9,7 @@ import {
 import type { MoveDirection, RotateDirection, ViewerHandle, ViewerState } from '../types/viewer.ts'
 import { SceneManager } from './SceneManager.ts'
 import { KEY_TO_DIRECTION } from './flyController.ts'
+import type { Box } from './cropBoxMath.ts'
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                             */
@@ -97,6 +98,14 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         showProposalBox: (min, max) => mgr().showProposalBox(min, max),
         clearProposalBox: () => mgr().clearProposalBox(),
         getProposalBox: () => mgr().getProposalBox(),
+        // ViewerHandle's seed type mirrors Box structurally (min/max triples)
+        // but isn't declared as the same nominal type — assert to the real
+        // Box type from cropBoxMath.ts rather than widening through `never`.
+        beginCropBox: (seed) => mgr().beginCropBox(seed as Box | undefined),
+        endCropBox: () => mgr().endCropBox(),
+        getCropBox: () => mgr().getCropBox(),
+        cropBoxCount: () => mgr().cropBoxCount(),
+        cropToBox: () => mgr().cropToBox(),
         getSceneStats: () => mgr().getSceneStats(),
         undo: () => mgr().undo(),
         canUndo: () => mgr().canUndo(),

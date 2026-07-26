@@ -110,6 +110,13 @@ export interface ViewerHandle {
   clearProposalBox(): void
   getProposalBox(): { min: number[]; max: number[] } | null
 
+  // Operator crop-box tool
+  beginCropBox(seed?: { min: number[]; max: number[] }): void
+  endCropBox(): void
+  getCropBox(): { min: number[]; max: number[] } | null
+  cropBoxCount(): number
+  cropToBox(): Uint32Array
+
   // Analysis
   getSceneStats(): SceneStats | null
 
