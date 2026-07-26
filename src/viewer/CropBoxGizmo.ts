@@ -35,9 +35,11 @@ export class CropBoxGizmo {
 
   constructor(private deps: GizmoDeps) {
     this.controls = new TransformControls(deps.camera, deps.domElement)
-    this.controls.addEventListener('dragging-changed', (e: { value: boolean }) => {
-      this.dragging = e.value
-      deps.setOrbitEnabled(!e.value)
+    // three r184 types the event's `value` as `unknown`; it is the drag flag.
+    this.controls.addEventListener('dragging-changed', (e: { value: unknown }) => {
+      const dragging = e.value === true
+      this.dragging = dragging
+      deps.setOrbitEnabled(!dragging)
     })
     this.controls.addEventListener('objectChange', () => this.emit())
     this.helper = this.controls.getHelper()
