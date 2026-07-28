@@ -1304,5 +1304,29 @@ transcription errors. The gate after each (type-check, 211 tests, lint) plus
 the Task 6 manual check is what catches a bad move. If a move proves
 unworkable, stop and re-plan rather than reshaping behavior mid-refactor.
 
+## Execution Notes (2026-07-28)
+
+Recorded during execution; the tasks above are left as written so the plan and
+what actually happened can be compared.
+
+1. **Tasks 5 and 6 were merged into one `useSession` hook.** The two-hook split
+   is circular: `registerScene` (scene) must dispose the stale agent, and the
+   agent's send path calls `registerScene` to recover from a restarted backend.
+   Each would need the other at construction time. The spec says "a hook"
+   (singular) — the plan invented the split.
+2. **`tsc --noEmit` checks nothing in this repo.** `tsconfig.json` is
+   solution-style (`files: []`, project references only), so it silently
+   type-checks zero files. Every gate step above should read **`tsc -b`**, which
+   is what `npm run build` runs and what caught two real errors in the refactor.
+3. **Task 1 Step 1 was wrong** to say the rest of the roundtrip test could stay
+   unchanged — a second upload later in that same test also read `["metrics"]`.
+4. **Task 8 landed inside the Task 5/6 commit**, since the TopBar props belong
+   to the same prop surface the refactor touched.
+5. **Task 9 is unfinished**: the local vLLM was down, so the acceptance run
+   could not happen. `docs/eval/iona-park.md` holds the answer key, procedure,
+   and an empty results section ready for the run.
+6. Final gate: backend **243 passed**, frontend **220 passed**, `tsc -b` clean,
+   lint 0 errors (1 pre-existing warning), `npm run build` succeeds.
+
 **Deliberately not planned:** visual memory across turns and grounded-box 3D
 deduplication, both covered in spec §8 with reasoning.
