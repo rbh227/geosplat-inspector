@@ -152,3 +152,83 @@ async def test_disconnect_without_socket_still_removes():
     await mgr.connect("s1", MockWS())
     mgr.disconnect("s1")
     assert not mgr.is_connected("s1")
+
+
+def test_two_windows_on_one_scene_keep_separate_sockets():
+    """The editor and the analyst are two renderers on ONE scene. Keying
+    sockets by scene alone made each connect() close the other's — the
+    two-window workflow could never run (Codex review, 2026-07-28)."""
+    import asyncio
+
+    from backend.api.ws import ConnectionManager
+
+    class FakeWS:
+        def __init__(self, name):
+            self.name = name
+            self.closed = False
+            self.sent = []
+
+        async def accept(self):
+            pass
+
+        async def close(self):
+            self.closed = True
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    async def scenario():
+        mgr = ConnectionManager()
+        editor, analyst = FakeWS("editor"), FakeWS("analyst")
+        await mgr.connect("s1", editor, "editor")
+        await mgr.connect("s1", analyst, "analyst")
+
+        # neither evicted the other
+        assert not editor.closed and not analyst.closed
+        assert sorted(mgr.clients("s1")) == ["analyst", "editor"]
+
+        # trace events reach BOTH windows
+        await mgr.emit_event("s1", "narrate", {"text": "hi"})
+        assert len(editor.sent) == 1 and len(analyst.sent) == 1
+
+        # one window leaving does not disconnect the other
+        mgr.disconnect("s1", analyst, "analyst")
+        assert mgr.clients("s1") == ["editor"]
+        assert mgr.is_connected("s1")
+
+        mgr.disconnect("s1", editor, "editor")
+        assert not mgr.is_connected("s1")
+
+    asyncio.run(scenario())
+
+
+def test_reconnecting_one_window_replaces_only_its_own_socket():
+    import asyncio
+
+    from backend.api.ws import ConnectionManager
+
+    class FakeWS:
+        def __init__(self):
+            self.closed = False
+
+        async def accept(self):
+            pass
+
+        async def close(self):
+            self.closed = True
+
+        async def send_json(self, msg):
+            pass
+
+    async def scenario():
+        mgr = ConnectionManager()
+        editor, analyst, editor2 = FakeWS(), FakeWS(), FakeWS()
+        await mgr.connect("s1", editor, "editor")
+        await mgr.connect("s1", analyst, "analyst")
+        await mgr.connect("s1", editor2, "editor")  # editor refreshed its page
+
+        assert editor.closed, "the editor's stale socket should be dropped"
+        assert not analyst.closed, "the analyst must survive an editor reconnect"
+        assert sorted(mgr.clients("s1")) == ["analyst", "editor"]
+
+    asyncio.run(scenario())

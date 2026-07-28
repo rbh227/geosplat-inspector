@@ -22,13 +22,17 @@ def anyio_backend():
 
 
 class RecordingManager:
-    """Records the (ctype, timeout) of every send_command; acks trivially."""
+    """Records the (ctype, timeout, client) of every send_command; acks trivially."""
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    async def send_command(self, scene_id, ctype, payload=None, timeout=DEFAULT_COMMAND_TIMEOUT):
-        self.calls.append({"ctype": ctype, "timeout": timeout, "payload": payload})
+    async def send_command(
+        self, scene_id, ctype, payload=None, timeout=DEFAULT_COMMAND_TIMEOUT, client_id=None,
+    ):
+        self.calls.append({
+            "ctype": ctype, "timeout": timeout, "payload": payload, "client_id": client_id,
+        })
         return {"ok": True}
 
 

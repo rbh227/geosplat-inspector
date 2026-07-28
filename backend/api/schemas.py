@@ -44,6 +44,9 @@ class AgentRunRequest(BaseModel):
     prompt: str
     # v0.2 (R12): operator-selected workflow stage; gates the agent's tool surface.
     stage: Literal["clean", "understand"] = "clean"
+    # Which window's renderer runs this. Two windows (editor + analyst) can be
+    # open on one scene; None falls back to the sole connected renderer.
+    client_id: str | None = None
 
 
 class AgentRunResponse(BaseModel):

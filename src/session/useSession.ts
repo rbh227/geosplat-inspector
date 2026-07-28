@@ -131,6 +131,21 @@ export function useSession(opts: SessionOptions): Session {
     statusTimer.current = setTimeout(() => setStatus(null), 4000)
   }, [])
 
+  // Identifies THIS window to the backend. The editor and the analyst are two
+  // renderers on one scene; without distinct ids the backend keyed sockets by
+  // scene alone and each window's connect closed the other's.
+  //
+  // Minted lazily rather than in the useRef initializer: randomUUID() during
+  // render is an impure call (react-hooks/purity). Every caller is an event
+  // handler or effect, so first use is always outside render.
+  const clientIdRef = useRef<string | null>(null)
+  const clientId = useCallback((): string => {
+    if (clientIdRef.current === null) {
+      clientIdRef.current =
+        globalThis.crypto?.randomUUID?.() ?? `client-${Math.random().toString(36).slice(2)}`
+    }
+    return clientIdRef.current
+  }, [])
   const agentRef = useRef<Agent | null>(null)
   const transportRef = useRef<WebSocketTransport | null>(null)
   const panelsRef = useRef<PanelBus | null>(null)
@@ -499,7 +514,7 @@ export function useSession(opts: SessionOptions): Session {
     if (!viewer || !sceneId) throw new Error('no scene')
 
     const panels = new PanelBus()
-    const transport = new WebSocketTransport(sceneWsUrl(sceneId))
+    const transport = new WebSocketTransport(sceneWsUrl(sceneId, clientId()))
     await transport.whenOpen()
 
     // The socket can die out from under a cached agent (backend restart,
@@ -523,7 +538,7 @@ export function useSession(opts: SessionOptions): Session {
     panelsRef.current = panels
     transportRef.current = transport
     agentRef.current = agent
-  }, [processTrace, handleProposalSignal, disposeAgent, showStatus])
+  }, [processTrace, handleProposalSignal, disposeAgent, showStatus, clientId])
 
   const send = useCallback((text: string) => {
     setMessages((prev) => [...prev, {
@@ -582,7 +597,7 @@ export function useSession(opts: SessionOptions): Session {
           // panels.running, whose subscribe REPLAYS the current value (false)
           // — without this the whole first run shows no thinking indicator.
           setIsThinking(true)
-          return runAgent(sceneId, text, stageRef.current)
+          return runAgent(sceneId, text, stageRef.current, clientId())
         })
         .catch((err) => {
           const text404 = err instanceof Error ? err.message : String(err)
@@ -657,7 +672,7 @@ export function useSession(opts: SessionOptions): Session {
     }
 
     startRun(sceneIdRef.current)
-  }, [ensureAgent, registerScene, disposeAgent, showStatus])
+  }, [ensureAgent, registerScene, disposeAgent, showStatus, clientId])
 
   /** Marks the scene as carrying edits the backend never saw, so a transparent
    *  re-upload of the original file can't silently desync it. */
@@ -678,15 +693,27 @@ export function useSession(opts: SessionOptions): Session {
     const sceneId = sceneIdRef.current
     if (!sceneId) return
     if (version === 'original') {
+      // Lock editing FIRST, then load: the reverse would leave a window where
+      // edits could be made against the original's packing.
       setViewingOriginal(true)
       viewingOriginalRef.current = true
       await viewerRef.current?.loadSplat(scenePlyUrl(sceneId, 'original'), { keepCamera: true })
       return
     }
+    // Coming BACK: stay locked until the edited scene AND its alive-id map are
+    // in place. Unlocking first left an await during which a selection would
+    // submit ids from the original's packing — and if the reload or /ids fetch
+    // failed, the mismatch persisted silently.
+    try {
+      await reloadAuthoritative(sceneId)
+    } catch (err) {
+      console.warn('[version] returning to the edited scene failed:', err)
+      showStatus('Could not reload the edited scene — still showing the original.')
+      return // stay locked; the viewport does not match the edited id space
+    }
     setViewingOriginal(false)
     viewingOriginalRef.current = false
-    await reloadAuthoritative(sceneId)
-  }, [reloadAuthoritative])
+  }, [reloadAuthoritative, showStatus])
 
   return {
     viewerRef,

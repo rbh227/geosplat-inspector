@@ -46,7 +46,7 @@ from backend.api.settings import (
     registry_entry,
 )
 from backend.api.state import SceneStore
-from backend.api.ws import ConnectionManager, WSChannel
+from backend.api.ws import DEFAULT_CLIENT, ConnectionManager, WSChannel
 
 _UPLOAD_CHUNK = 1024 * 1024  # 1 MiB streaming copy
 _TEST_TIMEOUT_S = 20
@@ -137,10 +137,23 @@ def create_router(
     # `scene.chat_history` survives a browser reload (it lives with the scene),
     # so the agent still remembers — only the visible bubbles were lost. This
     # lets the frontend put them back.
+    #
+    # DISPLAY-SAFE, deliberately: chat_history is the MODEL's transcript, and
+    # AgentLoop encodes tool results and nudges as `role: "user"` turns
+    # ("[tool_result ...]", "[system] ..."). Restoring by role alone would fill
+    # the operator's chat with machine chatter and bury the real exchange.
     @router.get("/agent/history")
     async def get_agent_history(scene_id: str = Query(...)):
         state = _require(scene_id)
-        return {"messages": list(getattr(state.scene, "chat_history", []) or [])}
+        raw = list(getattr(state.scene, "chat_history", []) or [])
+        shown = [
+            m for m in raw
+            if m.get("role") in ("user", "assistant")
+            and isinstance(m.get("content"), str)
+            and m["content"].strip()
+            and not m["content"].lstrip().startswith(("[tool_result", "[system]", "[scene]"))
+        ]
+        return {"messages": shown}
 
     # ---- GET /ids : alive original Gaussian ids (v0.2) ------------------- #
     # After a backend-driven reload the frontend adopts these so its stable
@@ -289,7 +302,16 @@ def create_router(
         # Stale stop/pause signals from the previous run's end-race window must
         # not kill or invisibly pause this run's first action.
         manager.reset_run_flags(req.scene_id)
-        channel = WSChannel(req.scene_id, manager)
+        # Bind the run to the window that asked for it: with the editor AND the
+        # analyst open on one scene, the run's tools must execute in the
+        # renderer whose operator started it. Unnamed falls back to the sole
+        # connected client.
+        if req.client_id is not None and req.client_id not in manager.clients(req.scene_id):
+            raise HTTPException(
+                status_code=409,
+                detail=f"client {req.client_id!r} has no renderer connected for this scene",
+            )
+        channel = WSChannel(req.scene_id, manager, req.client_id)
 
         async def _drive():
             try:
@@ -310,17 +332,19 @@ def create_router(
         return AgentRunResponse(run_id=uuid.uuid4().hex, status="started")
 
     # ---- WS /ws/{scene_id} : renderer channel ---------------------------- #
+    # `?client=` identifies the WINDOW. Two windows (editor + analyst) are two
+    # renderers on one scene; without it they evict each other's socket.
     @router.websocket("/ws/{scene_id}")
-    async def scene_ws(websocket: WebSocket, scene_id: str):
-        await manager.connect(scene_id, websocket)
+    async def scene_ws(websocket: WebSocket, scene_id: str, client: str = Query(DEFAULT_CLIENT)):
+        await manager.connect(scene_id, websocket, client)
         try:
             while True:
                 message = await websocket.receive_json()
                 manager.handle_message(scene_id, message)
         except WebSocketDisconnect:
-            manager.disconnect(scene_id, websocket)
+            manager.disconnect(scene_id, websocket, client)
         except Exception:
-            manager.disconnect(scene_id, websocket)
+            manager.disconnect(scene_id, websocket, client)
 
     return router
 

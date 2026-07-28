@@ -48,14 +48,19 @@ export async function getAgentHistory(sceneId: string): Promise<AgentHistoryMess
   return body.messages ?? []
 }
 
-/** WebSocket URL for a scene's renderer channel. */
-export function sceneWsUrl(sceneId: string): string {
+/** WebSocket URL for a scene's renderer channel.
+ *
+ *  `clientId` identifies the WINDOW. The editor and the analyst are two
+ *  renderers on one scene; without distinct ids the backend keyed sockets by
+ *  scene alone and each window's connect closed the other's. */
+export function sceneWsUrl(sceneId: string, clientId?: string): string {
+  const query = clientId ? `?client=${encodeURIComponent(clientId)}` : ''
   if (BACKEND_URL) {
-    return `${BACKEND_URL.replace(/^http/, 'ws')}/ws/${sceneId}`
+    return `${BACKEND_URL.replace(/^http/, 'ws')}/ws/${sceneId}${query}`
   }
   // Same-origin: derive ws(s):// from the current page origin (Vite proxies it).
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${proto}://${window.location.host}/ws/${sceneId}`
+  return `${proto}://${window.location.host}/ws/${sceneId}${query}`
 }
 
 /** Is a filename one the backend can load? (INRIA binary .ply only.) */
@@ -149,11 +154,14 @@ export async function runAgent(
   sceneId: string,
   prompt: string,
   stage: 'clean' | 'understand' = 'clean',
+  clientId?: string,
 ): Promise<void> {
   const res = await fetch(`${BACKEND_URL}/agent/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scene_id: sceneId, prompt, stage }),
+    // client_id binds the run to THIS window's renderer, so with the editor and
+    // analyst both open the tools execute where the operator started them.
+    body: JSON.stringify({ scene_id: sceneId, prompt, stage, client_id: clientId ?? null }),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')

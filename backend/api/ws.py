@@ -37,22 +37,42 @@ REPLY_TYPES = {"frame", "user_interrupt", "selection", "tool_result", "agent_pau
 DEFAULT_COMMAND_TIMEOUT = 30.0  # seconds to await a frontend reply
 
 
+DEFAULT_CLIENT = "default"
+
+
 class ConnectionManager:
-    """Tracks one renderer socket per scene and routes correlated replies."""
+    """Tracks renderer sockets per scene (keyed by client) and routes replies.
+
+    Sockets are keyed by (scene_id, client_id), NOT scene alone: the editor and
+    the analyst window are two renderers on the SAME scene, and keying by scene
+    made each one's connect() close the other's socket — the two windows could
+    never be live at once. Commands are addressed to one client (the renderer
+    that owns the run); trace events broadcast to every window on the scene, so
+    a run started in one is visible in the other and a scene-changing run makes
+    both resync.
+
+    Run state (interrupt/pause) stays keyed by SCENE, because only one run per
+    scene is allowed regardless of which window started it.
+    """
 
     def __init__(self) -> None:
-        self._conns: dict[str, Any] = {}                 # scene_id -> WebSocket
+        # scene_id -> {client_id -> WebSocket}
+        self._conns: dict[str, dict[str, Any]] = {}
         self._pending: dict[str, asyncio.Future] = {}    # corr_id -> Future
-        self._pending_scene: dict[str, str] = {}         # corr_id -> scene_id
+        # corr_id -> (scene_id, client_id)
+        self._pending_scene: dict[str, tuple[str, str]] = {}
         self._interrupted: set[str] = set()              # scene_ids interrupted
         self._paused: set[str] = set()                   # scene_ids paused (stateful, non-consuming)
         self._resume_events: dict[str, asyncio.Event] = {}  # scene_id -> resume signal
 
     # ---- connection lifecycle -------------------------------------------- #
-    async def connect(self, scene_id: str, websocket: Any) -> None:
+    async def connect(
+        self, scene_id: str, websocket: Any, client_id: str = DEFAULT_CLIENT
+    ) -> None:
         await websocket.accept()
-        # one renderer per scene: drop a stale socket if present
-        old = self._conns.get(scene_id)
+        clients = self._conns.setdefault(scene_id, {})
+        # One socket per CLIENT: a reconnecting window replaces only its own.
+        old = clients.get(client_id)
         if old is not None:
             try:
                 await old.close()
@@ -62,17 +82,22 @@ class ConnectionManager:
             # replacement (it never saw them) — fail them now or they park
             # forever (a proposal has NO timeout: the run would hang and the
             # scene would 409 every future /agent/run).
-            self._fail_pending(scene_id, "renderer reconnected mid-command")
-        self._conns[scene_id] = websocket
+            self._fail_pending(scene_id, "renderer reconnected mid-command", client_id)
+        clients[client_id] = websocket
         self._interrupted.discard(scene_id)
 
-    def _fail_pending(self, scene_id: str, reason: str) -> None:
-        for corr_id, sid in list(self._pending_scene.items()):
-            if sid == scene_id:
-                fut = self._pending.pop(corr_id, None)
-                self._pending_scene.pop(corr_id, None)
-                if fut and not fut.done():
-                    fut.set_exception(ConnectionError(reason))
+    def _fail_pending(
+        self, scene_id: str, reason: str, client_id: str | None = None
+    ) -> None:
+        for corr_id, (sid, cid) in list(self._pending_scene.items()):
+            if sid != scene_id:
+                continue
+            if client_id is not None and cid != client_id:
+                continue
+            fut = self._pending.pop(corr_id, None)
+            self._pending_scene.pop(corr_id, None)
+            if fut and not fut.done():
+                fut.set_exception(ConnectionError(reason))
 
     def reset_run_flags(self, scene_id: str) -> None:
         """Clear stale interrupt/pause state before a NEW run starts — signals
@@ -81,24 +106,51 @@ class ConnectionManager:
         self._interrupted.discard(scene_id)
         self._paused.discard(scene_id)
 
-    def disconnect(self, scene_id: str, websocket: Any | None = None) -> None:
-        """Remove a scene's renderer. With `websocket` given, remove it only if
-        it is STILL the registered socket: connect() swaps in a replacement
-        before the old socket's route cleanup runs, and that stale cleanup must
-        never evict the replacement (observed reconnect race)."""
-        if websocket is not None and self._conns.get(scene_id) is not websocket:
+    def disconnect(
+        self,
+        scene_id: str,
+        websocket: Any | None = None,
+        client_id: str = DEFAULT_CLIENT,
+    ) -> None:
+        """Remove one renderer. With `websocket` given, remove it only if it is
+        STILL the registered socket for that client: connect() swaps in a
+        replacement before the old socket's route cleanup runs, and that stale
+        cleanup must never evict the replacement (observed reconnect race)."""
+        clients = self._conns.get(scene_id)
+        if clients is None:
             return
-        self._conns.pop(scene_id, None)
-        self._fail_pending(scene_id, "renderer disconnected")
+        if websocket is not None and clients.get(client_id) is not websocket:
+            return
+        clients.pop(client_id, None)
+        if not clients:
+            self._conns.pop(scene_id, None)
+        self._fail_pending(scene_id, "renderer disconnected", client_id)
         # A disconnect must also release a paused loop (wait_resume would
-        # otherwise park forever with nobody left to press Resume).
-        ev = self._resume_events.get(scene_id)
-        if ev is not None:
-            ev.set()
-        self._paused.discard(scene_id)
+        # otherwise park forever with nobody left to press Resume) — but only
+        # once the LAST window on the scene is gone; the other one can resume.
+        if not clients:
+            ev = self._resume_events.get(scene_id)
+            if ev is not None:
+                ev.set()
+            self._paused.discard(scene_id)
 
     def is_connected(self, scene_id: str) -> bool:
-        return scene_id in self._conns
+        return bool(self._conns.get(scene_id))
+
+    def clients(self, scene_id: str) -> list[str]:
+        return list(self._conns.get(scene_id, {}))
+
+    def _resolve_client(self, scene_id: str, client_id: str | None) -> str | None:
+        """Which renderer a command should go to.
+
+        An explicit client wins. Otherwise fall back to the only connected one
+        — with two windows open and no client named, there is no defensible
+        choice, so refuse rather than picking arbitrarily.
+        """
+        clients = self._conns.get(scene_id) or {}
+        if client_id is not None:
+            return client_id if client_id in clients else None
+        return next(iter(clients)) if len(clients) == 1 else None
 
     # ---- inbound routing -------------------------------------------------- #
     def handle_message(self, scene_id: str, message: dict) -> None:
@@ -153,15 +205,17 @@ class ConnectionManager:
         ctype: str,
         payload: dict | None = None,
         timeout: float | None = DEFAULT_COMMAND_TIMEOUT,
+        client_id: str | None = None,
     ) -> dict:
-        ws = self._conns.get(scene_id)
+        target = self._resolve_client(scene_id, client_id)
+        ws = (self._conns.get(scene_id) or {}).get(target) if target else None
         if ws is None:
             raise ConnectionError(f"no renderer connected for scene {scene_id}")
         corr_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
         self._pending[corr_id] = fut
-        self._pending_scene[corr_id] = scene_id
+        self._pending_scene[corr_id] = (scene_id, target)
         try:
             await ws.send_json({"type": ctype, "id": corr_id, "payload": payload or {}})
             reply = await asyncio.wait_for(fut, timeout=timeout)
@@ -205,13 +259,14 @@ class ConnectionManager:
 
     # ---- outbound: trace (fire-and-forget) -------------------------------- #
     async def emit_event(self, scene_id: str, etype: str, payload: dict | None = None) -> None:
-        ws = self._conns.get(scene_id)
-        if ws is None:
-            return  # no renderer attached; drop the trace event
-        try:
-            await ws.send_json({"type": etype, "payload": payload or {}})
-        except Exception:
-            self.disconnect(scene_id, ws)
+        """Broadcast to EVERY window on the scene, not just the run's owner: a
+        run started in one window should be visible in the other, and a
+        scene-changing run must make both resync."""
+        for client_id, ws in list((self._conns.get(scene_id) or {}).items()):
+            try:
+                await ws.send_json({"type": etype, "payload": payload or {}})
+            except Exception:
+                self.disconnect(scene_id, ws, client_id)
 
 
 class WSChannel(FrontendChannel):
@@ -221,9 +276,17 @@ class WSChannel(FrontendChannel):
     uniformly and never sees the socket.
     """
 
-    def __init__(self, scene_id: str, manager: ConnectionManager) -> None:
+    def __init__(
+        self,
+        scene_id: str,
+        manager: ConnectionManager,
+        client_id: str | None = None,
+    ) -> None:
         self._scene_id = scene_id
         self._mgr = manager
+        # Which window's renderer executes this run's tools. None falls back to
+        # the sole connected client (single-window and test setups).
+        self._client_id = client_id
 
     async def send_command(self, cmd: dict) -> dict:
         ctype = cmd.get("type")
@@ -233,7 +296,9 @@ class WSChannel(FrontendChannel):
         # A proposal parks on the operator's decision — no timeout (asyncio's
         # wait_for(timeout=None) already waits forever).
         timeout = None if ctype == "proposal" else DEFAULT_COMMAND_TIMEOUT
-        return await self._mgr.send_command(self._scene_id, ctype, payload, timeout)
+        return await self._mgr.send_command(
+            self._scene_id, ctype, payload, timeout, self._client_id,
+        )
 
     async def emit_event(self, event: dict) -> None:
         etype = event.get("type")

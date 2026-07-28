@@ -45,14 +45,19 @@ listening() { lsof -ti ":$1" -sTCP:LISTEN >/dev/null 2>&1; }
 model_answers() { curl -s -m 5 "http://localhost:${MODEL_PORT}/v1/models" 2>/dev/null | grep -q '"id"'; }
 
 # ── 0. Dependencies present? ────────────────────────────────────────────────
-if [ ! -x .venv-api/bin/python ]; then
-  err "missing .venv-api — create it first:"
-  echo "  python3.12 -m venv .venv-api && .venv-api/bin/pip install -r backend/requirements.txt"
-  exit 1
-fi
-if [ ! -d node_modules ]; then
-  warn "node_modules missing — running npm install"
-  npm install || exit 1
+# Skipped for --model-only: that mode brings up the model endpoint and exits, so
+# demanding a backend venv or installing frontend packages would contradict it
+# (and fails outright on a fresh checkout).
+if [ "$MODEL_ONLY" -eq 0 ]; then
+  if [ ! -x .venv-api/bin/python ]; then
+    err "missing .venv-api — create it first:"
+    echo "  python3.12 -m venv .venv-api && .venv-api/bin/pip install -r backend/requirements.txt"
+    exit 1
+  fi
+  if [ ! -d node_modules ]; then
+    warn "node_modules missing — running npm install"
+    npm install || exit 1
+  fi
 fi
 
 # ── 1. Model endpoint ───────────────────────────────────────────────────────

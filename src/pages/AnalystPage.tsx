@@ -38,7 +38,7 @@ export default function AnalystPage({ sceneId }: { sceneId: string | null }) {
   }, [sceneId, loadBackendScene])
 
   const gone = failedSceneId !== null && failedSceneId === sceneId
-  const state = analystStatus(sceneId, gone)
+  const state = analystStatus(sceneId, gone, hasScene)
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-bg-deep">
@@ -137,6 +137,12 @@ export default function AnalystPage({ sceneId }: { sceneId: string | null }) {
 
             {state === 'no-scene' && (
               <EmptyState onImport={() => {}} onDropFile={loadFile} />
+            )}
+
+            {state === 'loading' && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
+                <span className="font-mono text-xs text-white/70">Loading scene…</span>
+              </div>
             )}
           </div>
           <NarrationBar state={viewerState} />
