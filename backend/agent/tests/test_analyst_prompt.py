@@ -17,7 +17,7 @@ from backend.agent.mocks import (
     text_then_tools,
     tool_turn,
 )
-from backend.agent.system_prompt import system_prompt_for
+from backend.agent.system_prompt import skills_for, system_prompt_for
 from backend.agent.types import DESTRUCTIVE_TOOLS
 
 
@@ -86,3 +86,58 @@ def test_hallucinated_metrics_call_is_rejected_in_understand():
         if e.get("type") == "tool_result" and "not available in the understand stage" in str(e.get("result", {}))
     ]
     assert rejections
+
+
+# ---------------------------------------------------------------------------
+# Prompt guards (2026-07-28): the analyst counts from ONE framed capture.
+# Frames do not survive across model turns — loop.py clears _pending_frames
+# after every generate() and the provider attaches images to the last user
+# turn only — so counting across viewpoints can only double-count.
+# ---------------------------------------------------------------------------
+
+def _understand() -> str:
+    return system_prompt_for("understand").lower()
+
+
+def _understand_recipes() -> str:
+    return " ".join(s["recipe"] for s in skills_for("understand")).lower()
+
+
+def test_prompt_does_not_instruct_multi_angle_counting():
+    p = _understand()
+    assert "3-4 views" not in p
+    assert "different angles" not in p
+    recipes = _understand_recipes()
+    assert "3-4 views" not in recipes
+    assert "different angles" not in recipes
+
+
+def test_prompt_states_the_one_frame_counting_rule():
+    p = _understand()
+    assert "double-count" in p
+    assert "never extend" in p
+
+
+def test_prompt_requires_tiered_certainty_and_modality():
+    p = _understand()
+    assert "tier" in p
+    assert "aerial" in p  # only as a worked EXAMPLE of naming modality
+
+
+def test_prompt_forbids_unlocatable_and_artifact_damage_claims():
+    p = _understand()
+    assert "cannot say where" in p
+    assert "artifact" in p
+    assert "reconstruction" in p
+
+
+def test_prompt_makes_no_damage_a_valid_answer():
+    p = _understand()
+    assert "nothing is wrong here" in p
+
+
+def test_prompt_carries_no_domain_priors():
+    """The prompt teaches HOW to look, never what these scenes contain."""
+    p = _understand()
+    for word in ("disaster", "trailer", "hurricane", "earthquake", "flood"):
+        assert word not in p, f"domain prior leaked into the prompt: {word}"
