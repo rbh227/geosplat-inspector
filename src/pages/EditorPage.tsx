@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import * as THREE from 'three'
-import type { MoveDirection, RotateDirection, ViewerState, ViewerHandle } from '../types/viewer'
-import type { ChatMessage, AgentAction } from '../types/agent'
-import { createAgent, WebSocketTransport, PanelBus } from '@agent'
-import type { Agent, TraceEntry, ProposalState } from '@agent'
+import type { ProposalState } from '@agent'
 import {
-  uploadScene, runAgent, sceneWsUrl, scenePlyUrl, isBackendLoadable,
-  editByIds, historyOp, getAliveIds,
+  scenePlyUrl, isBackendLoadable, editByIds, historyOp,
   getModelConfig, type ModelConfig,
 } from '../backend/client'
-import { makeRendererBridge } from '../backend/bridge'
-import { classifyAction, completeContent, sceneChanged } from '../backend/trace'
-import {
-  savePersistedScene, loadPersistedScene, clearPersistedScene, updatePersistedCamera,
-} from '../persistence'
+import { useSession } from '../session/useSession'
+import { analystHref } from '../routing'
 import ViewerCanvas from '../viewer/ViewerCanvas'
 import SelectionOverlay, { type SelectionTool } from '../viewer/SelectionOverlay'
 import ViewerErrorBoundary from '../ui/ViewerErrorBoundary'
@@ -27,27 +19,9 @@ import RotatePad from '../ui/RotatePad'
 import EmptyState from '../ui/EmptyState'
 import type { DemoSplat } from '../demos'
 
-const DEFAULT_VIEWER_STATE: ViewerState = {
-  splatCount: 0,
-  fps: 0,
-  cameraPosition: [0, 0, 0],
-  fileName: null,
-  isLoading: false,
-  undoCount: 0,
-  navigationMode: 'orbit',
-}
-
 export default function EditorPage() {
-  const viewerRef = useRef<ViewerHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [viewerState, setViewerState] = useState<ViewerState>(DEFAULT_VIEWER_STATE)
   const [rightOpen, setRightOpen] = useState(true)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [isThinking, setIsThinking] = useState(false)
-  const [narration, setNarration] = useState('')
-  // Start "has scene" true when a persisted record exists so the restore effect
-  // shows the viewport (not the empty state) without a synchronous setState.
-  const [hasScene, setHasScene] = useState(() => loadPersistedScene() !== null)
 
   // ── Editor state (v0.2) ──
   const [stage, setStage] = useState<Stage>('clean')
@@ -63,139 +37,18 @@ export default function EditorPage() {
   // endCropBox() internally on every path, including the empty/no-op ones)
   // and cleared when the 120ms poll (re)starts for a fresh session. Guards
   // the poll against re-seeding a brand-new box in the gap between the
-  // commit running and React actually unmounting/clearing this effect
-  // (fix pass 3, FINDING 2).
+  // commit running and React actually unmounting/clearing this effect.
   const cropCommitPendingRef = useRef(false)
-  const [activeDirections, setActiveDirections] = useState<ReadonlySet<MoveDirection>>(new Set())
-  const [activeRotations, setActiveRotations] = useState<ReadonlySet<RotateDirection>>(new Set())
-  const [status, setStatus] = useState<string | null>(null)
-  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // ── Edit-aware export (R9-R11/KTD6) ──
-  // backendSceneId mirrors sceneIdRef into React state: registration resolves
-  // async after first render, and a ref alone would never re-enable the button.
-  const [backendSceneId, setBackendSceneId] = useState<string | null>(null)
-  // Alive count snapshotted from the viewer handle right after load resolves;
-  // removedCount derives from the live count, so undo/redo/reload stay correct.
-  const [baselineCount, setBaselineCount] = useState(0)
-
-  /** Transient status toast (e.g. "Edit rejected — scene restored"). */
-  const showStatus = useCallback((text: string) => {
-    setStatus(text)
-    if (statusTimer.current) clearTimeout(statusTimer.current)
-    statusTimer.current = setTimeout(() => setStatus(null), 4000)
-  }, [])
-
-  // ── Backend agent session (lazy: built on first send, rebuilt per scene) ──
-  const agentRef = useRef<Agent | null>(null)
-  const transportRef = useRef<WebSocketTransport | null>(null)
-  const panelsRef = useRef<PanelBus | null>(null)
-  const sceneIdRef = useRef<string | null>(null)
-  const hasSceneRef = useRef(false) // mirrors hasScene for stale-closure-free reads
-  // Monotonic scene-load generation: every load path (mount restore, file,
-  // demo, URL) claims a new generation; a continuation that no longer owns the
-  // latest generation must not mutate viewer or scene state.
-  const loadGenRef = useRef(0)
-  // Large real-world scenes can take up to ~60s to upload+parse on the backend
-  // (confirmed: 675MB/3M-gaussian scene ≈ 60s). Without this, a prompt typed
-  // during that window sees sceneId===null and wrongly reports "view-only".
-  const registeringSceneRef = useRef(false)
-  /** The last backend-loadable file — retried when its upload failed. */
-  const lastPlyFileRef = useRef<File | null>(null)
-  /** Local edits made while unregistered — a retried upload would desync them. */
-  const localOnlyEditsRef = useRef(false)
-  const stageRef = useRef<Stage>('clean') // mirrors stage for stable handleSend
-  const unsubsRef = useRef<Array<() => void>>([])
-  const processedTraceRef = useRef(0)
-  const runActionsRef = useRef<AgentAction[]>([])
 
   // A parked crop/edit proposal awaiting the operator's decision (or null).
   const [proposal, setProposal] = useState<ProposalState | null>(null)
-  // Mirrors `proposal !== null` for stale-closure-free reads in handleManualInput.
-  const proposalPendingRef = useRef(false)
-  // Fold the proposal signal into React state + the ref (stable identity so the
-  // per-scene ensureAgent memo stays intact).
-  const handleProposalSignal = useCallback((p: ProposalState | null) => {
-    setProposal(p)
-    proposalPendingRef.current = p !== null
-  }, [])
+  const handleProposal = useCallback((p: ProposalState | null) => setProposal(p), [])
 
-  const disposeAgent = useCallback(() => {
-    unsubsRef.current.forEach((fn) => fn())
-    unsubsRef.current = []
-    agentRef.current?.dispose()
-    agentRef.current = null
-    transportRef.current = null
-    panelsRef.current = null
-    processedTraceRef.current = 0
-    // Drop any parked proposal from the torn-down scene so no stale card lingers.
-    proposalPendingRef.current = false
-    setProposal(null)
-  }, [])
-
-  useEffect(() => disposeAgent, [disposeAgent])
-  useEffect(() => { hasSceneRef.current = hasScene }, [hasScene])
-
-  // ── Refresh persistence (Bug 1) ──
-  // On mount, restore the last backend scene if it still exists. Probe /ids
-  // first (cheap JSON, 404s when the backend has lost the scene) so a stale
-  // record falls back to the empty state instead of a hung load.
-  //
-  // Load-generation guard (Codex adversarial review): every load path — this
-  // restore AND every user-initiated load — claims a monotonic generation.
-  // After each await, the restore proceeds only while it still owns the
-  // latest generation, so choosing a new scene mid-restore can never be
-  // clobbered by the stale continuation (success OR failure path).
-  useEffect(() => {
-    const rec = loadPersistedScene()
-    if (!rec) return
-    const gen = ++loadGenRef.current
-    const owns = () => loadGenRef.current === gen
-    void (async () => {
-      try {
-        const ids = await getAliveIds(rec.sceneId)
-        if (!owns()) return
-        await viewerRef.current?.loadSplat(scenePlyUrl(rec.sceneId))
-        if (!owns()) return
-        viewerRef.current?.setIdMapFromIds(ids)
-        sceneIdRef.current = rec.sceneId
-        setBackendSceneId(rec.sceneId)
-        setBaselineCount(rec.baseline)
-        if (rec.camera) {
-          viewerRef.current?.setCameraPose(
-            new THREE.Vector3(...rec.camera.position),
-            new THREE.Vector3(...rec.camera.target),
-            false, // no tween: land exactly where the user left off, over auto-framing
-          )
-        }
-      } catch (err) {
-        console.warn('[persistence] scene restore failed; starting fresh:', err)
-        clearPersistedScene()
-        if (owns()) {
-          setHasScene(false)
-          setBackendSceneId(null)
-          sceneIdRef.current = null
-        }
-      }
-    })()
-    return () => { ++loadGenRef.current } // unmount invalidates too
-  }, [])
-
-  // Persist the latest camera pose as the page unloads, so a refresh lands the
-  // user exactly where they were (pagehide is more bfcache-friendly than unload).
-  useEffect(() => {
-    const onHide = () => {
-      if (!sceneIdRef.current) return
-      const pose = viewerRef.current?.getCameraPose()
-      if (!pose) return
-      updatePersistedCamera({
-        position: [pose.position.x, pose.position.y, pose.position.z],
-        target: [pose.target.x, pose.target.y, pose.target.z],
-      })
-    }
-    window.addEventListener('pagehide', onHide)
-    return () => window.removeEventListener('pagehide', onHide)
-  }, [])
+  const session = useSession({ stage, onProposal: handleProposal })
+  const {
+    viewerRef, viewerState, hasScene, backendSceneId, baselineCount, sceneIdRef,
+    reloadAuthoritative, showStatus, status, isThinking, agentPaused,
+  } = session
 
   // Model picker (in-app settings): fetch the current selection once on mount
   // and nudge the gear icon if nothing usable is configured yet. The app is
@@ -213,18 +66,6 @@ export default function EditorPage() {
     return () => { cancelled = true }
   }, [showStatus])
 
-  const handleStateChange = useCallback((state: ViewerState) => {
-    setViewerState(state)
-  }, [])
-
-  const handleMovementChange = useCallback((dirs: MoveDirection[]) => {
-    setActiveDirections(new Set(dirs))
-  }, [])
-
-  const handleRotationChange = useCallback((dirs: RotateDirection[]) => {
-    setActiveRotations(new Set(dirs))
-  }, [])
-
   const handleSelectionChange = useCallback((count: number) => {
     setSelectionCount(count)
   }, [])
@@ -234,105 +75,6 @@ export default function EditorPage() {
     setActiveTool(null)
   }, [])
 
-  const [agentPaused, setAgentPaused] = useState(false)
-  const isThinkingRef = useRef(false)
-  const agentPausedRef = useRef(false)
-  useEffect(() => { isThinkingRef.current = isThinking }, [isThinking])
-  useEffect(() => { agentPausedRef.current = agentPaused }, [agentPaused])
-
-  const sendPauseSignal = useCallback((type: 'agent_pause' | 'agent_resume') => {
-    transportRef.current?.send({ type, id: `${type}-${Date.now()}`, payload: {} })
-  }, [])
-
-  /** Manual input during an agent run pauses it at the next tool-call
-   *  boundary (R14/AE1). The banner persists until Resume or Stop.
-   *  Exception: while a proposal is parked, camera inspection is expected
-   *  review behavior, so it must NOT pause the (already-blocked) run. */
-  const handleManualInput = useCallback(() => {
-    if (isThinkingRef.current && !agentPausedRef.current && !proposalPendingRef.current) {
-      sendPauseSignal('agent_pause')
-      setAgentPaused(true)
-    }
-  }, [sendPauseSignal])
-
-  const handleResumeAgent = useCallback(() => {
-    sendPauseSignal('agent_resume')
-    setAgentPaused(false)
-  }, [sendPauseSignal])
-
-  const handleStopAgent = useCallback(() => {
-    // Resolve any parked proposal first so the blocked loop unwinds before the
-    // interrupt (the resolver latch makes this safe even if already resolved).
-    panelsRef.current?.proposal.get()?.resolve('rejected', 'operator stopped the run')
-    transportRef.current?.send({ type: 'user_interrupt', id: `int-${Date.now()}`, payload: {} })
-    // release the paused loop so it can observe the abort
-    sendPauseSignal('agent_resume')
-    setAgentPaused(false)
-  }, [sendPauseSignal])
-
-  /** Operator decision on the parked proposal — resolves via the signal's
-   *  latched resolver (Task 10), which sends the reply and clears the signal. */
-  const handleProposalDecide = useCallback(
-    (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => {
-      panelsRef.current?.proposal.get()?.resolve(verdict, feedback)
-    },
-    [],
-  )
-
-  /**
-   * Reload the backend's authoritative scene and adopt its alive-ID list so
-   * the viewer's stable ID map keeps matching the backend's ID space (KTD2/3).
-   */
-  const reloadAuthoritative = useCallback(async (sceneId: string) => {
-    await viewerRef.current?.loadSplat(scenePlyUrl(sceneId), { keepCamera: true })
-    try {
-      const ids = await getAliveIds(sceneId)
-      viewerRef.current?.setIdMapFromIds(ids)
-    } catch (err) {
-      console.warn('[backend] alive-id adoption failed after reload:', err)
-    }
-  }, [])
-
-  // Register a freshly loaded file with the backend (best-effort, .ply only).
-  // A new scene means the previous agent/WS is stale, so tear it down.
-  const registerScene = useCallback(async (file: File) => {
-    disposeAgent()
-    sceneIdRef.current = null
-    setBackendSceneId(null)
-    if (!isBackendLoadable(file.name)) {
-      lastPlyFileRef.current = null
-      clearPersistedScene() // view-only scene: nothing restorable, drop any stale record
-      return
-    }
-    // Kept for transparent retry: if this upload fails (backend restarting is
-    // the common case), the next chat send re-attempts it instead of wrongly
-    // telling the operator their .ply is a view-only .splat.
-    lastPlyFileRef.current = file
-    localOnlyEditsRef.current = false
-    registeringSceneRef.current = true
-    setStatus('Uploading scene to backend…')
-    try {
-      const { id } = await uploadScene(file)
-      sceneIdRef.current = id
-      setBackendSceneId(id)
-      // Persist for refresh-restore (Bug 1). Baseline = the just-loaded count,
-      // captured from the handle (no edits yet), so the export badge stays right.
-      savePersistedScene({
-        sceneId: id,
-        fileName: file.name,
-        baseline: viewerRef.current?.getSplatCount() ?? 0,
-        camera: null,
-      })
-      setStatus(null)
-    } catch (err) {
-      console.warn('[backend] scene upload failed; agent disabled for this scene:', err)
-      clearPersistedScene()
-      showStatus('Scene upload failed — this scene is view-only until reloaded')
-    } finally {
-      registeringSceneRef.current = false
-    }
-  }, [disposeAgent, showStatus])
-
   // ── Selection actions: optimistic local apply + backend record (KTD2) ──
   // The backend is the source of truth; a failed call reloads its scene.
   const commitEdit = useCallback((op: 'delete_by_ids' | 'keep_only_ids', ids: Uint32Array) => {
@@ -341,7 +83,7 @@ export default function EditorPage() {
     if (!sceneId) {
       // view-only scene: local edit stands alone — and blocks a transparent
       // re-upload (the original file no longer matches what's on screen)
-      localOnlyEditsRef.current = true
+      session.markLocalOnlyEdit()
       return
     }
     void editByIds(sceneId, op, ids).catch(async (err) => {
@@ -349,24 +91,24 @@ export default function EditorPage() {
       await reloadAuthoritative(sceneId)
       showStatus('Edit rejected — scene restored')
     })
-  }, [reloadAuthoritative, showStatus])
+  }, [reloadAuthoritative, showStatus, sceneIdRef, session])
 
   const handleDeleteSelection = useCallback(() => {
     const ids = viewerRef.current?.deleteSelection() ?? new Uint32Array(0)
     commitEdit('delete_by_ids', ids)
-  }, [commitEdit])
+  }, [commitEdit, viewerRef])
 
   /** Entering erase mode clears the selection so each gesture deletes only
    *  its own hits — one gesture, one undo step (KTD3). */
   const handleEraseModeChange = useCallback((on: boolean) => {
     setEraseMode(on)
     if (on) setSelectionCount(viewerRef.current?.clearSelection() ?? 0)
-  }, [])
+  }, [viewerRef])
 
   const handleKeepSelection = useCallback(() => {
     const ids = viewerRef.current?.keepSelection() ?? new Uint32Array(0)
     commitEdit('keep_only_ids', ids)
-  }, [commitEdit])
+  }, [commitEdit, viewerRef])
 
   const handleCropToBox = useCallback(() => {
     const before = viewerRef.current?.getSplatCount() ?? 0
@@ -388,22 +130,19 @@ export default function EditorPage() {
     }
     commitEdit('keep_only_ids', ids)
     setActiveTool(null)
-  }, [commitEdit, showStatus])
+  }, [commitEdit, showStatus, viewerRef])
 
   // Crop-box tool lifecycle: start/stop the gizmo with the tool, polling the
   // count while active (the gizmo mutates the box on drag, outside React).
   //
-  // Re-seed on a stranded reload (IMPORTANT 3): a reload while the tool is
-  // active — Redo, a failed-edit rollback, or an agent scene_changed reload —
-  // disposes and rebuilds the splat mesh, which tears down the gizmo
-  // (SceneManager.disposeSplatMesh -> cropGizmo.dispose()). None of those
-  // reload paths change `activeTool`, so this effect would not otherwise
-  // re-run. The existing 120ms poll already touches the viewer on a cadence
-  // that isn't the render loop, so it's a natural place to detect
-  // `getCropBox() === null` (session torn down, tool still selected) and
-  // re-seed against the fresh scene — cheaper than adding a second effect
-  // dependency and correct even for reload paths that don't bump a
-  // load-generation counter (e.g. reloadAuthoritative).
+  // Re-seed on a stranded reload: a reload while the tool is active — Redo, a
+  // failed-edit rollback, or an agent scene_changed reload — disposes and
+  // rebuilds the splat mesh, which tears down the gizmo. None of those reload
+  // paths change `activeTool`, so this effect would not otherwise re-run. The
+  // existing 120ms poll already touches the viewer on a cadence that isn't the
+  // render loop, so it's a natural place to detect `getCropBox() === null`
+  // (session torn down, tool still selected) and re-seed against the fresh
+  // scene.
   useEffect(() => {
     const viewer = viewerRef.current
     if (activeTool !== 'cropBox') {
@@ -427,7 +166,7 @@ export default function EditorPage() {
       setCropBoxCount(0)
       setHasCropBox(false)
     }
-  }, [activeTool])
+  }, [activeTool, viewerRef])
 
   // v0.6: while a `crop_outside_box` proposal is parked, hand the operator an
   // editable copy of the box the agent previewed (cyan gizmo, same channel as
@@ -445,15 +184,15 @@ export default function EditorPage() {
     } else {
       viewer?.endCropBox()
     }
-  }, [proposal])
+  }, [proposal, viewerRef])
 
   const handleInvertSelection = useCallback(() => {
     setSelectionCount(viewerRef.current?.invertSelection() ?? 0)
-  }, [])
+  }, [viewerRef])
 
   const handleClearSelection = useCallback(() => {
     setSelectionCount(viewerRef.current?.clearSelection() ?? 0)
-  }, [])
+  }, [viewerRef])
 
   // Undo/redo: the local stack answers instantly (camera preserved); the
   // backend History records the same sequence and stays authoritative.
@@ -462,9 +201,9 @@ export default function EditorPage() {
     const sceneId = sceneIdRef.current
     if (!sceneId) return
     void historyOp(sceneId, 'undo').then(async (res) => {
-      if (!localOk && res.ok) await reloadAuthoritative(sceneId) // backend-only history (e.g. agent edits after reload)
+      if (!localOk && res.ok) await reloadAuthoritative(sceneId) // backend-only history
     }).catch((err) => console.warn('[backend] undo failed:', err))
-  }, [reloadAuthoritative])
+  }, [reloadAuthoritative, sceneIdRef, viewerRef])
 
   const handleRedo = useCallback(() => {
     const sceneId = sceneIdRef.current
@@ -472,17 +211,17 @@ export default function EditorPage() {
     void historyOp(sceneId, 'redo').then(async (res) => {
       if (res.ok) await reloadAuthoritative(sceneId)
     }).catch((err) => console.warn('[backend] redo failed:', err))
-  }, [reloadAuthoritative])
+  }, [reloadAuthoritative, sceneIdRef])
 
   const handleResetView = useCallback(() => {
     viewerRef.current?.setView('front', true)
-  }, [])
+  }, [viewerRef])
 
   const handleNavModeToggle = useCallback(() => {
     const v = viewerRef.current
     if (!v) return
     v.setNavigationMode(v.getNavigationMode() === 'fly' ? 'orbit' : 'fly')
-  }, [])
+  }, [viewerRef])
 
   const handleImport = useCallback(() => {
     fileInputRef.current?.click()
@@ -502,274 +241,27 @@ export default function EditorPage() {
 
   const removedCount = Math.max(0, baselineCount - viewerState.splatCount)
 
-  // A load failed: re-show the picker and tell the user (the SceneManager
-  // loaders reject on a corrupt/undecodable file with no UI feedback of their own).
-  const reportLoadError = useCallback((what: string, err: unknown) => {
-    const msg = `Couldn't load ${what}: ${err instanceof Error ? err.message : String(err)}`
-    console.warn('[load]', msg)
-    setHasScene(false)
-    setNarration(msg)
-  }, [])
-
-  // Render a File locally AND register it with the backend so the agent works.
-  const loadFile = useCallback((file: File) => {
-    ++loadGenRef.current // invalidate any pending restore/load continuation
-    setHasScene(true)
-    void (async () => {
-      try {
-        await viewerRef.current?.loadSplatFile(file)
-      } catch (err) {
-        reportLoadError(file.name, err)
-        return
-      }
-      // Snapshot the baseline synchronously from the handle (not React state,
-      // which hasn't flushed yet) so the export badge measures from THIS load.
-      setBaselineCount(viewerRef.current?.getSplatCount() ?? 0)
-      void registerScene(file)
-    })()
-  }, [registerScene, reportLoadError])
-
-  // Render a splat by URL, view-only (no backend scene).
-  const loadUrl = useCallback((url: string, label: string) => {
-    ++loadGenRef.current // invalidate any pending restore/load continuation
-    setHasScene(true)
-    disposeAgent()
-    sceneIdRef.current = null
-    lastPlyFileRef.current = null // a stale .ply must never be retried over this scene
-    setBackendSceneId(null)
-    clearPersistedScene() // view-only: not restorable across refresh
-    void (async () => {
-      try {
-        await viewerRef.current?.loadSplat(url)
-        setBaselineCount(viewerRef.current?.getSplatCount() ?? 0)
-      } catch (err) {
-        reportLoadError(label, err)
-      }
-    })()
-  }, [disposeAgent, reportLoadError])
-
   const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) loadFile(file)
+    if (file) session.loadFile(file)
     e.target.value = ''
-  }, [loadFile])
+  }, [session])
 
   const handleLoadDemo = useCallback(async (demo: DemoSplat) => {
     if (!isBackendLoadable(demo.file)) {
-      loadUrl(demo.url, demo.name)
+      session.loadUrl(demo.url, demo.name)
       return
     }
-    ++loadGenRef.current // invalidate a pending restore even before the fetch resolves
-    setHasScene(true)
     try {
       const res = await fetch(demo.url)
       if (!res.ok) throw new Error(`fetch ${demo.url} → ${res.status}`)
       const blob = await res.blob()
-      loadFile(new File([blob], demo.file))
+      session.loadFile(new File([blob], demo.file))
     } catch (err) {
-      reportLoadError(demo.name, err)
+      console.warn('[load]', err)
+      showStatus(`Couldn't load ${demo.name}`)
     }
-  }, [loadFile, loadUrl, reportLoadError])
-
-  // ── Agent trace → chat/narration state ──
-  const processTrace = useCallback((entries: TraceEntry[]) => {
-    for (let i = processedTraceRef.current; i < entries.length; i++) {
-      const e = entries[i]
-      if (e.kind === 'tool_call') {
-        const name = String(e.detail?.name ?? e.text ?? 'tool')
-        runActionsRef.current.push({
-          type: classifyAction(name),
-          label: name,
-          detail: e.detail?.args ? JSON.stringify(e.detail.args) : undefined,
-        })
-        if (e.text) setNarration(e.text)
-      } else if ((e.kind === 'thought' || e.kind === 'narrate') && e.text) {
-        setNarration(e.text)
-      } else if (e.kind === 'complete') {
-        setAgentPaused(false)
-        const content = completeContent(e.detail)
-        const actions = [...runActionsRef.current]
-        setMessages((prev) => [...prev, {
-          id: `msg-${Date.now()}-assistant`,
-          role: 'assistant',
-          content,
-          timestamp: Date.now(),
-          actions: actions.length > 0 ? actions : undefined,
-        }])
-        setNarration(content)
-        runActionsRef.current = []
-        // Reload the served .ply whenever the run actually edited the backend
-        // model (scene_changed) — a read-only survey must not reload/reframe.
-        // An error does NOT suppress this: loop-level failures (_finish_error)
-        // still report scene_changed: true when edits landed before the
-        // failure (e.g. an approved crop applied, then a provider timeout),
-        // and the viewer must resync or it's left showing a stale scene with
-        // a desynced ID map.
-        if (sceneIdRef.current && sceneChanged(e.detail)) {
-          void reloadAuthoritative(sceneIdRef.current)
-        }
-      }
-    }
-    processedTraceRef.current = entries.length
-  }, [reloadAuthoritative])
-
-  // Build the WS transport + agent for the current scene (once), wiring the
-  // PanelBus signals into React state. WS must be OPEN before /agent/run, or
-  // early trace events are dropped by the backend.
-  const ensureAgent = useCallback(async () => {
-    if (agentRef.current) return
-    const viewer = viewerRef.current
-    const sceneId = sceneIdRef.current
-    if (!viewer || !sceneId) throw new Error('no scene')
-
-    const panels = new PanelBus()
-    const transport = new WebSocketTransport(sceneWsUrl(sceneId))
-    await transport.whenOpen()
-
-    // The socket can die out from under a cached agent (backend restart,
-    // network drop). Without this, `complete` never arrives, isThinking stays
-    // true forever, and handleSend refuses every future run.
-    transport.onClose?.(() => {
-      disposeAgent()
-      setIsThinking(false)
-      setAgentPaused(false)
-      showStatus('Agent connection lost — the run was stopped. Send again to reconnect.')
-    })
-
-    const agent = createAgent({ bridge: makeRendererBridge(viewer), transport, panels })
-
-    processedTraceRef.current = panels.trace.get().length
-    unsubsRef.current.push(
-      panels.running.subscribe(setIsThinking),
-      panels.trace.subscribe(processTrace),
-      panels.proposal.subscribe(handleProposalSignal),
-    )
-    panelsRef.current = panels
-    transportRef.current = transport
-    agentRef.current = agent
-  }, [processTrace, handleProposalSignal, disposeAgent, showStatus])
-
-  const handleSend = useCallback((text: string) => {
-    setMessages((prev) => [...prev, {
-      id: `msg-${Date.now()}-user`,
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-    }])
-    setNarration('') // the live line belongs to the agent's activity, not the ask
-
-    // While a proposal is parked, the run is blocked on the operator's verdict.
-    // Typing in chat during review IS adjustment feedback — resolve the parked
-    // proposal with it instead of starting a SECOND run. A concurrent run's
-    // first proposal would overwrite the parked one and leave the first run's
-    // no-timeout future hanging forever.
-    if (proposalPendingRef.current) {
-      panelsRef.current?.proposal.get()?.resolve('adjusted', text)
-      return
-    }
-
-    // One run at a time for the WHOLE run lifetime, not just while a proposal
-    // is parked (Codex adversarial review): a second run would race edits/undo
-    // against the same history, and its first proposal would orphan the
-    // blocked one. The backend also 409s this; refusing here keeps the UX clear.
-    if (isThinkingRef.current) {
-      setMessages((prev) => [...prev, {
-        id: `msg-${Date.now()}-assistant`,
-        role: 'assistant',
-        content: 'A run is already active — Stop it (or wait for it to finish) before sending a new task.',
-        timestamp: Date.now(),
-      }])
-      return
-    }
-
-    const startRun = (sceneId: string) => {
-      runActionsRef.current = []
-      setIsThinking(true)
-      // Snapshot the operator's current view as the run's "home" — the agent
-      // can return here (reframe) if it gets lost. Captured before it moves.
-      viewerRef.current?.setHomePose(viewerRef.current.getCameraPose())
-      ensureAgent()
-        .then(() => {
-          // Re-assert AFTER ensureAgent: the first ensureAgent() subscribes
-          // panels.running, whose subscribe REPLAYS the current value (false)
-          // — without this the whole first run shows no thinking indicator.
-          setIsThinking(true)
-          return runAgent(sceneId, text, stageRef.current)
-        })
-        .catch((err) => {
-          const text404 = err instanceof Error ? err.message : String(err)
-          // A restarted backend loses its in-memory scenes: the held scene id
-          // 404s while the page still shows the splat. Re-register the kept
-          // file and rerun instead of surfacing a dead-end error.
-          if (/404/.test(text404) && lastPlyFileRef.current && !localOnlyEditsRef.current) {
-            const file = lastPlyFileRef.current
-            disposeAgent()
-            sceneIdRef.current = null
-            setNarration('Backend was restarted — re-uploading the scene…')
-            void registerScene(file).then(() => {
-              if (sceneIdRef.current) {
-                startRun(sceneIdRef.current)
-              } else {
-                setIsThinking(false)
-                showStatus('Re-upload failed — is the backend running on :8000?')
-              }
-            })
-            return
-          }
-          const errMsg = `Error: ${text404}. Is the backend running on :8000?`
-          setMessages((prev) => [...prev, {
-            id: `msg-${Date.now()}-error`,
-            role: 'assistant',
-            content: errMsg,
-            timestamp: Date.now(),
-          }])
-          setIsThinking(false)
-          setNarration(errMsg)
-        })
-    }
-
-    if (!sceneIdRef.current) {
-      // A .ply whose backend upload failed (backend down/restarting when the
-      // scene loaded) is RETRIED here, then the request runs — the operator
-      // shouldn't have to diagnose that. Blocked only by local edits made
-      // while unregistered (re-uploading the original file would desync them).
-      const retryFile = lastPlyFileRef.current
-      if (!registeringSceneRef.current && retryFile && !localOnlyEditsRef.current) {
-        setIsThinking(true)
-        setNarration('Reconnecting the scene to the backend…')
-        void registerScene(retryFile).then(() => {
-          if (sceneIdRef.current) {
-            startRun(sceneIdRef.current)
-          } else {
-            setIsThinking(false)
-            setMessages((prev) => [...prev, {
-              id: `msg-${Date.now()}-assistant`,
-              role: 'assistant',
-              content: "Can't reach the backend on :8000 — is it running? Once it's up, send your message again.",
-              timestamp: Date.now(),
-            }])
-          }
-        })
-        return
-      }
-      const content = registeringSceneRef.current
-        ? "Still uploading this scene to the backend — large scenes can take up to a minute. Try again in a moment."
-        : retryFile
-          ? 'The backend upload for this .ply failed earlier and you have made local edits since — reload the file to reconnect the agent.'
-          : hasSceneRef.current
-            ? "This scene is view-only — it's a .splat the renderer can show but the backend can't edit. The agent works on .ply scenes; load a .ply from Samples or drag one in."
-            : 'Load a .ply scene first — the agent inspects and cleans .ply splats.'
-      setMessages((prev) => [...prev, {
-        id: `msg-${Date.now()}-assistant`,
-        role: 'assistant',
-        content,
-        timestamp: Date.now(),
-      }])
-      return
-    }
-
-    startRun(sceneIdRef.current)
-  }, [ensureAgent, registerScene, disposeAgent, showStatus])
+  }, [session, showStatus])
 
   // Understand is look-only (R15): leaving Clean drops any active tool/selection.
   const handleStageChange = useCallback((next: Stage) => {
@@ -780,9 +272,8 @@ export default function EditorPage() {
       viewerRef.current?.clearSelection()
       setSelectionCount(0)
     }
-    stageRef.current = next
     setStage(next)
-  }, [isThinking])
+  }, [isThinking, viewerRef])
 
   const editingEnabled = stage === 'clean'
 
@@ -818,6 +309,12 @@ export default function EditorPage() {
         canExport={backendSceneId !== null}
         removedCount={removedCount}
         onExport={handleExport}
+        canAnalyze={backendSceneId !== null}
+        onAnalyze={() => {
+          if (backendSceneId) {
+            window.open(analystHref(backendSceneId), '_blank', 'noopener')
+          }
+        }}
       />
 
       {/* Body: viewport + right panel */}
@@ -828,11 +325,11 @@ export default function EditorPage() {
             <ViewerErrorBoundary>
               <ViewerCanvas
                 ref={viewerRef}
-                onStateChange={handleStateChange}
-                onMovementChange={handleMovementChange}
-                onRotationChange={handleRotationChange}
+                onStateChange={session.onViewerStateChange}
+                onMovementChange={session.onMovementChange}
+                onRotationChange={session.onRotationChange}
                 onSelectionChange={handleSelectionChange}
-                onManualInput={handleManualInput}
+                onManualInput={session.onManualInput}
               />
             </ViewerErrorBoundary>
 
@@ -842,7 +339,7 @@ export default function EditorPage() {
                 viewerRef={viewerRef}
                 tool={activeTool}
                 onSelectionChange={handleSelectionChange}
-                onManualInput={handleManualInput}
+                onManualInput={session.onManualInput}
                 onExitTool={handleExitTool}
                 eraseMode={eraseMode}
                 onGestureCommit={handleDeleteSelection}
@@ -874,16 +371,16 @@ export default function EditorPage() {
             {hasScene && (
               <div className="absolute bottom-3 right-3 z-20 flex items-end gap-2">
                 <RotatePad
-                  activeRotations={activeRotations}
+                  activeRotations={session.activeRotations}
                   onInput={(dir, active) => {
-                    if (active) handleManualInput()
+                    if (active) session.onManualInput()
                     viewerRef.current?.setRotationInput(dir, active)
                   }}
                 />
                 <MovePad
-                  activeDirections={activeDirections}
+                  activeDirections={session.activeDirections}
                   onInput={(dir, active) => {
-                    if (active) handleManualInput()
+                    if (active) session.onManualInput()
                     viewerRef.current?.setMovementInput(dir, active)
                   }}
                 />
@@ -899,7 +396,7 @@ export default function EditorPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={handleStopAgent}
+                  onClick={session.stop}
                   className="rounded border border-red-400/30 bg-red-500/10 px-2 py-0.5 font-mono text-[11px] text-red-200 hover:bg-red-500/20 cursor-pointer"
                 >
                   Stop run
@@ -916,14 +413,14 @@ export default function EditorPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={handleResumeAgent}
+                  onClick={session.resume}
                   className="rounded border border-white/25 bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white hover:bg-white/20 cursor-pointer"
                 >
                   Resume
                 </button>
                 <button
                   type="button"
-                  onClick={handleStopAgent}
+                  onClick={session.stop}
                   className="rounded border border-red-400/30 bg-red-500/10 px-2 py-0.5 font-mono text-[11px] text-red-200 hover:bg-red-500/20 cursor-pointer"
                 >
                   Stop run
@@ -942,7 +439,7 @@ export default function EditorPage() {
             {!hasScene && (
               <EmptyState
                 onImport={handleImport}
-                onDropFile={loadFile}
+                onDropFile={session.loadFile}
               />
             )}
           </div>
@@ -965,13 +462,13 @@ export default function EditorPage() {
           <ChatPanel
             isOpen={rightOpen}
             stage={stage}
-            messages={messages}
+            messages={session.messages}
             isThinking={isThinking}
-            narration={narration}
+            narration={session.narration}
             proposal={proposal}
-            onProposalDecide={handleProposalDecide}
-            onSend={handleSend}
-            onStop={handleStopAgent}
+            onProposalDecide={session.decideProposal}
+            onSend={session.send}
+            onStop={session.stop}
             onClose={() => setRightOpen(false)}
           />
         )}

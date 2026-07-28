@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, FolderOpen, Orbit, PanelRight, Plane, RotateCcw, Settings, Upload } from 'lucide-react'
+import { ChevronDown, Download, FolderOpen, Orbit, PanelRight, Plane, RotateCcw, ScanEye, Settings, Upload } from 'lucide-react'
 import { DEMO_SPLATS, type DemoSplat } from '../demos'
 import { isBackendLoadable } from '../backend/client'
 
@@ -27,6 +27,10 @@ interface TopBarProps {
   /** Splats removed since load — badge stays quiet at zero (R10). */
   removedCount: number
   onExport: () => void
+  /** Open the analyst window on the current backend scene. */
+  onAnalyze?: () => void
+  /** False until a scene is registered with the backend. */
+  canAnalyze?: boolean
 }
 
 /**
@@ -40,6 +44,7 @@ export default function TopBar({
   rightOpen, onToggleRight, settingsOpen, onToggleSettings, settingsAttention,
   onImport, onLoadDemo, onResetView,
   canExport, removedCount, onExport,
+  onAnalyze, canAnalyze = false,
 }: TopBarProps) {
   const [samplesOpen, setSamplesOpen] = useState(false)
   const samplesRef = useRef<HTMLDivElement>(null)
@@ -110,6 +115,20 @@ export default function TopBar({
             </span>
           )}
         </button>
+
+        {/* Hand the cleaned scene to the look-only analyst window. */}
+        {onAnalyze && (
+          <button
+            onClick={onAnalyze}
+            disabled={!canAnalyze}
+            className="topbar-btn"
+            title={canAnalyze
+              ? 'Open the scene analyst in a new window'
+              : 'Load a .ply first — the analyst needs a registered scene'}
+          >
+            <ScanEye size={12} />Analyze scene
+          </button>
+        )}
 
         <span className="mx-1 h-[16px] w-px bg-border-mid" />
 
