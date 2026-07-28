@@ -80,10 +80,14 @@ well-framed capture**; it does not require a flight.
 Making metrics lazy is a precondition for demoing on a 2M-splat scene — the
 lag lands on every load.
 
-`POST /scene` returns `UploadResponse(id, metrics)`. Change it to return the
-id and cheap header-derived facts (splat count, bounds), and move the k-NN
-metrics behind the existing `GET /metrics`, which already computes on demand.
-Callers that want metrics ask for them; the analyst never does.
+`POST /scene` returns `UploadResponse(id, metrics)`. Change it to return
+`UploadResponse(id, count)` — `Scene.count()` is a cheap alive-count already
+used by `SceneState.__init__` — and move the k-NN metrics behind the existing
+`GET /metrics`, which already computes on demand. Callers that want metrics
+ask for them; the analyst never does.
+
+(`bounds()` is on the `SplatModel` protocol but not exposed on the engine
+`Scene` wrapper, so the upload response carries the count only.)
 
 The change is low-risk: `src/backend/client.ts:21` declares `metrics:
 Record<string, unknown>` on the upload response, but the only caller
