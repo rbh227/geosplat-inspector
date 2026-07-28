@@ -1,13 +1,9 @@
 import { useRoute } from './routing'
 import EditorPage from './pages/EditorPage'
+import AnalystPage from './pages/AnalystPage'
 
 export default function App() {
   const route = useRoute()
-  if (route.page === 'analyst') {
-    // The analyst page lands in a later task; until then the route falls back
-    // to the editor so the build never references a component that does not
-    // exist yet.
-    return <EditorPage />
-  }
+  if (route.page === 'analyst') return <AnalystPage sceneId={route.sceneId} />
   return <EditorPage />
 }
