@@ -30,14 +30,28 @@ See ARCHITECTURE.md for the full spec. Key points:
 
 ## Build / Lint / Test Commands
 
+### Run everything (start here)
+```bash
+./scripts/dev.sh              # model endpoint (:8001) + backend (:8000) + Vite (:5173)
+./scripts/dev.sh --no-model   # skip the model — viewer/editor only
+./scripts/local-model.sh status   # is the GPU server / SSH tunnel up?
+```
+`dev.sh` verifies the agent's model is actually reachable (`POST /config/test`)
+before handing you a URL. `provider error: Connection error.` in the chat panel
+means the `:8001` tunnel is down — usually a VPN blip, while the vLLM server
+itself is still up on the GPU box. Reconnect the VPN, then `scripts/local-model.sh up`.
+
 ### Frontend
 ```bash
 npm install
 npm run dev                   # Vite dev server (http://localhost:5173, COOP/COEP headers)
 npm run build                 # tsc -b type-check + vite production build → dist/
 npm run lint                  # eslint (flat config)
-npx tsc --noEmit              # type-check only
+npx tsc -b                    # type-check only
 ```
+**Use `tsc -b`, NOT `tsc --noEmit`.** `tsconfig.json` is solution-style
+(`files: []` + project references), so `--noEmit` silently type-checks ZERO
+files and always "passes".
 
 ### Backend
 Needs **Python 3.12** — `open3d` (used by the splat data layer) has no wheel
