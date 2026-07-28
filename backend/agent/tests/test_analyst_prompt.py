@@ -141,3 +141,85 @@ def test_prompt_carries_no_domain_priors():
     p = _understand()
     for word in ("disaster", "trailer", "hurricane", "earthquake", "flood"):
         assert word not in p, f"domain prior leaked into the prompt: {word}"
+
+
+# ---------------------------------------------------------------------------
+# "Answered without looking" guard (2026-07-28). Observed live: asked what
+# shape the main object was, the model called move_camera/turn/narrate and
+# then answered "a rectangular prism ... resembling a modern building" about a
+# SPHERE — never capturing a frame. The grounding ledger let it through
+# because record_tool_result() sets measured=True for ANY structured result,
+# so a camera move counted as evidence.
+# ---------------------------------------------------------------------------
+
+def test_understand_answer_without_a_frame_is_bounced_once():
+    result, channel, _ = _run_analyst([
+        # moves only — no capture_frame — then asserts what it "sees"
+        text_then_tools(
+            "Looking at the object.",
+            ("move_camera", {"direction": "forward", "duration_ms": 400}),
+            ("turn", {"direction": "left", "duration_ms": 300}),
+        ),
+        tool_turn(("answer", {"text": "The main object is a rectangular prism with a tapered top."})),
+        tool_turn(("capture_frame", {})),
+        tool_turn(("answer", {"text": "The main object is a sphere."})),
+    ])
+    assert result.status == "answered"
+    assert result.answer == "The main object is a sphere."
+    bounced = [
+        e for e in result.trace
+        if e.get("type") == "tool_result" and "no_frame" in str(e.get("result", {}))
+    ]
+    assert bounced, "an answer with no captured frame must be bounced"
+
+
+def test_understand_answer_goes_through_on_the_second_attempt():
+    """A memory follow-up ('summarize what you did') legitimately has no frame
+    this run. One nudge, then the agent is trusted."""
+    result, _, _ = _run_analyst([
+        tool_turn(("answer", {"text": "Earlier I cropped the scene to its core bounds."})),
+        tool_turn(("answer", {"text": "Earlier I cropped the scene to its core bounds."})),
+    ])
+    assert result.status == "answered"
+    assert "cropped the scene" in (result.answer or "")
+
+
+def test_clarifying_question_is_never_bounced_for_lack_of_a_frame():
+    result, _, _ = _run_analyst([
+        tool_turn(("answer", {"text": "Which cluster do you mean?"})),
+    ])
+    assert result.status == "answered"
+    assert result.answer == "Which cluster do you mean?"
+
+
+def test_no_frame_guard_is_per_run_not_per_scene():
+    """The ledger is PERSISTENT per scene (real_engine passes the previous
+    run's ledger back in), so saw_frame stays True for the rest of the
+    conversation once anything is captured. The guard must not key off it, or
+    every run after the first could answer without looking."""
+    from backend.agent.grounding import GroundingLedger
+
+    stale = GroundingLedger()
+    stale.record_frame()  # a PREVIOUS run captured something
+    assert stale.saw_frame
+
+    executor = MockBackendExecutor()
+    channel = MockFrontendChannel()
+    provider = MockProvider(script=[
+        tool_turn(("answer", {"text": "The main object is a rectangular prism."})),
+        tool_turn(("capture_frame", {})),
+        tool_turn(("answer", {"text": "The main object is a sphere."})),
+    ])
+    loop = AgentLoop(
+        provider,
+        ToolDispatcher(executor, channel),
+        channel,
+        config=AgentConfig(enforce_grounding=False),
+        stage="understand",
+    )
+    result = asyncio.run(loop.run("what shape is it?", ledger=stale))
+
+    assert result.status == "answered"
+    assert result.answer == "The main object is a sphere.", (
+        "a stale saw_frame from an earlier run must not satisfy this run's guard"
+    )

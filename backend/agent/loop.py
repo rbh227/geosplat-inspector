@@ -127,6 +127,13 @@ class AgentLoop:
         self._pending_frames: list[bytes] = []
         self._textonly_streak = 0  # consecutive no-tool text turns
         self._plan_rejections = 0  # answers bounced for being plans, per run
+        self._no_frame_nudged = False  # frameless answer bounced once, per run
+        # Frames captured in THIS run. Deliberately not `self._ledger.saw_frame`:
+        # the ledger is persistent per scene (real_engine passes the previous
+        # run's ledger back in), so saw_frame stays True for the rest of the
+        # conversation once anything is captured — which would let every later
+        # run answer without looking.
+        self._frames_this_run = 0
         self._last_narrate = ""    # normalized last narration (repeat guard)
         self._ledger = GroundingLedger()
         self._last_metrics: dict | None = None
@@ -167,6 +174,8 @@ class AgentLoop:
         self._pending_frames = []
         self._textonly_streak = 0
         self._plan_rejections = 0
+        self._no_frame_nudged = False
+        self._frames_this_run = 0
         self._last_narrate = ""
         self._ledger = ledger if ledger is not None else GroundingLedger()
         self._last_metrics = None
@@ -534,6 +543,7 @@ class AgentLoop:
         if frames:
             self._pending_frames.extend(frames)
             self._ledger.record_frame()
+            self._frames_this_run += len(frames)
         await self._emit(ev_tool_result(call.name, {"n_frames": len(frames)}, step))
         note: dict[str, Any] = {"captured": len(frames)}
         if percept is not None:
@@ -635,6 +645,34 @@ class AgentLoop:
                 "answer() ENDS the run — call it only with the finished result. "
                 "Execute the plan NOW by calling the tool you named; to talk "
                 "while working, use narrate()."
+            )
+            return False
+        # LOOK BEFORE YOU ASSERT (Understand stage). The ledger's `measured`
+        # flag is set by ANY structured tool result — a camera move included —
+        # so it cannot tell "I moved" from "I looked". Observed live: asked
+        # what shape the main object was, the model called move_camera twice
+        # and answered "a rectangular prism ... resembling a modern building"
+        # about a SPHERE, having never captured a frame.
+        #
+        # Bounced ONCE, not forever: a memory follow-up ("summarize what you
+        # did earlier") legitimately has no frame this run, and a hard block
+        # would force a pointless capture to satisfy the rule.
+        if (
+            self.stage == "understand"
+            and self._frames_this_run == 0
+            and not self._no_frame_nudged
+            and not text.rstrip().endswith("?")
+        ):
+            self._no_frame_nudged = True
+            await self._emit(ev_tool_result(
+                "answer", {"no_frame": "answered without capturing a frame"}, self._result.steps,
+            ))
+            self._nudge_sync(
+                "You have not captured a frame this run, so you have not "
+                "LOOKED at the scene — moving the camera is not seeing. Call "
+                "capture_frame and answer from the image. If you are answering "
+                "from EARLIER conversation rather than from this scene, say so "
+                "explicitly and call answer again."
             )
             return False
         # A clarifying QUESTION asserts nothing and the prompt explicitly
