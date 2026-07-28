@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 class UploadResponse(BaseModel):
     id: str
-    metrics: dict[str, Any]
+    count: int
 
 
 class EditRequest(BaseModel):

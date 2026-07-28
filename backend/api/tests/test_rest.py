@@ -32,26 +32,50 @@ def client():
     return TestClient(create_app())
 
 
+def test_upload_returns_count_without_computing_metrics(client, monkeypatch):
+    """Upload must not run k-NN metrics — it freezes the viewer for minutes on
+    a large scene, and nothing in the upload path needs them.
+
+    Enforced by sabotage: metrics() raises, so any call from the upload path
+    fails the test rather than merely slowing it down."""
+    from backend.api.real_engine import RealScene
+    from backend.api.stub_engine import StubScene
+
+    def _boom(self, *a, **kw):
+        raise AssertionError("upload computed metrics — it must not")
+
+    # Whichever engine create_app() selected (real, stub fallback) is sabotaged.
+    monkeypatch.setattr(RealScene, "metrics", _boom)
+    monkeypatch.setattr(StubScene, "metrics", _boom)
+
+    with open(MESSY, "rb") as f:
+        resp = client.post("/scene", files={"file": ("messy.ply", f, "application/octet-stream")})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["count"] > 0
+    assert "metrics" not in body, "upload must not carry metrics"
+
+
 def test_upload_metrics_edit_fetch_roundtrip(client):
     assert os.path.exists(MESSY), "examples/messy.ply (Phase 0) is required"
 
-    # 1. upload -> id + metrics
+    # 1. upload -> id + count (metrics are computed on demand, not here)
     with open(MESSY, "rb") as f:
         resp = client.post("/scene", files={"file": ("messy.ply", f, "application/octet-stream")})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     scene_id = body["id"]
-    m0 = body["metrics"]
-    assert m0["gaussianCount"] > 0
+    assert body["count"] > 0
+
+    # 2. metrics endpoint computes them on demand
+    r = client.get("/metrics", params={"scene_id": scene_id})
+    assert r.status_code == 200
+    m0 = r.json()
+    assert m0["gaussianCount"] == body["count"]
     # frozen Metrics schema is structurally complete
     for key in ("opacity", "scale", "spatial", "bounds", "color", "computedAt"):
         assert key in m0
     assert "needleFraction" in m0["scale"]["axisRatio"]
-
-    # 2. metrics endpoint agrees
-    r = client.get("/metrics", params={"scene_id": scene_id})
-    assert r.status_code == 200
-    assert r.json()["gaussianCount"] == m0["gaussianCount"]
 
     # 3. fetch original .ply (serving reflects current alive set)
     r = client.get(f"/scene/{scene_id}.ply")
@@ -79,7 +103,7 @@ def test_upload_metrics_edit_fetch_roundtrip(client):
     # edited file is a valid, loadable INRIA ply we can re-upload
     re = client.post("/scene", files={"file": ("edited.ply", io.BytesIO(r.content), "application/octet-stream")})
     assert re.status_code == 200
-    assert re.json()["metrics"]["gaussianCount"] == n_after
+    assert re.json()["count"] == n_after
 
 
 def test_undo_redo(client):

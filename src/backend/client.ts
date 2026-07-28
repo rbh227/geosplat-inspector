@@ -18,7 +18,7 @@ const BACKEND_URL: string =
 
 export interface UploadResult {
   id: string
-  metrics: Record<string, unknown>
+  count: number
 }
 
 /** Absolute-or-relative URL of the backend-served (current alive set) .ply. */
@@ -41,7 +41,8 @@ export function isBackendLoadable(name: string): boolean {
   return name.toLowerCase().endsWith('.ply')
 }
 
-/** POST /scene — upload a .ply, returns its id + initial metrics. */
+/** POST /scene — upload a .ply, returns its id + alive count. Metrics are NOT
+ *  computed here (they cost minutes on a large scene); use getMetrics(). */
 export async function uploadScene(file: File): Promise<UploadResult> {
   const form = new FormData()
   form.append('file', file, file.name)

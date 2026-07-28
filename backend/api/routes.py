@@ -98,11 +98,12 @@ def create_router(
         except Exception as exc:
             os.remove(tmp_path)
             raise HTTPException(status_code=400, detail=f"failed to load scene: {exc}")
-        # Threaded (as is every metrics/edit call in these handlers): full
-        # metrics runs k-NN over every splat — minutes on a 2M-splat scene —
-        # and inline it would freeze the event loop for the whole computation.
-        metrics = await asyncio.to_thread(state.scene.metrics)
-        return UploadResponse(id=state.id, metrics=metrics)
+        # Metrics are NOT computed here: the k-NN pass takes minutes on a
+        # 2M-splat scene and saturates the cores SparkJS needs for its
+        # CPU-side sort, so the viewer renders and then freezes for the whole
+        # computation. Nothing in the upload path needs them — `GET /metrics`
+        # computes on demand for the callers that do.
+        return UploadResponse(id=state.id, count=state.scene.count())
 
     # ---- GET /scene/{id}.ply : chunked serve of the current alive set ---- #
     @router.get("/scene/{scene_id}.ply")

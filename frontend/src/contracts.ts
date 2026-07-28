@@ -118,7 +118,7 @@ export type ToolName = FrontendToolName | BackendToolName;
 // ─── §6.7 REST API endpoints ───
 
 export const API = {
-  /** POST — upload .ply, returns { id, metrics } */
+  /** POST — upload .ply, returns { id, count } */
   UPLOAD_SCENE: "/scene",
   /** GET — chunked .ply download */
   GET_SCENE: (id: string) => `/scene/${id}.ply` as const,
