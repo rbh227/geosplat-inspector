@@ -106,9 +106,25 @@ def create_router(
         return UploadResponse(id=state.id, count=state.scene.count())
 
     # ---- GET /scene/{id}.ply : chunked serve of the current alive set ---- #
+    # `?version=original` serves the untouched upload instead, so the editor can
+    # show a before/after WITHOUT changing any server state — it is a viewing
+    # lens, never a checkout. Edits are unaffected either way.
     @router.get("/scene/{scene_id}.ply")
-    async def get_scene_ply(scene_id: str):
+    async def get_scene_ply(scene_id: str, version: str = Query("current")):
         state = _require(scene_id)
+        if version == "original":
+            # No lock and no export: source_path is immutable for the scene's
+            # lifetime, so this cannot race an in-flight edit.
+            return FileResponse(
+                state.source_path,
+                media_type="application/octet-stream",
+                filename=f"{scene_id}-original.ply",
+            )
+        if version != "current":
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown version {version!r} — expected 'current' or 'original'",
+            )
         async with state.lock:
             path = await asyncio.to_thread(state.current_ply_path)  # may export 2M splats
         return FileResponse(
@@ -116,6 +132,15 @@ def create_router(
             media_type="application/octet-stream",
             filename=f"{scene_id}.ply",
         )
+
+    # ---- GET /agent/history : the conversation the backend already keeps --- #
+    # `scene.chat_history` survives a browser reload (it lives with the scene),
+    # so the agent still remembers — only the visible bubbles were lost. This
+    # lets the frontend put them back.
+    @router.get("/agent/history")
+    async def get_agent_history(scene_id: str = Query(...)):
+        state = _require(scene_id)
+        return {"messages": list(getattr(state.scene, "chat_history", []) or [])}
 
     # ---- GET /ids : alive original Gaussian ids (v0.2) ------------------- #
     # After a backend-driven reload the frontend adopts these so its stable

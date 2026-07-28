@@ -17,7 +17,7 @@ import { createAgent, WebSocketTransport, PanelBus } from '@agent'
 import type { Agent, TraceEntry, ProposalState } from '@agent'
 import {
   uploadScene, runAgent, sceneWsUrl, scenePlyUrl, isBackendLoadable,
-  getAliveIds,
+  getAliveIds, getAgentHistory, type SceneVersion,
 } from '../backend/client'
 import { makeRendererBridge } from '../backend/bridge'
 import { classifyAction, completeContent, sceneChanged } from '../backend/trace'
@@ -92,6 +92,12 @@ export interface Session {
   /** Mark the scene as carrying edits the backend never saw, so a transparent
    *  re-upload of the original file can't silently desync it. */
   markLocalOnlyEdit: () => void
+
+  /** True while the viewport shows the untouched upload instead of your edits.
+   *  A viewing lens only — the edited scene on the backend is untouched. */
+  viewingOriginal: boolean
+  /** Switch the viewport between the original upload and the edited scene. */
+  showVersion: (version: SceneVersion) => Promise<void>
 }
 
 export function useSession(opts: SessionOptions): Session {
@@ -114,6 +120,9 @@ export function useSession(opts: SessionOptions): Session {
 
   const [backendSceneId, setBackendSceneId] = useState<string | null>(null)
   const [baselineCount, setBaselineCount] = useState(0)
+  const [viewingOriginal, setViewingOriginal] = useState(false)
+  // Mirrors viewingOriginal for stale-closure-free reads inside send().
+  const viewingOriginalRef = useRef(false)
 
   /** Transient status toast (e.g. "Edit rejected — scene restored"). */
   const showStatus = useCallback((text: string) => {
@@ -203,18 +212,45 @@ export function useSession(opts: SessionOptions): Session {
             false, // no tween: land exactly where the user left off
           )
         }
+        // Put the chat back. The BACKEND keeps the conversation with the scene
+        // (scene.chat_history), so the agent still remembers across a reload —
+        // only the visible bubbles were lost. Best-effort: a scene that
+        // restored fine must not be thrown away because chat didn't.
+        try {
+          const past = await getAgentHistory(rec.sceneId)
+          if (owns() && past.length) {
+            setMessages(past
+              .filter((m) => m.role === 'user' || m.role === 'assistant')
+              .map((m, i) => ({
+                id: `restored-${i}`,
+                role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+                content: m.content,
+                timestamp: 0, // unknown: the backend keeps no timestamps
+              })))
+          }
+        } catch (err) {
+          console.warn('[persistence] chat history restore failed (scene is fine):', err)
+        }
       } catch (err) {
+        // The usual cause is a RESTARTED BACKEND: scenes are in-memory only, so
+        // the id 404s while the browser still holds it. Say so — silently
+        // dropping to the empty page reads as "the app forgot everything".
         console.warn('[persistence] scene restore failed; starting fresh:', err)
         clearPersistedScene()
         if (owns()) {
           setHasScene(false)
           setBackendSceneId(null)
           sceneIdRef.current = null
+          showStatus(
+            rec.fileName
+              ? `The backend no longer has "${rec.fileName}" (it restarts with an empty store) — load it again to continue.`
+              : 'The backend no longer has that scene — load it again to continue.',
+          )
         }
       }
     })()
     return () => { ++loadGenRef.current } // unmount invalidates too
-  }, [restoreOnMount])
+  }, [restoreOnMount, showStatus])
 
   // Persist the latest camera pose as the page unloads, so a refresh lands the
   // user exactly where they were (pagehide is more bfcache-friendly than unload).
@@ -349,6 +385,8 @@ export function useSession(opts: SessionOptions): Session {
   // Render a File locally AND register it with the backend so the agent works.
   const loadFile = useCallback((file: File) => {
     ++loadGenRef.current // invalidate any pending restore/load continuation
+    setViewingOriginal(false) // a new scene is never "the original of" the old one
+    viewingOriginalRef.current = false
     setHasScene(true)
     void (async () => {
       try {
@@ -367,6 +405,8 @@ export function useSession(opts: SessionOptions): Session {
   // Render a splat by URL, view-only (no backend scene).
   const loadUrl = useCallback((url: string, label: string) => {
     ++loadGenRef.current
+    setViewingOriginal(false)
+    viewingOriginalRef.current = false
     setHasScene(true)
     disposeAgent()
     sceneIdRef.current = null
@@ -494,6 +534,18 @@ export function useSession(opts: SessionOptions): Session {
     }])
     setNarration('') // the live line belongs to the agent's activity, not the ask
 
+    // The agent edits and measures the LIVE scene; running it while the
+    // viewport shows the original would act on a scene the operator cannot see.
+    if (viewingOriginalRef.current) {
+      setMessages((prev) => [...prev, {
+        id: `msg-${Date.now()}-assistant`,
+        role: 'assistant',
+        content: 'You are viewing the original upload. Switch back to Edited before running the agent — it works on your live scene.',
+        timestamp: Date.now(),
+      }])
+      return
+    }
+
     // While a proposal is parked, the run is blocked on the operator's verdict.
     // Typing in chat during review IS adjustment feedback — resolve the parked
     // proposal with it instead of starting a SECOND run. A concurrent run's
@@ -613,6 +665,29 @@ export function useSession(opts: SessionOptions): Session {
     localOnlyEditsRef.current = true
   }, [])
 
+  /**
+   * Show the untouched upload or the edited scene. A VIEWING LENS: nothing on
+   * the backend changes, so looking at the original can never cost you edits.
+   *
+   * Editing is refused while the original is showing — the viewer's stable ID
+   * map is indexed against the EDITED alive set, so an edit made against the
+   * original's packing would silently desync the frontend from the backend.
+   * Switching back re-adopts the backend's ids to restore that alignment.
+   */
+  const showVersion = useCallback(async (version: SceneVersion) => {
+    const sceneId = sceneIdRef.current
+    if (!sceneId) return
+    if (version === 'original') {
+      setViewingOriginal(true)
+      viewingOriginalRef.current = true
+      await viewerRef.current?.loadSplat(scenePlyUrl(sceneId, 'original'), { keepCamera: true })
+      return
+    }
+    setViewingOriginal(false)
+    viewingOriginalRef.current = false
+    await reloadAuthoritative(sceneId)
+  }, [reloadAuthoritative])
+
   return {
     viewerRef,
     viewerState,
@@ -642,5 +717,7 @@ export function useSession(opts: SessionOptions): Session {
     onManualInput,
     decideProposal,
     markLocalOnlyEdit,
+    viewingOriginal,
+    showVersion,
   }
 }

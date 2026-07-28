@@ -31,6 +31,12 @@ interface TopBarProps {
   onAnalyze?: () => void
   /** False until a scene is registered with the backend. */
   canAnalyze?: boolean
+  /** True while the viewport shows the untouched upload. */
+  viewingOriginal?: boolean
+  /** Switch the viewport between the upload and the edited scene. */
+  onShowVersion?: (version: 'current' | 'original') => void
+  /** False until a scene is registered (there is no original to compare to). */
+  canCompare?: boolean
 }
 
 /**
@@ -45,6 +51,7 @@ export default function TopBar({
   onImport, onLoadDemo, onResetView,
   canExport, removedCount, onExport,
   onAnalyze, canAnalyze = false,
+  viewingOriginal = false, onShowVersion, canCompare = false,
 }: TopBarProps) {
   const [samplesOpen, setSamplesOpen] = useState(false)
   const samplesRef = useRef<HTMLDivElement>(null)
@@ -115,6 +122,37 @@ export default function TopBar({
             </span>
           )}
         </button>
+
+        {/* Before/after lens. Purely a view: the edited scene on the backend is
+            untouched either way, so looking never costs edits. */}
+        {onShowVersion && (
+          <div className="flex items-center rounded border border-border-mid" role="group" aria-label="Scene version">
+            <button
+              onClick={() => onShowVersion('original')}
+              disabled={!canCompare}
+              title={canCompare
+                ? 'Show the untouched upload (view-only — your edits are kept)'
+                : 'Load a .ply first'}
+              className={`px-2 py-1 font-mono text-[11px] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+                viewingOriginal ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/5'
+              }`}
+            >
+              Original
+            </button>
+            <button
+              onClick={() => onShowVersion('current')}
+              disabled={!canCompare}
+              title="Show your edited scene"
+              className={`px-2 py-1 font-mono text-[11px] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+                !viewingOriginal ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/5'
+              }`}
+            >
+              Edited
+            </button>
+          </div>
+        )}
+
+        <span className="mx-1 h-[16px] w-px bg-border-mid" />
 
         {/* Hand the cleaned scene to the look-only analyst window. */}
         {onAnalyze && (

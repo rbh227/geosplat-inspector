@@ -48,6 +48,7 @@ export default function EditorPage() {
   const {
     viewerRef, viewerState, hasScene, backendSceneId, baselineCount, sceneIdRef,
     reloadAuthoritative, showStatus, status, isThinking, agentPaused,
+    viewingOriginal, showVersion,
   } = session
 
   // Model picker (in-app settings): fetch the current selection once on mount
@@ -275,7 +276,10 @@ export default function EditorPage() {
     setStage(next)
   }, [isThinking, viewerRef])
 
-  const editingEnabled = stage === 'clean'
+  // Editing is refused while the original upload is on screen: the stable ID
+  // map is indexed against the EDITED alive set, so an edit made against the
+  // original's packing would silently desync the frontend from the backend.
+  const editingEnabled = stage === 'clean' && !viewingOriginal
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-bg-deep">
@@ -315,6 +319,9 @@ export default function EditorPage() {
             window.open(analystHref(backendSceneId), '_blank', 'noopener')
           }
         }}
+        canCompare={backendSceneId !== null}
+        viewingOriginal={viewingOriginal}
+        onShowVersion={(v) => { void showVersion(v) }}
       />
 
       {/* Body: viewport + right panel */}
@@ -428,8 +435,24 @@ export default function EditorPage() {
               </div>
             )}
 
+            {/* Viewing the upload: say so, and say the edits are safe. */}
+            {viewingOriginal && (
+              <div className="absolute top-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded border border-sky-400/40 bg-black/80 px-3 py-1.5">
+                <span className="font-mono text-xs text-sky-200/90">
+                  Original upload — editing disabled, your edits are kept
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { void showVersion('current') }}
+                  className="rounded border border-white/25 bg-white/10 px-2 py-0.5 font-mono text-[11px] text-white hover:bg-white/20 cursor-pointer"
+                >
+                  Back to Edited
+                </button>
+              </div>
+            )}
+
             {/* Transient status (edit rejected, etc.) */}
-            {!agentPaused && !proposal && status && (
+            {!agentPaused && !proposal && !viewingOriginal && status && (
               <div className="absolute top-3 left-1/2 z-30 -translate-x-1/2 rounded border border-white/20 bg-black/70 px-3 py-1.5 font-mono text-xs text-white/90">
                 {status}
               </div>

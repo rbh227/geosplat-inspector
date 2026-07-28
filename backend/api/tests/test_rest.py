@@ -132,3 +132,50 @@ def test_unknown_scene_and_bad_op(client):
         sid = client.post("/scene", files={"file": ("m.ply", f, "application/octet-stream")}).json()["id"]
     bad = client.post("/edit", json={"scene_id": sid, "op": "does_not_exist", "params": {}})
     assert bad.status_code == 400
+
+
+def test_original_version_serves_the_untouched_upload(client):
+    """The before/after toggle is a viewing lens: ?version=original returns the
+    upload regardless of edits, and does not disturb the edited scene."""
+    with open(MESSY, "rb") as f:
+        scene_id = client.post(
+            "/scene", files={"file": ("m.ply", f, "application/octet-stream")}
+        ).json()["id"]
+
+    n_original = _ply_vertex_count(client.get(f"/scene/{scene_id}.ply").content)
+
+    r = client.post("/edit", json={
+        "scene_id": scene_id, "op": "opacity_threshold", "params": {"min_alpha": 0.5},
+    })
+    assert r.status_code == 200, r.text
+    n_edited = r.json()["after"]
+    assert n_edited < n_original
+
+    # current reflects the edit; original does not
+    assert _ply_vertex_count(client.get(f"/scene/{scene_id}.ply").content) == n_edited
+    orig = client.get(f"/scene/{scene_id}.ply", params={"version": "original"})
+    assert orig.status_code == 200
+    assert _ply_vertex_count(orig.content) == n_original
+
+    # ...and asking for the original did not revert anything
+    assert _ply_vertex_count(client.get(f"/scene/{scene_id}.ply").content) == n_edited
+
+
+def test_unknown_version_is_rejected(client):
+    with open(MESSY, "rb") as f:
+        scene_id = client.post(
+            "/scene", files={"file": ("m.ply", f, "application/octet-stream")}
+        ).json()["id"]
+    r = client.get(f"/scene/{scene_id}.ply", params={"version": "pristine"})
+    assert r.status_code == 400
+
+
+def test_agent_history_is_served_for_reload_rehydration(client):
+    with open(MESSY, "rb") as f:
+        scene_id = client.post(
+            "/scene", files={"file": ("m.ply", f, "application/octet-stream")}
+        ).json()["id"]
+    r = client.get("/agent/history", params={"scene_id": scene_id})
+    assert r.status_code == 200
+    assert r.json() == {"messages": []}
+    assert client.get("/agent/history", params={"scene_id": "nope"}).status_code == 404

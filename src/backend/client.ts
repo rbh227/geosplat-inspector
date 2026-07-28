@@ -21,9 +21,31 @@ export interface UploadResult {
   count: number
 }
 
-/** Absolute-or-relative URL of the backend-served (current alive set) .ply. */
-export function scenePlyUrl(sceneId: string): string {
-  return `${BACKEND_URL}/scene/${sceneId}.ply`
+/** Which copy of a scene to fetch: the live edited set, or the untouched upload. */
+export type SceneVersion = 'current' | 'original'
+
+/** Absolute-or-relative URL of the backend-served .ply. `original` returns the
+ *  upload as-is — a viewing lens for before/after, it changes no server state. */
+export function scenePlyUrl(sceneId: string, version: SceneVersion = 'current'): string {
+  const query = version === 'original' ? '?version=original' : ''
+  return `${BACKEND_URL}/scene/${sceneId}.ply${query}`
+}
+
+export interface AgentHistoryMessage {
+  role: string
+  content: string
+}
+
+/** GET /agent/history — the conversation the BACKEND keeps for this scene.
+ *  It outlives a browser reload, so the bubbles can be put back. */
+export async function getAgentHistory(sceneId: string): Promise<AgentHistoryMessage[]> {
+  const res = await fetch(`${BACKEND_URL}/agent/history?scene_id=${encodeURIComponent(sceneId)}`)
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`agent history fetch failed (${res.status}): ${detail}`)
+  }
+  const body = (await res.json()) as { messages?: AgentHistoryMessage[] }
+  return body.messages ?? []
 }
 
 /** WebSocket URL for a scene's renderer channel. */
