@@ -260,6 +260,9 @@ def create_router(
                 detail="no renderer connected for this scene — completion events "
                        "would be dropped silently; open the viewer first",
             )
+        # Stale stop/pause signals from the previous run's end-race window must
+        # not kill or invisibly pause this run's first action.
+        manager.reset_run_flags(req.scene_id)
         channel = WSChannel(req.scene_id, manager)
 
         async def _drive():

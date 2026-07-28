@@ -24,8 +24,12 @@ export function classifyAction(name: string): AgentAction['type'] {
  * simply ran out of turns.
  */
 export function completeContent(detail: Record<string, unknown> | undefined): string {
-  const error = detail?.error ? String(detail.error) : null
-  if (error) return `Error: ${error}`
+  // An error KEY with an empty value is still an error (a bare TimeoutError
+  // stringifies to "") — it must never fall through to "Done.".
+  if (detail && 'error' in detail && detail.error !== null && detail.error !== undefined) {
+    const text = String(detail.error)
+    return text ? `Error: ${text}` : 'Error: the run failed unexpectedly (no detail — see backend logs).'
+  }
   const answer = detail?.answer ? String(detail.answer) : null
   if (answer) return answer
   const status = detail?.status ? String(detail.status) : null

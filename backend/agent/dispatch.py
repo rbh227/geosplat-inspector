@@ -176,7 +176,19 @@ class ToolDispatcher:
             "tool": call.name,
             "args": call.args,
         }
-        resp = await self.channel.send_command(cmd)
+        try:
+            resp = await self.channel.send_command(cmd)
+        except Exception as exc:  # noqa: BLE001 — timeout / renderer gone
+            # One flaky frontend command must NOT abort the whole run (and a
+            # bare TimeoutError has an EMPTY str, which used to surface as a
+            # blank error). Feed it back as a failed tool instead.
+            return {
+                "ok": False,
+                "name": call.name,
+                "error": f"frontend command failed ({type(exc).__name__}): "
+                         f"{exc or 'no reply from the viewer within the timeout'} "
+                         "— the viewer may be busy; try a different action",
+            }
         out: dict[str, Any] = {"ok": True, "name": call.name, "result": resp}
         if call.name in VISION_TOOLS:
             out["frames"] = _extract_frames(resp)

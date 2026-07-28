@@ -187,14 +187,28 @@ def _parse_response(raw: Any) -> ModelResponse:
     choice = (getattr(raw, "choices", None) or [None])[0]
     message = getattr(choice, "message", None)
     text = getattr(message, "content", None)
+    truncated = getattr(choice, "finish_reason", None) == "length"
     tool_calls: list[ToolCall] = []
+    notes: list[str] = []
     for tc in getattr(message, "tool_calls", None) or []:
         fn = getattr(tc, "function", None)
+        name = getattr(fn, "name", "")
         try:
             args = json.loads(getattr(fn, "arguments", "") or "{}")
         except json.JSONDecodeError:
-            args = {}
-        tool_calls.append(ToolCall(name=getattr(fn, "name", ""), args=args))
+            # NEVER coerce to {} silently: a length-truncated answer() would
+            # complete the run with a BLANK answer, and a truncated edit call
+            # would dispatch with missing args and a misleading error. Drop
+            # the call and tell the model (via text) so it retries smaller.
+            notes.append(
+                f"(your {name} tool call had truncated/invalid JSON arguments"
+                f"{' — you hit the output token limit' if truncated else ''}; "
+                f"retry it with shorter arguments)"
+            )
+            continue
+        tool_calls.append(ToolCall(name=name, args=args))
+    if notes:
+        text = " ".join(filter(None, [text, *notes]))
     return ModelResponse(text=text, tool_calls=tool_calls, raw=raw)
 
 

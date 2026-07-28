@@ -58,8 +58,28 @@ class ConnectionManager:
                 await old.close()
             except Exception:
                 pass
+            # Commands in flight on the OLD socket can never be answered by the
+            # replacement (it never saw them) — fail them now or they park
+            # forever (a proposal has NO timeout: the run would hang and the
+            # scene would 409 every future /agent/run).
+            self._fail_pending(scene_id, "renderer reconnected mid-command")
         self._conns[scene_id] = websocket
         self._interrupted.discard(scene_id)
+
+    def _fail_pending(self, scene_id: str, reason: str) -> None:
+        for corr_id, sid in list(self._pending_scene.items()):
+            if sid == scene_id:
+                fut = self._pending.pop(corr_id, None)
+                self._pending_scene.pop(corr_id, None)
+                if fut and not fut.done():
+                    fut.set_exception(ConnectionError(reason))
+
+    def reset_run_flags(self, scene_id: str) -> None:
+        """Clear stale interrupt/pause state before a NEW run starts — signals
+        sent in the previous run's end-race window must not kill or invisibly
+        pause the next run's first action."""
+        self._interrupted.discard(scene_id)
+        self._paused.discard(scene_id)
 
     def disconnect(self, scene_id: str, websocket: Any | None = None) -> None:
         """Remove a scene's renderer. With `websocket` given, remove it only if
@@ -69,13 +89,13 @@ class ConnectionManager:
         if websocket is not None and self._conns.get(scene_id) is not websocket:
             return
         self._conns.pop(scene_id, None)
-        # fail any in-flight commands for this scene
-        for corr_id, sid in list(self._pending_scene.items()):
-            if sid == scene_id:
-                fut = self._pending.pop(corr_id, None)
-                self._pending_scene.pop(corr_id, None)
-                if fut and not fut.done():
-                    fut.set_exception(ConnectionError("renderer disconnected"))
+        self._fail_pending(scene_id, "renderer disconnected")
+        # A disconnect must also release a paused loop (wait_resume would
+        # otherwise park forever with nobody left to press Resume).
+        ev = self._resume_events.get(scene_id)
+        if ev is not None:
+            ev.set()
+        self._paused.discard(scene_id)
 
     def is_connected(self, scene_id: str) -> bool:
         return scene_id in self._conns

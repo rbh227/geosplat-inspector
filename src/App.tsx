@@ -697,7 +697,26 @@ export default function App() {
           return runAgent(sceneId, text, stageRef.current)
         })
         .catch((err) => {
-          const errMsg = `Error: ${err instanceof Error ? err.message : String(err)}. Is the backend running on :8000?`
+          const text404 = err instanceof Error ? err.message : String(err)
+          // A restarted backend loses its in-memory scenes: the held scene id
+          // 404s while the page still shows the splat. Re-register the kept
+          // file and rerun instead of surfacing a dead-end error.
+          if (/404/.test(text404) && lastPlyFileRef.current && !localOnlyEditsRef.current) {
+            const file = lastPlyFileRef.current
+            disposeAgent()
+            sceneIdRef.current = null
+            setNarration('Backend was restarted — re-uploading the scene…')
+            void registerScene(file).then(() => {
+              if (sceneIdRef.current) {
+                startRun(sceneIdRef.current)
+              } else {
+                setIsThinking(false)
+                showStatus('Re-upload failed — is the backend running on :8000?')
+              }
+            })
+            return
+          }
+          const errMsg = `Error: ${text404}. Is the backend running on :8000?`
           setMessages((prev) => [...prev, {
             id: `msg-${Date.now()}-error`,
             role: 'assistant',
@@ -750,7 +769,7 @@ export default function App() {
     }
 
     startRun(sceneIdRef.current)
-  }, [ensureAgent, registerScene])
+  }, [ensureAgent, registerScene, disposeAgent, showStatus])
 
   // Understand is look-only (R15): leaving Clean drops any active tool/selection.
   const handleStageChange = useCallback((next: Stage) => {

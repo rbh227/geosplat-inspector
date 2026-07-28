@@ -80,6 +80,9 @@ def _looks_like_intent(text: str) -> bool:
     t = (text or "").strip().lower()
     if t.endswith(":"):
         return True
+    # "let me know ..." is a closing courtesy, not a plan — without this a
+    # perfectly good final answer gets bounced (and could falsely stall).
+    t = t.replace("let me know", "")
     return any(m in t[-200:] for m in _INTENT_MARKERS)
 
 
@@ -180,6 +183,14 @@ class AgentLoop:
 
         for step in range(1, self.config.max_steps + 1):
             self._result.steps = step
+            if step == self.config.max_steps:
+                # Land the plane: a run that dies at max_steps mid-motion reads
+                # as an unexplained stop. Spend the final turn on a summary.
+                self._nudge_sync(
+                    "FINAL step — your budget is exhausted. Call answer(text=...) "
+                    "NOW with a grounded summary of what you did and found. "
+                    "No other tool."
+                )
             try:
                 response = await asyncio.to_thread(
                     self.provider.generate,
@@ -238,7 +249,7 @@ class AgentLoop:
                 # Perception barrier: anything queued after a capture in this
                 # same response would execute before the model ever sees the
                 # frame. Drop the tail and tell the model why.
-                if call.name in VISION_TOOLS and idx < len(calls) - 1:
+                if call.name in VISION_TOOLS and idx < len(calls) - 1 and self._pending_frames:
                     dropped = [c.name for c in calls[idx + 1:]]
                     self._nudge_sync(
                         f"capture taken — dropped {len(dropped)} queued action(s) "
@@ -601,6 +612,14 @@ class AgentLoop:
 
     # -- answer / grounding ----------------------------------------------
     async def _try_answer(self, text: str) -> bool:
+        # An empty answer is always a defect upstream (typically truncated
+        # tool-call JSON) — completing with a blank chat bubble helps no one.
+        if not text.strip():
+            self._nudge_sync(
+                "answer() arrived with empty text — call it again with the "
+                "full result text."
+            )
+            return False
         # A plan is NEVER the answer: "Let me now clean up the floaters:" would
         # end the run with the work undone and read like the agent gave up
         # mid-thought. Bounce it; a model that does nothing BUT plan ends the
@@ -618,7 +637,10 @@ class AgentLoop:
                 "while working, use narrate()."
             )
             return False
-        if self.config.enforce_grounding:
+        # A clarifying QUESTION asserts nothing and the prompt explicitly
+        # invites one — exempt it from the must-have-measured rule, which
+        # otherwise rejects "which cluster do you mean?" on the first turn.
+        if self.config.enforce_grounding and not text.rstrip().endswith("?"):
             try:
                 self._ledger.check(text)
             except GroundingError as exc:
