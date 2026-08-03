@@ -194,6 +194,40 @@ function framingDistance(camera: THREE.PerspectiveCamera, radius: number): numbe
 }
 
 /** Compute a pose that frames the given box, viewed from the current direction. */
+/**
+ * Deterministic analyst-survey poses around the scene core (spec
+ * 2026-08-03-app-owned-survey-analyst): a near-top-down view plus two
+ * opposite obliques, all at the distance that frames the core in the
+ * camera's limiting FOV. Top-down is 85°, not 90° — a straight-down
+ * lookAt with +Y up is degenerate.
+ */
+export function surveyPoses(
+  camera: THREE.PerspectiveCamera,
+  core: { center: [number, number, number]; radius: number },
+): { label: string; position: THREE.Vector3; target: THREE.Vector3 }[] {
+  const c = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+  const dist = framingDistance(camera, core.radius)
+  const DEG = Math.PI / 180
+  const pose = (label: string, elevationDeg: number, azimuthDeg: number) => {
+    const el = elevationDeg * DEG
+    const az = azimuthDeg * DEG
+    return {
+      label,
+      position: new THREE.Vector3(
+        c.x + dist * Math.cos(el) * Math.cos(az),
+        c.y + dist * Math.sin(el),
+        c.z + dist * Math.cos(el) * Math.sin(az),
+      ),
+      target: c.clone(),
+    }
+  }
+  return [
+    pose('top-down', 85, 45),
+    pose('oblique view from the north-east', 35, 45),
+    pose('oblique view from the south-west', 35, 225),
+  ]
+}
+
 export function poseForBox(
   bridge: RendererBridge,
   box: THREE.Box3,

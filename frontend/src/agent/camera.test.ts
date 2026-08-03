@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { clampToCore, coreInView, poseForBox, resolveAimPoint, sceneCoverage, toRenderSpace } from './camera.ts'
+import { clampToCore, coreInView, poseForBox, resolveAimPoint, sceneCoverage, surveyPoses, toRenderSpace } from './camera.ts'
 import { computeCoreBounds } from '../../../src/viewer/framing.ts'
 import type { RendererBridge } from './types.ts'
 
@@ -210,5 +210,47 @@ describe('coreInView (direction-aware coverage companion)', () => {
   })
   it('false with no core', () => {
     expect(coreInView(cam([0, 0, 10], [0, 0, 0]), null)).toBe(false)
+  })
+})
+
+describe('surveyPoses', () => {
+  const camera = new THREE.PerspectiveCamera(60, 16 / 9)
+  const core = { center: [10, 2, -5] as [number, number, number], radius: 4 }
+
+  it('returns three labeled poses, all targeting the core center', () => {
+    const poses = surveyPoses(camera, core)
+    expect(poses.map((p) => p.label)).toEqual([
+      'top-down',
+      'oblique view from the north-east',
+      'oblique view from the south-west',
+    ])
+    for (const p of poses) {
+      expect(p.target.toArray()).toEqual(core.center)
+    }
+  })
+
+  it('places every pose at the same framing distance, outside the core sphere', () => {
+    const poses = surveyPoses(camera, core)
+    const c = new THREE.Vector3(...core.center)
+    const dists = poses.map((p) => p.position.distanceTo(c))
+    for (const d of dists) {
+      expect(d).toBeGreaterThan(core.radius)
+      expect(Math.abs(d - dists[0])).toBeLessThan(1e-6)
+    }
+  })
+
+  it('top-down sits high above the center; obliques at moderate, opposite azimuths', () => {
+    const [top, ne, sw] = surveyPoses(camera, core)
+    const elevation = (p: THREE.Vector3) => {
+      const dy = p.y - core.center[1]
+      const dh = Math.hypot(p.x - core.center[0], p.z - core.center[2])
+      return (Math.atan2(dy, dh) * 180) / Math.PI
+    }
+    expect(elevation(top.position)).toBeGreaterThan(80)
+    expect(elevation(ne.position)).toBeCloseTo(35, 0)
+    expect(elevation(sw.position)).toBeCloseTo(35, 0)
+    const h = (p: THREE.Vector3) =>
+      new THREE.Vector2(p.x - core.center[0], p.z - core.center[2]).normalize()
+    expect(h(ne.position).dot(h(sw.position))).toBeLessThan(-0.99)
   })
 })
