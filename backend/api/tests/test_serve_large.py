@@ -73,7 +73,11 @@ def big_ply():
             f.write(chunk)
             written += len(chunk)
     yield path
-    os.remove(path)
+    # The server subprocess registers this path as a scene source, and the
+    # store OWNS scene files: its shutdown clear() deletes them. Only mop up
+    # if the server didn't get there (e.g. it was killed).
+    if os.path.exists(path):
+        os.remove(path)
 
 
 def test_large_ply_streams_without_memory_blowup(big_ply):

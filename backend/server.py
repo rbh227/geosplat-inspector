@@ -11,6 +11,7 @@ baked into the image.
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,7 @@ from backend.api.routes import create_router
 from backend.api.settings import get_store
 from backend.api.state import SceneStore
 from backend.api.stub_agent import StubAgentRunner
+from backend.api.tempfiles import sweep_stale
 from backend.api.stub_engine import StubBackend
 from backend.api.ws import ConnectionManager
 
@@ -47,7 +49,14 @@ def _select_runner() -> AgentRunner:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="GeoSplat Inspector", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # reclaim scene files left by backends that died without shutting down
+        sweep_stale()
+        yield
+        await app.state.store.clear()
+
+    app = FastAPI(title="GeoSplat Inspector", version="0.1.0", lifespan=lifespan)
 
     # local-only tool, but /config/model can now accept a pasted API key, so
     # CORS is scoped to the known dev-server origins rather than "*".

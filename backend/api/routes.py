@@ -46,6 +46,7 @@ from backend.api.settings import (
     registry_entry,
 )
 from backend.api.state import SceneStore
+from backend.api.tempfiles import scene_temp_dir
 from backend.api.ws import DEFAULT_CLIENT, ConnectionManager, WSChannel
 
 _UPLOAD_CHUNK = 1024 * 1024  # 1 MiB streaming copy
@@ -85,7 +86,7 @@ def create_router(
     @router.post("/scene", response_model=UploadResponse)
     async def upload_scene(file: UploadFile = File(...)):
         # stream the upload to a temp file (never read the whole .ply into RAM)
-        fd, tmp_path = tempfile.mkstemp(suffix=".ply", prefix="upload_")
+        fd, tmp_path = tempfile.mkstemp(suffix=".ply", prefix="upload_", dir=scene_temp_dir())
         os.close(fd)
         try:
             with open(tmp_path, "wb") as out:

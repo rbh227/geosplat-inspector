@@ -16,6 +16,7 @@ import tempfile
 import uuid
 
 from backend.api.engine import Scene, SceneBackend
+from backend.api.tempfiles import scene_temp_dir
 
 
 class SceneState:
@@ -61,7 +62,9 @@ class SceneState:
         if count == self._source_count:
             return self.source_path
         if self._export_path is None:
-            fd, path = tempfile.mkstemp(suffix=".ply", prefix=f"scene_{self.id}_")
+            fd, path = tempfile.mkstemp(
+                suffix=".ply", prefix=f"scene_{self.id}_", dir=scene_temp_dir()
+            )
             os.close(fd)
             self._export_path = path
         stamp = (self._epoch, count)
@@ -71,11 +74,14 @@ class SceneState:
         return self._export_path
 
     def cleanup(self) -> None:
-        if self._export_path and os.path.exists(self._export_path):
-            try:
-                os.remove(self._export_path)
-            except OSError:
-                pass
+        # The source is the app's own temp copy of the upload (routes.py writes
+        # it into scene_temp_dir()), so it goes with the scene.
+        for path in (self._export_path, self.source_path):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
 
 class SceneStore:
@@ -109,6 +115,14 @@ class SceneStore:
         async with self._lock:
             state = self._scenes.pop(scene_id, None)
         if state:
+            state.cleanup()
+
+    async def clear(self) -> None:
+        """Drop every scene and delete its temp files (shutdown path)."""
+        async with self._lock:
+            states = list(self._scenes.values())
+            self._scenes.clear()
+        for state in states:
             state.cleanup()
 
     def __len__(self) -> int:
