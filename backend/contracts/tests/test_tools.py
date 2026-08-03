@@ -24,10 +24,10 @@ def test_no_duplicate_names():
 def test_v02_counts():
     # v0.3 added `turn`, v0.4 added `reframe` (both frontend): 22 -> 24 frontend.
     # v0.5 adds the four proposal / good-cube frontend tools: 24 -> 28 frontend,
-    # 42 -> 46 total.
-    assert len(FRONTEND_TOOLS) == 28
+    # 42 -> 46 total. v0.6 adds survey_capture: 28 -> 29 frontend, 46 -> 47 total.
+    assert len(FRONTEND_TOOLS) == 29
     assert len(BACKEND_TOOLS) == 18
-    assert len(TOOL_REGISTRY) == 46
+    assert len(TOOL_REGISTRY) == 47
 
 
 def test_v03_turn_tool_present_and_routed():
@@ -75,3 +75,8 @@ def test_proposal_decision_fields_v06():
     assert "verdict" in PROPOSAL_DECISION_FIELDS
     assert "feedback" in PROPOSAL_DECISION_FIELDS
     assert "box" in PROPOSAL_DECISION_FIELDS
+
+
+def test_v06_survey_capture_present_and_routed():
+    assert "survey_capture" in FRONTEND_TOOLS
+    assert TOOL_BY_NAME["survey_capture"].runs_on == "frontend"

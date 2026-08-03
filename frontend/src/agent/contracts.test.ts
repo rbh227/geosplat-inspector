@@ -5,10 +5,11 @@ import type { WSCommandType } from '../contracts.ts'
 // Mirror-drift guard: these counts and names must match the Python registry
 // (backend/contracts/tools.py, asserted in backend/contracts/tests/test_tools.py).
 describe('contracts v0.2 mirror', () => {
-  it('matches the Python registry counts (28 frontend / 18 backend)', () => {
+  it('matches the Python registry counts (29 frontend / 18 backend)', () => {
     // v0.3 added `turn`, v0.4 added `reframe`, v0.5 added the four proposal /
-    // good-cube tools (all frontend): 22 -> 24 -> 28.
-    expect(FRONTEND_TOOLS.length).toBe(28)
+    // good-cube tools, v0.6 added `survey_capture` (all frontend):
+    // 22 -> 24 -> 28 -> 29.
+    expect(FRONTEND_TOOLS.length).toBe(29)
     expect(BACKEND_TOOLS.length).toBe(18)
   })
 
@@ -16,6 +17,10 @@ describe('contracts v0.2 mirror', () => {
     const fe = new Set<string>(FRONTEND_TOOLS)
     expect(fe.has('turn')).toBe(true)
     expect(fe.has('reframe')).toBe(true)
+  })
+
+  it('carries the v0.6 app-owned survey tool', () => {
+    expect(new Set<string>(FRONTEND_TOOLS).has('survey_capture')).toBe(true)
   })
 
   it('carries the v0.5 proposal / good-cube tools', () => {

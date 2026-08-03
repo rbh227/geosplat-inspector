@@ -86,6 +86,8 @@ export interface ToolEntry {
 export const FRONTEND_TOOLS = [
   "look_at", "set_view", "orbit", "dolly", "scan_pause",
   "frame_object", "reset_view", "capture_frame", "capture_orbit",
+  // v0.6 — app-owned analyst survey (app dispatches; never offered to the model)
+  "survey_capture",
   "drop_marker", "clear_markers", "narrate", "reset_trail",
   // v0.2 — selection
   "select_by_brush", "select_by_lasso", "select_by_polygon",

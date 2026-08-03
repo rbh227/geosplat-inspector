@@ -72,6 +72,8 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
     "reset_trail": "camera_move",
     "capture_frame": "capture_request",
     "capture_orbit": "capture_request",
+    # v0.6 — app-owned analyst survey (loop-dispatched, never model-called)
+    "survey_capture": "capture_request",
     "drop_marker": "drop_marker",
     "clear_markers": "clear_markers",
     "narrate": "narrate",

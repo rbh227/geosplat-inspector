@@ -8,7 +8,9 @@ v0.4 adds `reframe` — an app-owned "return to the operator's start view" recov
 op (docs/plans/2026-07-20-002). v0.5 adds the proposal / good-cube tools
 (get_core_bounds, show_box_preview, adjust_box_preview, propose_decision) for the
 propose-and-review cleanup flow (docs/superpowers/specs/2026-07-22-agent-cleanup-
-proposals-design.md). Additions only — nothing is removed or renamed.
+proposals-design.md). v0.6 adds `survey_capture` — the app-owned analyst
+survey (docs/superpowers/specs/2026-08-03-app-owned-survey-analyst-design.md).
+Additions only — nothing is removed or renamed.
 """
 
 from __future__ import annotations
@@ -98,6 +100,18 @@ TOOL_REGISTRY: list[ToolEntry] = [
         },
         "required": ["center", "n"],
     }, "image bytes[]"),
+    # v0.6 — app-owned survey (the app dispatches it; never offered to the
+    # model): operator's view + framed top-down/oblique views in one round trip.
+    ToolEntry("survey_capture", "frontend", {
+        "type": "object",
+        "properties": {
+            "if_revision_not": {
+                "type": "integer",
+                "description": "Skip the flight and return {unchanged} if the "
+                               "scene revision still equals this value",
+            },
+        },
+    }, "image bytes[] + labels + revision"),
 
     # ── frontend (display) ──
     ToolEntry("drop_marker", "frontend", {

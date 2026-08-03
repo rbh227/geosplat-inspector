@@ -31,7 +31,7 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
 )
 
 # Capture tools count against the vision budget (R4/R5).
-VISION_TOOLS: frozenset[str] = frozenset({"capture_frame", "capture_orbit"})
+VISION_TOOLS: frozenset[str] = frozenset({"capture_frame", "capture_orbit", "survey_capture"})
 
 
 def _now() -> float:
