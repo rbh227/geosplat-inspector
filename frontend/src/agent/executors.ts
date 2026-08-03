@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three'
 import type { MoveDirection, PerceptTag, RendererBridge, RotateDirection, ToolResult } from './types.ts'
-import { animateOrbit, animateTo, clampToCore, coreInView, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, toRenderSpace } from './camera.ts'
+import { animateOrbit, animateTo, clampToCore, coreInView, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, surveyPoses, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
 import { adjustBox, projectBoxToScreen, viewBasisFromCamera } from './proposalBox.ts'
 import type { AdjustOpts, Box } from './proposalBox.ts'
@@ -353,6 +353,36 @@ export class FrontendExecutors {
       if (bs) percept.box_screen = bs
     }
     return { png_base64, percept }
+  }
+
+  /** App-owned analyst survey (spec 2026-08-03): capture the operator's view,
+   *  then fly framed top-down + oblique poses and capture each. The model
+   *  never calls this — the agent loop dispatches it before the first model
+   *  turn of an Understand run. `if_revision_not` lets the loop skip the
+   *  flight when the scene hasn't changed since the stored survey. */
+  async survey_capture(args: { if_revision_not?: number }): Promise<ToolResult> {
+    const revision = this.bridge.getSceneRevision()
+    if (args.if_revision_not !== undefined && args.if_revision_not === revision) {
+      return { unchanged: true, revision }
+    }
+    const frames_base64: string[] = []
+    const labels: string[] = []
+
+    // Frame 1 — the operator's current view ("the angle I just put in").
+    frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge)))
+    labels.push("operator's view")
+
+    const core = this.bridge.getSceneCore()
+    if (core && core.radius > 0) {
+      for (const pose of surveyPoses(this.bridge.getCamera(), core)) {
+        await animateTo(this.bridge, pose.position, pose.target, 600)
+        await sleep(250) // let Spark's async depth-sort settle at the new pose
+        frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge)))
+        labels.push(pose.label)
+      }
+    }
+    this.breadcrumb()
+    return { frames_base64, labels, revision }
   }
 
   async capture_orbit(args: { center: number[]; n: number; radius?: number }): Promise<ToolResult> {

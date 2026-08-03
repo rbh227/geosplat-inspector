@@ -89,6 +89,9 @@ export type ToolResult =
   | { ok: false; error: string }
   | { png_base64: string; percept?: PerceptTag }  // capture_frame
   | { frames_base64: string[] }   // capture_orbit
+  // v0.6 survey_capture: full survey, or the unchanged-revision short-circuit
+  | { frames_base64: string[]; labels: string[]; revision: number }
+  | { unchanged: true; revision: number }
 
 /** Payload carried by a `camera_move` command (which specific camera tool). */
 export interface CameraMovePayload {

@@ -77,14 +77,16 @@ export class AgentWSClient {
           break
         }
         case 'capture_request': {
-          // Dispatcher envelope: {tool: 'capture_frame'|'capture_orbit', args}.
+          // Dispatcher envelope: {tool: 'capture_frame'|'capture_orbit'|'survey_capture', args}.
           const { tool, args } = p as unknown as {
             tool?: string
-            args?: { center: number[]; n: number; radius?: number }
+            args?: { center: number[]; n: number; radius?: number; if_revision_not?: number }
           }
-          const result = tool === 'capture_orbit' && args
-            ? await this.executors.capture_orbit(args)
-            : await this.executors.capture_frame()
+          const result = tool === 'survey_capture'
+            ? await this.executors.survey_capture(args ?? {})
+            : tool === 'capture_orbit' && args
+              ? await this.executors.capture_orbit(args as { center: number[]; n: number; radius?: number })
+              : await this.executors.capture_frame()
           this.reply(cmd.id, result as Record<string, unknown>)
           break
         }
