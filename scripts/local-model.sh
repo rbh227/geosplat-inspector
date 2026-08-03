@@ -46,6 +46,18 @@ TUNNEL_PATTERN="${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}"
 
 ssh_run() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_HOST" "$@"; }
 
+# Does the remote server answer /v1/models with EXACTLY our configured model?
+serving_our_model() {
+  ssh_run "curl -s -m 3 http://127.0.0.1:${REMOTE_PORT}/v1/models" | grep -q "$(basename "$MODEL")"
+}
+
+launch_server() {
+  ssh_run "rm -f ${REMOTE_LOG}; tmux new-session -d -s ${TMUX_SESSION} \
+    'CUDA_VISIBLE_DEVICES=${GPU_ID} ${VENV}/bin/vllm serve ${MODEL} \
+    --host 127.0.0.1 --port ${REMOTE_PORT} ${SERVE_ARGS} 2>&1 | tee ${REMOTE_LOG}'"
+  echo "server: launched, waiting for readiness (cold start ~2 min)..."
+}
+
 tunnel_up() {
   if pgrep -f "ssh .*-L ${TUNNEL_PATTERN}" >/dev/null; then
     echo "tunnel: already running"
@@ -67,15 +79,23 @@ tunnel_down() {
 case "${1:-}" in
   up)
     echo "== starting ${MODEL} on ${SSH_HOST} (GPU ${GPU_ID}) =="
-    ssh_run "tmux has-session -t ${TMUX_SESSION} 2>/dev/null" && {
-      echo "server: tmux session '${TMUX_SESSION}' already exists — reusing"; } || {
-      ssh_run "rm -f ${REMOTE_LOG}; tmux new-session -d -s ${TMUX_SESSION} \
-        'CUDA_VISIBLE_DEVICES=${GPU_ID} ${VENV}/bin/vllm serve ${MODEL} \
-        --host 127.0.0.1 --port ${REMOTE_PORT} ${SERVE_ARGS} 2>&1 | tee ${REMOTE_LOG}'"
-      echo "server: launched, waiting for readiness (cold start ~2 min)..."
-    }
+    if ssh_run "tmux has-session -t ${TMUX_SESSION} 2>/dev/null"; then
+      # Reuse ONLY a session serving OUR model. A leftover session serving a
+      # different model used to be reused and then failed the readiness grep
+      # until timeout (observed live 2026-08-03 switching 8B -> 32B).
+      if serving_our_model; then
+        echo "server: tmux session '${TMUX_SESSION}' already serving ${MODEL} — reusing"
+      else
+        echo "server: session '${TMUX_SESSION}' exists but does NOT serve ${MODEL} — restarting it"
+        ssh_run "tmux kill-session -t ${TMUX_SESSION} 2>/dev/null || true"
+        sleep 5  # let the old server release its GPUs
+        launch_server
+      fi
+    else
+      launch_server
+    fi
     for i in $(seq 1 45); do
-      if ssh_run "curl -s -m 3 http://127.0.0.1:${REMOTE_PORT}/v1/models" | grep -q "$(basename "$MODEL")"; then
+      if serving_our_model; then
         echo "server: READY"
         tunnel_up
         sleep 2

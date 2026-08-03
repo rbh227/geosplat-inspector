@@ -25,6 +25,17 @@ MODEL_PORT="${VLLM_LOCAL_PORT:-8001}"
 BACKEND_PORT=8000
 VITE_PORT=5173
 
+# ONE model identity end to end (Codex review P1): scripts/local-model.env's
+# VLLM_MODEL drives BOTH the vLLM server (local-model.sh sources the same
+# file) and the backend's MODEL_NAME, so the backend can never request a
+# model the endpoint doesn't serve. The fallback literal matches
+# local-model.sh's own default. Explicit MODEL_NAME env still wins.
+# A model chosen in the in-app Settings (gear) is stored in
+# backend/.data/settings.json and ALWAYS wins over all of these.
+[ -f scripts/local-model.env ] && . scripts/local-model.env
+: "${MODEL_PROVIDER:=openai}"
+: "${MODEL_NAME:=${VLLM_MODEL:-Qwen/Qwen3-VL-8B-Instruct-FP8}}"
+
 SKIP_MODEL=0
 MODEL_ONLY=0
 for arg in "$@"; do
@@ -42,7 +53,10 @@ err()  { printf '\033[31m%s\033[0m\n' "$1"; }
 ok()   { printf '\033[32m%s\033[0m\n' "$1"; }
 
 listening() { lsof -ti ":$1" -sTCP:LISTEN >/dev/null 2>&1; }
-model_answers() { curl -s -m 5 "http://localhost:${MODEL_PORT}/v1/models" 2>/dev/null | grep -q '"id"'; }
+# Readiness means "the CONFIGURED model answers", not "something answers":
+# a leftover server on :8001 serving a different model used to pass this
+# check and every later agent run then failed with a 404 (Codex review P1).
+model_answers() { curl -s -m 5 "http://localhost:${MODEL_PORT}/v1/models" 2>/dev/null | grep -qF "\"${MODEL_NAME}\""; }
 
 # ── 0. Dependencies present? ────────────────────────────────────────────────
 # Skipped for --model-only: that mode brings up the model endpoint and exits, so
@@ -93,10 +107,8 @@ if [ "$MODEL_ONLY" -eq 1 ]; then
   [ "$MODEL_STATE" = "up" ] && exit 0 || exit 1
 fi
 
-# Local-model defaults. A model chosen in the in-app Settings (gear) is stored
-# in backend/.data/settings.json and ALWAYS wins over these.
-: "${MODEL_PROVIDER:=openai}"
-: "${MODEL_NAME:=Qwen/Qwen3-VL-8B-Instruct-FP8}"
+# MODEL_PROVIDER / MODEL_NAME are resolved at the top of this script (one
+# model identity shared with local-model.sh via scripts/local-model.env).
 : "${OPENAI_BASE_URL:=http://localhost:${MODEL_PORT}/v1}"
 : "${OPENAI_API_KEY:=not-needed}"
 export MODEL_PROVIDER MODEL_NAME OPENAI_BASE_URL OPENAI_API_KEY
