@@ -31,6 +31,7 @@ from backend.contracts.constants import (
     OUTLIER_STD_RATIO,
     OVERSIZED_SCENE_FRAC,
 )
+from backend.api.tempfiles import scene_temp_dir
 from backend.splat import GaussianSplatModel
 
 # Edit ops reachable through the routes' POST /edit (deletion + attribute ops).
@@ -67,6 +68,10 @@ class RealScene:
         # this module never imports backend.agent at boot).
         self.chat_history: list[dict] = []
         self.agent_ledger: object | None = None
+        # Understand-stage survey (spec 2026-08-03): frames + labels + scene
+        # revision from the last app-flown survey, reused across runs until
+        # the revision changes (the frontend compares via if_revision_not).
+        self.survey_store: dict | None = None
 
     def metrics(self, region: dict | None = None) -> dict:
         return compute_metrics(self.model, region)
@@ -183,7 +188,7 @@ class RealBackendExecutor:
         return self._s.editing.redo()
 
     def export_ply(self) -> str:
-        fd, path = tempfile.mkstemp(suffix=".ply", prefix="export_")
+        fd, path = tempfile.mkstemp(suffix=".ply", prefix="export_", dir=scene_temp_dir())
         os.close(fd)
         self._s.model.export(path)
         return path
@@ -224,7 +229,12 @@ class RealAgentRunner:
         loop = AgentLoop(provider, dispatcher, channel, stage=resolved, system_prompt="")
         history = getattr(scene, "chat_history", None)
         try:
-            await loop.run(prompt, history=history, ledger=getattr(scene, "agent_ledger", None))
+            await loop.run(
+                prompt,
+                history=history,
+                ledger=getattr(scene, "agent_ledger", None),
+                survey=getattr(scene, "survey_store", None) if resolved == "understand" else None,
+            )
         finally:
             # Persist even after an error/interrupt — the follow-up should
             # still know what happened. Bounded tail so per-scene memory
@@ -233,6 +243,8 @@ class RealAgentRunner:
                 history[:] = loop.transcript()[-_CHAT_HISTORY_LIMIT:]
             if hasattr(scene, "agent_ledger"):
                 scene.agent_ledger = loop.ledger
+            if resolved == "understand" and getattr(loop, "survey_out", None) is not None:
+                scene.survey_store = loop.survey_out
 
 
 __all__ = ["RealBackend", "RealScene", "RealBackendExecutor", "RealAgentRunner"]
