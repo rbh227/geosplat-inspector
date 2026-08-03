@@ -112,10 +112,13 @@ def test_prompt_does_not_instruct_multi_angle_counting():
     assert "different angles" not in recipes
 
 
-def test_prompt_states_the_one_frame_counting_rule():
+def test_prompt_states_the_multi_view_dedup_rule():
+    # v0.6: counts come from the app-flown survey views; the prompt must state
+    # that an object seen in several views is ONE object, counted on the best
+    # single view.
     p = _understand()
-    assert "double-count" in p
-    assert "never extend" in p
+    assert "one\n  object" in p or "one object" in p
+    assert "best single view" in p
 
 
 def test_prompt_requires_tiered_certainty_and_modality():
@@ -152,27 +155,6 @@ def test_prompt_carries_no_domain_priors():
 # so a camera move counted as evidence.
 # ---------------------------------------------------------------------------
 
-def test_understand_answer_without_a_frame_is_bounced_once():
-    result, channel, _ = _run_analyst([
-        # moves only — no capture_frame — then asserts what it "sees"
-        text_then_tools(
-            "Looking at the object.",
-            ("move_camera", {"direction": "forward", "duration_ms": 400}),
-            ("turn", {"direction": "left", "duration_ms": 300}),
-        ),
-        tool_turn(("answer", {"text": "The main object is a rectangular prism with a tapered top."})),
-        tool_turn(("capture_frame", {})),
-        tool_turn(("answer", {"text": "The main object is a sphere."})),
-    ])
-    assert result.status == "answered"
-    assert result.answer == "The main object is a sphere."
-    bounced = [
-        e for e in result.trace
-        if e.get("type") == "tool_result" and "no_frame" in str(e.get("result", {}))
-    ]
-    assert bounced, "an answer with no captured frame must be bounced"
-
-
 def test_understand_answer_goes_through_on_the_second_attempt():
     """A memory follow-up ('summarize what you did') legitimately has no frame
     this run. One nudge, then the agent is trusted."""
@@ -192,34 +174,3 @@ def test_clarifying_question_is_never_bounced_for_lack_of_a_frame():
     assert result.answer == "Which cluster do you mean?"
 
 
-def test_no_frame_guard_is_per_run_not_per_scene():
-    """The ledger is PERSISTENT per scene (real_engine passes the previous
-    run's ledger back in), so saw_frame stays True for the rest of the
-    conversation once anything is captured. The guard must not key off it, or
-    every run after the first could answer without looking."""
-    from backend.agent.grounding import GroundingLedger
-
-    stale = GroundingLedger()
-    stale.record_frame()  # a PREVIOUS run captured something
-    assert stale.saw_frame
-
-    executor = MockBackendExecutor()
-    channel = MockFrontendChannel()
-    provider = MockProvider(script=[
-        tool_turn(("answer", {"text": "The main object is a rectangular prism."})),
-        tool_turn(("capture_frame", {})),
-        tool_turn(("answer", {"text": "The main object is a sphere."})),
-    ])
-    loop = AgentLoop(
-        provider,
-        ToolDispatcher(executor, channel),
-        channel,
-        config=AgentConfig(enforce_grounding=False),
-        stage="understand",
-    )
-    result = asyncio.run(loop.run("what shape is it?", ledger=stale))
-
-    assert result.status == "answered"
-    assert result.answer == "The main object is a sphere.", (
-        "a stale saw_frame from an earlier run must not satisfy this run's guard"
-    )

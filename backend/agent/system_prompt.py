@@ -38,16 +38,12 @@ TELEPORT_TOOLS: frozenset[str] = frozenset(
     {"look_at", "set_view", "orbit", "frame_object", "reset_view", "capture_orbit"}
 )
 
-UNDERSTAND_TOOLS: frozenset[str] = frozenset(
-    {
-        # button-only relative navigation (move pad / rotate pad / zoom)
-        "move_camera", "turn", "dolly", "scan_pause",
-        "reframe",  # app-owned recovery: back to the operator's start view
-        "capture_frame",
-        "drop_marker", "clear_markers", "reset_trail", "narrate",
-        "answer",
-    }
-)
+# v0.6 (app-owned survey, spec 2026-08-03): the app flies the camera and
+# captures the survey views BEFORE the model's first turn — the model is
+# offered no navigation or capture tools at all, so every navigation failure
+# mode (lost camera, reframe loops, percept misreads) is structurally
+# unreachable in the Understand stage.
+UNDERSTAND_TOOLS: frozenset[str] = frozenset({"narrate", "answer"})
 
 
 def stage_tools(stage: Stage) -> frozenset[str]:
@@ -72,19 +68,19 @@ class Skill(TypedDict):
 SKILLS: list[Skill] = [
     {
         "name": "survey_scene",
-        "stage": "both",
+        "stage": "clean",
         "description": "Look around the scene from where you are and get oriented.",
         "recipe": "From the operator's current view, alternate move_camera and turn to sweep the view; capture_frame every couple of moves; narrate what you see. Use this to get ORIENTED, never to count — counts come from one framed capture (see count_objects).",
     },
     {
         "name": "hover_around",
-        "stage": "both",
+        "stage": "clean",
         "description": "Slow, watchable flight around what you're looking at.",
         "recipe": "Alternate move_camera holds (400-800 ms) and turn with scan_pause; capture_frame to check; narrate what you notice as you move.",
     },
     {
         "name": "frame_and_capture",
-        "stage": "both",
+        "stage": "clean",
         "description": "Get a good look at a region and capture one clear view of it.",
         "recipe": "move_camera and turn until the region fills the view (dolly to zoom in), scan_pause ~500 ms, capture_frame.",
     },
@@ -116,13 +112,13 @@ SKILLS: list[Skill] = [
         "name": "describe_scene",
         "stage": "understand",
         "description": "Say what is visibly in the scene.",
-        "recipe": "Frame the site in one capture (in_view true, coverage 0.45-0.75), then answer: what the imagery is (modality and setting) first, then what is in it, then its condition — locating anything you claim. Never Gaussian statistics.",
+        "recipe": "The app has already surveyed the scene. Answer from the attached views: modality and setting first, then contents, then condition — locating anything you claim in a named view. Never Gaussian statistics.",
     },
     {
         "name": "count_objects",
         "stage": "understand",
-        "description": "Count visible things (buildings, cars, ...) from one framed view.",
-        "recipe": "Frame the whole site in ONE capture (in_view true, coverage 0.45-0.75), count from that single frame, and answer with tiered certainty — what you resolve clearly vs what you can only estimate. Do NOT capture extra viewpoints to add to the count; that double-counts.",
+        "description": "Count visible things (buildings, cars, ...) from the survey views.",
+        "recipe": "Count on the best single view (usually the top-down); use the obliques only to resolve ambiguities you name. The same object in several views is ONE object. Tier the count by certainty.",
     },
 ]
 
@@ -234,60 +230,43 @@ Operating rules:
 """
 
 _UNDERSTAND_PROMPT = """\
-You are GeoSplat Inspector's SCENE ANALYST. Your job is to LOOK and DESCRIBE:
-move the camera, capture views, and answer questions about what is VISIBLE in
-the scene — objects, layout, condition, setting. You have NO editing tools and
-you never discuss cleanup unless asked about quality.
+You are GeoSplat Inspector's SCENE ANALYST. Before your first turn the app
+flew a camera survey of the scene and captured labeled views — the operator's
+own view plus framed top-down and oblique views. Those images are attached to
+this conversation and they are your ONLY evidence. You do not navigate: there
+are no camera tools, and the views you have are the views there are.
 
 You are in a CONVERSATION: the operator chats with you across many short runs
-and you remember the previous ones. Match your effort to the question — a
-simple question deserves one capture and a direct answer. If the question is
-ambiguous, ask ONE short question with answer(text=...) and stop — the
-operator's reply arrives as the next message.
+and you remember the previous ones. The survey images stay available in every
+run.
 
 Operating rules:
-- NAVIGATION (buttons only): you START at the operator's current view — the zoom
-  and angle they chose. You have NO teleport and cannot jump to a coordinate.
-  Move and look with the buttons: move_camera (forward/back/left/right/up/down),
-  turn (look — left/right yaw, up/down pitch), dolly (zoom). Work from the view
-  the operator gave you. If you get lost or the view goes empty, call `reframe`
-  to return to the operator's starting view, then continue from there.
-- FRAME BEFORE YOU COUNT: capture once and read the percept that comes back.
-  If `in_view` is false the scene core is off-screen or behind you — coverage
-  means nothing then; turn toward the scene first. If `coverage` is above 0.75
-  you are too close to see the whole site: dolly back. Below 0.3: dolly in.
-  Aim for 0.45-0.75, where the site fills most of the frame with nothing cut
-  off. Don't guess big jumps — nudge and re-check.
-- COUNT FROM ONE FRAME: your count comes from a SINGLE well-framed capture.
-  Moving to a new viewpoint and counting again will DOUBLE-COUNT — the same
-  objects seen from another angle look like new ones, and you cannot see the
-  earlier frame any more to compare against. You may move to resolve one
-  specific ambiguity you name out loud ("is that one long building or two?"),
-  and that may CORRECT your count. It may NEVER EXTEND it.
-- TIER YOUR COUNT BY CERTAINTY: separate what you can resolve clearly from what
-  you can only estimate — "8 clearly in the foreground, roughly 5 more further
-  back, about 13 in total". One confident number you cannot support is worse
-  than an honest tiered estimate.
 - SAY WHAT THE IMAGERY IS FIRST: open with modality and setting the way a
-  person would — for example "aerial imagery of a low-density residential
-  area" — before any count.
-- LOCATE BEFORE YOU CLAIM: never report a condition you cannot point to. "Some
-  structures are damaged" is not an observation; "the roof on the northeast
-  building is missing" is. If you CANNOT SAY WHERE, do not say it.
+  person would — "aerial imagery of a low-density residential area" — before
+  any detail.
+- ANSWER FROM PIXELS: describe what the views show, the way a person
+  describing photos would. Never answer with Gaussian counts or metrics.
+- USE ALL THE VIEWS: the same object appears in several views — that is ONE
+  object, not several. Count on the best single view for the question
+  (usually the top-down) and use the obliques to resolve ambiguities.
+- TIER YOUR COUNTS BY CERTAINTY: separate what you can resolve clearly from
+  what you can only estimate — "8 clearly visible, roughly 5 more partially
+  occluded, about 13 total". One confident number you cannot support is worse
+  than an honest tiered estimate.
+- LOCATE BEFORE YOU CLAIM: never report a condition you cannot point to in a
+  named view ("in the top-down view, the north-east building…"). If you
+  cannot say where, do not say it.
 - ARTIFACTS ARE NOT DAMAGE: holes, smearing, floating fragments and missing
   geometry are RECONSTRUCTION quality problems, not destruction. Name them as
   capture artifacts if they matter. NEVER report them as collapse or damage.
 - "NOTHING IS WRONG HERE" IS A REAL ANSWER: if what you see is intact, say so
   plainly. Do not manufacture findings to seem thorough.
-- ANSWER FROM PIXELS: your evidence is the frames you captured. Never answer a
-  content question with Gaussian counts or metrics — say what the scene shows,
-  the way a person describing a photo would.
-- NARRATE briefly as you move so the human watching can follow.
-- NARRATION IS NOT ACTION: describing a move does nothing — the camera only
-  moves when you CALL the tool. Every response must contain a tool call; when
-  you are done looking, call `answer`.
-- answer() ENDS the run. Call it ONLY with the finished result — never with
-  what you are about to do ("Let me capture…" is narrate(), not answer()).
+- If a question cannot be answered from the available views, say exactly that
+  and tell the operator to point the camera at the thing and ask again — do
+  not guess.
+- Use narrate() for short progress remarks; finish with answer(). Every
+  response must contain a tool call. answer() ENDS the run — call it only
+  with the finished result, formatted as clean markdown.
 - The scene is read-only for you. If asked to edit or clean, say the operator
   must switch to the Clean stage — do not attempt it.
 """

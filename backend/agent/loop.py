@@ -127,14 +127,12 @@ class AgentLoop:
         self._pending_frames: list[bytes] = []
         self._textonly_streak = 0  # consecutive no-tool text turns
         self._plan_rejections = 0  # answers bounced for being plans, per run
-        self._no_frame_nudged = False  # frameless answer bounced once, per run
-        # Frames captured in THIS run. Deliberately not `self._ledger.saw_frame`:
-        # the ledger is persistent per scene (real_engine passes the previous
-        # run's ledger back in), so saw_frame stays True for the rest of the
-        # conversation once anything is captured — which would let every later
-        # run answer without looking.
-        self._frames_this_run = 0
         self._last_narrate = ""    # normalized last narration (repeat guard)
+        # Understand-stage survey (spec 2026-08-03): frames the app captured
+        # for this run; attached to EVERY model call so the model can always
+        # look again. survey_out is what the caller persists per scene.
+        self._survey_frames: list[bytes] = []
+        self.survey_out: dict | None = None
         self._ledger = GroundingLedger()
         self._last_metrics: dict | None = None
         self._result = LoopResult(status="init")
@@ -158,12 +156,16 @@ class AgentLoop:
         prompt: str,
         history: list[dict] | None = None,
         ledger: GroundingLedger | None = None,
+        survey: dict | None = None,
     ) -> LoopResult:
         """One agent run. `history` is the prior conversation for this scene
         (from `transcript()` of an earlier run) so follow-ups have context —
         without it every request starts amnesiac. `ledger` carries the prior
         runs' grounding evidence for the same reason: what the agent measured
         or saw earlier in the conversation still backs its answers now.
+        `survey` is the previous Understand run's app-owned survey
+        ({"frames", "labels", "revision"}) — reused when the scene revision is
+        unchanged so follow-ups answer instantly from the same views.
         """
         self._messages = []
         if self.system_prompt:
@@ -174,8 +176,6 @@ class AgentLoop:
         self._pending_frames = []
         self._textonly_streak = 0
         self._plan_rejections = 0
-        self._no_frame_nudged = False
-        self._frames_this_run = 0
         self._last_narrate = ""
         self._ledger = ledger if ledger is not None else GroundingLedger()
         self._last_metrics = None
@@ -187,8 +187,16 @@ class AgentLoop:
         self._approved_ids = None
         if hasattr(self.dispatcher, "edits_applied"):
             self.dispatcher.edits_applied = 0
+        self._survey_frames = []
+        self.survey_out = None
 
         await self._seed_grounding()
+
+        # App-owned survey (Understand stage, spec 2026-08-03): the app flies
+        # the camera and captures the views BEFORE the model's first turn.
+        if self.stage == "understand":
+            if not await self._run_survey(survey):
+                return self._result  # finished with an error already
 
         for step in range(1, self.config.max_steps + 1):
             self._result.steps = step
@@ -205,7 +213,7 @@ class AgentLoop:
                     self.provider.generate,
                     self._messages,
                     self.tools,
-                    self._pending_frames or None,
+                    ([*self._survey_frames, *self._pending_frames] or None),
                 )
             except RateLimitError as exc:
                 return await self._finish_error("rate_limited", str(exc))
@@ -321,6 +329,55 @@ class AgentLoop:
         )
         pos = 1 if self._messages and self._messages[0].get("role") == "system" else 0
         self._messages.insert(pos, {"role": "user", "content": msg})
+
+    # -- app-owned survey (Understand stage; spec 2026-08-03) ---------------
+    async def _run_survey(self, stored: dict | None) -> bool:
+        """Dispatch survey_capture app-side and attach the frames for the
+        whole run. Returns False after finishing the run with an error."""
+        args: dict = {}
+        if stored and stored.get("revision") is not None and stored.get("frames"):
+            args["if_revision_not"] = stored["revision"]
+        await self._emit(ev_tool_call("survey_capture", args, 0))
+        result = await self.dispatcher.dispatch(ToolCall("survey_capture", args))
+        payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+        frames = result.get("frames") or []
+
+        if result.get("ok") and payload.get("unchanged") and stored:
+            frames = list(stored["frames"])
+            labels = [str(x) for x in (stored.get("labels") or [])]
+            revision = stored.get("revision")
+        elif result.get("ok") and frames:
+            labels = [str(x) for x in (payload.get("labels") or [])]
+            revision = payload.get("revision")
+        elif stored and stored.get("frames"):
+            # Re-survey failed (viewer busy/gone) but we still hold an older
+            # survey of this scene — answer from it rather than dying.
+            frames = list(stored["frames"])
+            labels = [str(x) for x in (stored.get("labels") or [])]
+            revision = stored.get("revision")
+        else:
+            await self._emit(ev_tool_result("survey_capture", result, 0))
+            await self._finish_error(
+                "error",
+                "survey failed: could not capture the scene — check that a "
+                "scene is loaded and the viewer is connected, then ask again.",
+            )
+            return False
+
+        await self._emit(ev_tool_result("survey_capture", {"n_frames": len(frames)}, 0))
+        self._survey_frames = frames
+        self.survey_out = {"frames": frames, "labels": labels, "revision": revision}
+        self._ledger.record_frame()
+        lines = [
+            f"View {i + 1}: {labels[i] if i < len(labels) else 'additional view'}"
+            for i in range(len(frames))
+        ]
+        self._nudge_sync(
+            "the app surveyed the scene; the attached images are, in order: "
+            + "; ".join(lines)
+            + ". Answer the operator's question from these views."
+        )
+        return True
 
     # -- pause / takeover (KTD9, R14) --------------------------------------
     async def _pause_checkpoint(self) -> str | None:
@@ -543,7 +600,6 @@ class AgentLoop:
         if frames:
             self._pending_frames.extend(frames)
             self._ledger.record_frame()
-            self._frames_this_run += len(frames)
         await self._emit(ev_tool_result(call.name, {"n_frames": len(frames)}, step))
         note: dict[str, Any] = {"captured": len(frames)}
         if percept is not None:
@@ -647,34 +703,10 @@ class AgentLoop:
                 "while working, use narrate()."
             )
             return False
-        # LOOK BEFORE YOU ASSERT (Understand stage). The ledger's `measured`
-        # flag is set by ANY structured tool result — a camera move included —
-        # so it cannot tell "I moved" from "I looked". Observed live: asked
-        # what shape the main object was, the model called move_camera twice
-        # and answered "a rectangular prism ... resembling a modern building"
-        # about a SPHERE, having never captured a frame.
-        #
-        # Bounced ONCE, not forever: a memory follow-up ("summarize what you
-        # did earlier") legitimately has no frame this run, and a hard block
-        # would force a pointless capture to satisfy the rule.
-        if (
-            self.stage == "understand"
-            and self._frames_this_run == 0
-            and not self._no_frame_nudged
-            and not text.rstrip().endswith("?")
-        ):
-            self._no_frame_nudged = True
-            await self._emit(ev_tool_result(
-                "answer", {"no_frame": "answered without capturing a frame"}, self._result.steps,
-            ))
-            self._nudge_sync(
-                "You have not captured a frame this run, so you have not "
-                "LOOKED at the scene — moving the camera is not seeing. Call "
-                "capture_frame and answer from the image. If you are answering "
-                "from EARLIER conversation rather than from this scene, say so "
-                "explicitly and call answer again."
-            )
-            return False
+        # v0.6: the old "look before you assert" bounce (answering without a
+        # captured frame) is gone — in the Understand stage the app-owned
+        # survey guarantees frames before the model's first turn, or the run
+        # has already ended in an error.
         # A clarifying QUESTION asserts nothing and the prompt explicitly
         # invites one — exempt it from the must-have-measured rule, which
         # otherwise rejects "which cluster do you mean?" on the first turn.

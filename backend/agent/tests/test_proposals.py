@@ -49,6 +49,10 @@ class ProposalChannel(MockFrontendChannel):
         if ctype == "selection_tool" and cmd.get("tool") in ("show_box_preview", "adjust_box_preview"):
             args = cmd.get("args", {})
             return {"ok": True, "min": args.get("min"), "max": args.get("max")}
+        if ctype == "capture_request":
+            # v0.6: Understand runs app-dispatch survey_capture before the
+            # model's first turn — answer it with a frame like the base mock.
+            return {"ok": True, "frame": self.frame}
         return {"ok": True}
 
 

@@ -26,7 +26,9 @@ def test_calls_after_a_capture_in_the_same_batch_are_dropped():
         ),
         tool_turn(("answer", {"text": "done"})),
     ])
-    loop = AgentLoop(provider, ToolDispatcher(MockBackendExecutor(), channel), channel, stage="understand")
+    # Clean stage: Understand no longer lets the model capture (v0.6
+    # app-owned survey); the perception barrier still guards Clean captures.
+    loop = AgentLoop(provider, ToolDispatcher(MockBackendExecutor(), channel), channel, stage="clean")
     _run(loop.run("survey"))
 
     types = [c.get("type") for c in channel.commands]

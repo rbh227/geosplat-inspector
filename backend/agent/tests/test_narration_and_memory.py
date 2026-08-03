@@ -38,7 +38,9 @@ def test_narrated_intent_without_tool_call_does_not_end_the_run():
         tool_turn(("capture_frame", {})),
         tool_turn(("answer", {"text": "done looking"})),
     ])
-    loop, channel = _loop(provider)
+    # Clean stage: the Understand stage no longer offers navigation tools
+    # (v0.6 app-owned survey), so the narrate-then-act contract lives in Clean.
+    loop, channel = _loop(provider, stage="clean")
     result = _run(loop.run("survey the scene"))
 
     assert result.status == "answered"
@@ -159,7 +161,9 @@ def test_skill_name_called_as_tool_gets_the_recipe_back():
         tool_turn(("capture_frame", {})),
         tool_turn(("answer", {"text": "done"})),
     ])
-    loop, channel = _loop(provider)
+    # survey_scene is a Clean-stage routine since v0.6 (Understand is
+    # survey-first and offers no navigation vocabulary to mistake for tools).
+    loop, channel = _loop(provider, stage="clean")
     result = _run(loop.run("look around"))
 
     assert result.status == "answered"
