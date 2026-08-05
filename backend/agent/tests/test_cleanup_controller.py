@@ -330,3 +330,52 @@ def test_no_candidates_short_circuits_to_clean_answer():
     batch_cards = [cmd for cmd in channel.commands
                    if cmd.get("type") == "proposal" and cmd["args"].get("kind") == "delete_clusters"]
     assert batch_cards == []
+
+
+# ---------------------------------------------------------------------------
+# Codex adversarial review: partial-edit reporting on every completion path
+# ---------------------------------------------------------------------------
+def _complete(channel):
+    return next(e for e in channel.events if e.get("type") == "complete")
+
+
+def test_interrupt_after_crop_still_reports_scene_changed():
+    """An edit that landed before an interrupt must still make the viewer
+    resync — otherwise the operator sees pre-crop splats over a cropped
+    backend with a desynced ID map (mirrors AgentLoop._finish_status)."""
+    channel = TourChannel(verdicts=[{"verdict": "approved"}])
+    channel.interrupt_after = 2          # crop applied, then interrupt
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_mark([])] * 3)
+    c = _controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "interrupted"
+    assert "crop_bbox" in executor.edit_calls          # the edit did land
+    assert _complete(channel)["scene_changed"] is True
+
+
+def test_run_without_any_edit_reports_scene_changed_false():
+    """Nothing was destroyed — a reload would be pure churn."""
+    channel = TourChannel(verdicts=[{"verdict": "rejected"}])   # crop rejected
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_mark([])] * 3 + [_judge("structure")])
+    c = _controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    assert executor.edit_calls == []
+    assert _complete(channel)["scene_changed"] is False
+
+
+def test_error_path_reports_scene_changed_after_an_edit():
+    channel = TourChannel(verdicts=[{"verdict": "approved"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_mark([])] * 3)
+    c = _controller(provider, channel, executor)
+    # blow up after phase 1 has already cropped
+    async def boom() -> None:
+        raise RuntimeError("controller bug")
+    c._phase2_survey_and_mark = boom          # type: ignore[assignment]
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "error"
+    assert "crop_bbox" in executor.edit_calls
+    assert _complete(channel)["scene_changed"] is True

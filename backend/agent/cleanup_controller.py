@@ -106,6 +106,12 @@ class CleanupController:
         self.splat_arrays = splat_arrays
         self.config = config or CleanupConfig()
         self._step = 0
+        # Did any destructive edit actually land? Reported as `scene_changed`
+        # on EVERY completion path: an edit that succeeded before an interrupt
+        # or a controller bug still leaves the renderer showing a stale scene
+        # with a desynced ID map unless the viewer resyncs (same invariant as
+        # AgentLoop._finish_status / _finish_error).
+        self._edits_applied = 0
         # phase-3 outputs
         self.candidates: list[Cluster] = []
         self.marks: list[dict] = []
@@ -149,6 +155,9 @@ class CleanupController:
             timeout_s=self.config.call_timeout_s, retries=self.config.call_retries,
         )
 
+    def _scene_changed(self) -> bool:
+        return self._edits_applied > 0
+
     def _arrays(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         a = self.splat_arrays()
         return np.asarray(a["means"]), np.asarray(a["opacity"]), np.asarray(a["ids"])
@@ -163,8 +172,13 @@ class CleanupController:
         after = await asyncio.to_thread(self.executor.get_metrics)
         if not silhouette_intact(before, after, approved=True):
             await asyncio.to_thread(self.executor.undo)
+            # The snapshot+undo round trip is itself a mutation the renderer
+            # never saw; count it so the viewer resyncs rather than trusting
+            # its local copy.
+            self._edits_applied += 1
             await self._say(f"Reverted {fn_name}: it would have destroyed the subject's core.")
             return {"ok": False, "reverted": True, "result": result}
+        self._edits_applied += 1
         return {"ok": True, "result": result, "before": before, "after": after}
 
     # ---- run ------------------------------------------------------------- #
@@ -180,14 +194,18 @@ class CleanupController:
             await self._checkpoint()
             answer = await self._phases_4_to_6()
             result.answer = answer
-            await self._emit(ev_complete("answered", answer=answer, scene_changed=True))
+            await self._emit(ev_complete(
+                "answered", answer=answer, scene_changed=self._scene_changed(),
+            ))
         except RunInterrupted:
             result.status = "interrupted"
-            await self._emit(ev_complete("interrupted"))
+            await self._emit(ev_complete("interrupted", scene_changed=self._scene_changed()))
         except Exception as exc:  # noqa: BLE001 — a controller bug must still end the run
             result.status = "error"
             result.error = str(exc)
-            await self._emit(ev_complete("error", error=str(exc)))
+            await self._emit(ev_complete(
+                "error", error=str(exc), scene_changed=self._scene_changed(),
+            ))
         result.steps = self._step
         return result
 
