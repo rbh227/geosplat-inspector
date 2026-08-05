@@ -45,8 +45,8 @@ def core_box(means: np.ndarray, k: float = 6.0) -> tuple[np.ndarray, np.ndarray]
 
 
 def _padded(core_min: np.ndarray, core_max: np.ndarray, pad_frac: float) -> tuple[np.ndarray, np.ndarray]:
-    """Expand the core box per-axis. The percentile box clips the subject's own
-    outer shell (5% per tail); without padding that shell shows up as 'junk'."""
+    """Expand the core box per-axis. A tight core box clips the subject's own
+    outer shell; without padding that shell shows up as 'junk'."""
     pad = (np.asarray(core_max) - np.asarray(core_min)) * pad_frac
     return np.asarray(core_min) - pad, np.asarray(core_max) + pad
 
@@ -135,3 +135,129 @@ def find_clusters(
             dist_from_core=float(np.linalg.norm(p.mean(axis=0) - core_center)),
         ))
     return out
+
+
+def cell_index(label: str, grid: int = 4) -> int:
+    """'B3' -> row*grid+col. Columns A.. left->right, rows 1.. top->bottom."""
+    if not isinstance(label, str) or len(label) < 2:
+        raise ValueError(f"bad cell label: {label!r}")
+    col = _LABELS.find(label[0].upper())
+    try:
+        row = int(label[1:]) - 1
+    except ValueError:
+        raise ValueError(f"bad cell label: {label!r}") from None
+    if not (0 <= col < grid and 0 <= row < grid):
+        raise ValueError(f"cell label out of range: {label!r}")
+    return row * grid + col
+
+
+def project_to_cells(means: np.ndarray, pose: dict, grid: int = 4) -> np.ndarray:
+    """Project backend-space means through a render-space camera pose into
+    grid-cell indices (-1 = behind camera / off screen).
+
+    Backend coords are COLMAP Y-down; the viewer applies mesh.rotation.x = pi,
+    so render = (x, -y, -z). The pose (position/target/fov/aspect) arrives in
+    render space exactly as the frontend's survey_capture reports it.
+    """
+    pts = np.asarray(means, dtype=np.float64) * np.array([1.0, -1.0, -1.0])
+    pos = np.asarray(pose["position"], dtype=np.float64)
+    tgt = np.asarray(pose["target"], dtype=np.float64)
+    fwd = tgt - pos
+    n = np.linalg.norm(fwd)
+    if n < 1e-9:
+        return np.full(len(pts), -1, dtype=np.int64)
+    fwd /= n
+    up = np.array([0.0, 1.0, 0.0])
+    if abs(float(fwd @ up)) > 0.99:          # top-down pose: pick a stable up
+        up = np.array([0.0, 0.0, -1.0])
+    right = np.cross(fwd, up)
+    right /= np.linalg.norm(right)
+    upv = np.cross(right, fwd)
+
+    d = pts - pos
+    x_c = d @ right
+    y_c = d @ upv
+    z_c = d @ fwd
+    t = np.tan(np.radians(float(pose["fov"])) / 2.0)
+    aspect = float(pose.get("aspect", 1.0)) or 1.0
+    out = np.full(len(pts), -1, dtype=np.int64)
+    vis = z_c > 1e-6
+    with np.errstate(divide="ignore", invalid="ignore"):
+        u = (x_c / (z_c * t * aspect) + 1.0) / 2.0
+        v = (1.0 - y_c / (z_c * t)) / 2.0
+    on = vis & (u >= 0) & (u < 1) & (v >= 0) & (v < 1)
+    col = np.clip((u[on] * grid).astype(np.int64), 0, grid - 1)
+    row = np.clip((v[on] * grid).astype(np.int64), 0, grid - 1)
+    out[on] = row * grid + col
+    return out
+
+
+def resolve_marks(
+    means: np.ndarray,
+    opacity: np.ndarray,
+    ids: np.ndarray,
+    marks: list[dict],
+    clusters: list[Cluster],
+    core_min: np.ndarray,
+    core_max: np.ndarray,
+    *,
+    grid: int = 4,
+    min_splats: int = 30,
+) -> list[Cluster]:
+    """Merge model grid-marks with statistical clusters (spec §3 phase 3)."""
+    off_core = _outside(means, core_min, core_max)
+    ids_arr = np.asarray(ids)
+    id_to_cluster: dict[int, Cluster] = {}
+    for c in clusters:
+        for i in c.ids:
+            id_to_cluster[int(i)] = c
+
+    spawned_ids: list[np.ndarray] = []
+    for mark in marks:
+        pose = mark.get("pose")
+        cells = mark.get("cells") or []
+        if not pose or not cells:
+            continue
+        cell_of = project_to_cells(means, pose, grid)
+        for label in cells:
+            try:
+                target = cell_index(label, grid)
+            except ValueError:
+                continue                      # invalid label: dropped (spec §3 ph.2)
+            in_cell = (cell_of == target) & off_core
+            if not in_cell.any():
+                continue                      # unresolved mark: costs nothing
+            hit_ids = ids_arr[in_cell]
+            hit_clusters = {id(c): c for i in hit_ids
+                            if (c := id_to_cluster.get(int(i))) is not None}
+            if hit_clusters:
+                for c in hit_clusters.values():
+                    c.mark_votes += 1
+                    c.provenance = "both"
+            elif len(hit_ids) >= min_splats:
+                spawned_ids.append(np.sort(hit_ids))
+
+    merged = list(clusters)
+    core_center = (np.asarray(core_min) + np.asarray(core_max)) / 2.0
+    pos_of = {int(i): k for k, i in enumerate(ids_arr)}
+    for sid in spawned_ids:
+        rows = np.asarray([pos_of[int(i)] for i in sid], dtype=np.int64)
+        # dedup against clusters already spawned this pass
+        if any(np.intersect1d(sid, m.ids).size > sid.size * 0.5 for m in merged):
+            continue
+        p = np.asarray(means)[rows]
+        bmin, bmax = p.min(axis=0), p.max(axis=0)
+        merged.append(Cluster(
+            label="?", ids=sid,
+            bbox_min=[float(v) for v in bmin], bbox_max=[float(v) for v in bmax],
+            count=int(len(sid)),
+            mean_opacity=float(np.asarray(opacity)[rows].mean()),
+            extent=float(np.linalg.norm(bmax - bmin)),
+            dist_from_core=float(np.linalg.norm(p.mean(axis=0) - core_center)),
+            provenance="model", mark_votes=1,
+        ))
+
+    merged.sort(key=lambda c: c.count, reverse=True)
+    for n, c in enumerate(merged):
+        c.label = _LABELS[n % len(_LABELS)]
+    return merged
