@@ -440,3 +440,87 @@ def test_failed_framing_forces_unsure():
     _run(c.run("cleanup_scene"))
     assert set(c.verdicts.values()) == {"unsure"}
     assert executor.deleted_batches == []
+
+
+# ---------------------------------------------------------------------------
+# Codex adversarial review: the per-edit guard must not run k-NN metrics
+# ---------------------------------------------------------------------------
+class MetricsCountingExecutor(DeletingExecutor):
+    """compute_metrics does a full k-NN pass (minutes on a 2M-splat scene);
+    the guard must never reach it."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.metrics_calls = 0
+
+    def get_metrics(self, region=None):
+        self.metrics_calls += 1
+        return super().get_metrics(region)
+
+
+def _live_arrays():
+    """Arrays that actually shrink as clusters are deleted, so the guard sees
+    real before/after state instead of a frozen snapshot."""
+    rng = np.random.default_rng(0)
+    building = rng.uniform(-0.5, 0.5, size=(2000, 3))
+    blob_a = np.array([10.0, 0.0, 0.0]) + rng.normal(0, 0.05, size=(80, 3))
+    blob_b = np.array([0.0, 12.0, 0.0]) + rng.normal(0, 0.05, size=(50, 3))
+    means = np.vstack([building, blob_a, blob_b])
+    state = {
+        "means": means,
+        "opacity": np.full(len(means), 0.8),
+        "ids": np.arange(len(means), dtype=np.int64),
+    }
+    return lambda: state
+
+
+def test_guard_never_calls_full_metrics():
+    channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
+    executor = MetricsCountingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor, arrays=_live_arrays())
+    _run(c.run("cleanup_scene"))
+    assert len(executor.deleted_batches) == 2     # edits really ran
+    assert executor.metrics_calls == 0            # ...with no k-NN pass
+
+
+def test_guard_still_reverts_an_edit_that_wipes_the_core():
+    """The cheap guard must keep its teeth: a delete that takes the subject
+    with it is undone and reported."""
+    from backend.agent.cleanup_controller import CleanupConfig, CleanupController
+
+    means = np.vstack([
+        np.random.default_rng(0).uniform(-0.5, 0.5, size=(2000, 3)),
+        np.array([10.0, 0.0, 0.0]) + np.random.default_rng(1).normal(0, 0.05, size=(80, 3)),
+    ])
+    state = {
+        "means": means,
+        "opacity": np.full(len(means), 0.8),
+        "ids": np.arange(len(means), dtype=np.int64),
+    }
+
+    class WipingExecutor(DeletingExecutor):
+        undo_calls = 0
+
+        def delete_selection(self, ids):
+            out = super().delete_selection(ids)
+            state["means"] = state["means"][:1]      # everything is gone
+            state["opacity"] = state["opacity"][:1]
+            state["ids"] = state["ids"][:1]
+            return out
+
+        def undo(self):
+            self.undo_calls += 1
+            return super().undo()
+
+    channel = TourChannel(verdicts=[{"verdict": "rejected"},   # skip the crop
+                                    {"verdict": "approved"}])
+    executor = WipingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]), _judge("junk")])
+    dispatcher = ToolDispatcher(executor, channel)
+    c = CleanupController(provider, dispatcher, channel, executor, lambda: state,
+                          CleanupConfig(call_timeout_s=5.0))
+    result = _run(c.run("cleanup_scene"))
+    assert executor.undo_calls == 1                       # reverted
+    assert "0 clusters deleted" in (result.answer or "")

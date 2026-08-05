@@ -24,6 +24,7 @@ from backend.analysis.clusters import (
     resolve_marks,
 )
 from backend.contracts import FrontendChannel, ModelProvider, ToolCall
+from backend.contracts.constants import VISIBILITY_ALPHA
 from backend.contracts.tools import CONTROLLER_CHOICE_SPECS
 
 from .dispatch import ToolDispatcher
@@ -163,13 +164,28 @@ class CleanupController:
         return np.asarray(a["means"]), np.asarray(a["opacity"]), np.asarray(a["ids"])
 
     # ---- destructive edit with the standard guard ------------------------ #
+    def _guard_metrics(self) -> dict:
+        """The ONLY two fields `silhouette_intact` reads, computed O(N) with no
+        k-NN.
+
+        `compute_metrics` runs a full KD-tree query — documented in
+        splat/model.py as taking MINUTES on a 2M-splat scene — and the tour can
+        fire up to 12 guarded deletions in one approval, so calling it
+        before/after each edit would make an approved batch effectively
+        non-terminating at demo scale.
+        """
+        _, opacity, ids = self._arrays()
+        count = int(len(ids))
+        near = float((np.asarray(opacity) < VISIBILITY_ALPHA).mean()) if count else 0.0
+        return {"gaussianCount": count, "opacity": {"nearTransparentFraction": near}}
+
     async def _guarded_edit(self, fn_name: str, *args) -> dict:
         """snapshot -> edit -> silhouette check (approved=True: the operator
         reviewed this exact operation) -> undo on catastrophe."""
-        before = await asyncio.to_thread(self.executor.get_metrics)
+        before = await asyncio.to_thread(self._guard_metrics)
         await asyncio.to_thread(self.executor.snapshot)
         result = await asyncio.to_thread(getattr(self.executor, fn_name), *args)
-        after = await asyncio.to_thread(self.executor.get_metrics)
+        after = await asyncio.to_thread(self._guard_metrics)
         if not silhouette_intact(before, after, approved=True):
             await asyncio.to_thread(self.executor.undo)
             # The snapshot+undo round trip is itself a mutation the renderer
