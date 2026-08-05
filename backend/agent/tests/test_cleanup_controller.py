@@ -524,3 +524,69 @@ def test_guard_still_reverts_an_edit_that_wipes_the_core():
     result = _run(c.run("cleanup_scene"))
     assert executor.undo_calls == 1                       # reverted
     assert "0 clusters deleted" in (result.answer or "")
+
+
+# ---------------------------------------------------------------------------
+# Codex adversarial review: perception must run on the authoritative scene
+# ---------------------------------------------------------------------------
+class SceneChannel(TourChannel):
+    """A channel that knows its scene id — the real WSChannel does."""
+
+    scene_id = "scene-1"
+
+
+def _reloads(channel):
+    return [c for c in channel.commands if c.get("type") == "reload_scene"]
+
+
+def test_applied_crop_resyncs_the_renderer_before_the_survey():
+    """The survey must photograph the CROPPED scene: without a reload the
+    renderer still shows the splats the backend just deleted, so the model
+    marks junk that no longer exists."""
+    channel = SceneChannel(verdicts=[{"verdict": "approved"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_mark([])] * 3)
+    c = _controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+
+    reloads = _reloads(channel)
+    assert len(reloads) == 1
+    payload = reloads[0]["payload"]
+    assert payload["url"] == "/scene/scene-1.ply"
+    assert payload["scene_id"] == "scene-1"
+    # ...and it happened BEFORE the survey capture
+    order = [cmd.get("type") if cmd.get("type") == "reload_scene" else cmd.get("tool")
+             for cmd in channel.commands]
+    assert order.index("reload_scene") < order.index("survey_capture")
+
+
+def test_rejected_crop_does_not_reload():
+    channel = SceneChannel(verdicts=[{"verdict": "rejected"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_mark([])] * 3)
+    c = _controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert _reloads(channel) == []
+
+
+def test_batch_deletions_resync_once_when_finished():
+    channel = SceneChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    # one after the crop, one after the whole batch — not one per cluster
+    assert len(_reloads(channel)) == 2
+
+
+def test_channel_without_a_scene_id_degrades_quietly():
+    """MockFrontendChannel and other harnesses have no scene id; the run must
+    still complete rather than crash on the resync."""
+    channel = TourChannel(verdicts=[{"verdict": "approved"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_mark([])] * 3)
+    c = _controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    assert _reloads(channel) == []

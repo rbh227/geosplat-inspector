@@ -159,6 +159,26 @@ class CleanupController:
     def _scene_changed(self) -> bool:
         return self._edits_applied > 0
 
+    async def _resync_renderer(self) -> None:
+        """Make the viewer show the scene the backend actually has.
+
+        Every phase after an edit is PERCEPTION: the survey photographs the
+        scene and the tour judges tinted clusters. Without this the renderer
+        still holds the pre-edit splats and a stale ID map, so the model marks
+        and judges geometry the backend already deleted. Best-effort — a
+        renderer that cannot reload must not abort the run.
+        """
+        scene_id = getattr(self.channel, "scene_id", None)
+        if not scene_id:
+            return  # test harnesses / channels without a scene: nothing to resync
+        try:
+            await self.channel.send_command({
+                "type": "reload_scene",
+                "payload": {"url": f"/scene/{scene_id}.ply", "scene_id": scene_id},
+            })
+        except Exception as exc:  # noqa: BLE001 — a failed reload is not fatal
+            await self._say(f"Could not refresh the viewer ({exc}); continuing.")
+
     def _arrays(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         a = self.splat_arrays()
         return np.asarray(a["means"]), np.asarray(a["opacity"]), np.asarray(a["ids"])
@@ -247,6 +267,9 @@ class CleanupController:
             if out["ok"]:
                 self.crop_result = out["result"]
                 await self._say("Crop applied.")
+            # Resync either way: a reverted crop also snapshotted+undid, and the
+            # survey that follows must photograph the authoritative scene.
+            await self._resync_renderer()
         else:
             await self._say("Crop skipped — moving on to the noise survey.")
 
@@ -458,6 +481,10 @@ class CleanupController:
             else:
                 skipped += 1
         await self._dispatch("clear_selection", {})
+        # One resync for the whole batch (not per cluster — each reload refetches
+        # the .ply): the operator watches the approved clusters actually vanish.
+        if deleted:
+            await self._resync_renderer()
         return deleted, splats, skipped
 
     # ---- phase 6: summary --------------------------------------------------- #

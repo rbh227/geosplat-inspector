@@ -127,9 +127,20 @@ export class AgentWSClient {
         case 'reload_scene': {
           // also resets the trail — new scene, fresh path
           this.overlay.resetTrail()
-          const { url } = p as { url: string }
+          const { url, scene_id } = p as { url: string; scene_id?: string }
           // loadSplat is on the bridge via executors' bridge; reload via overlay-free path
           await this.reloadScene(url)
+          // Adopt the backend's alive IDs (v0.7). loadSplat alone leaves the
+          // viewer's ID map describing the PRE-edit scene, so the next
+          // select_by_ids tint would highlight the wrong splats — worse than
+          // not reloading. Best-effort: a failed adoption must still reply.
+          if (scene_id && this.bridge.adoptAliveIds) {
+            try {
+              await this.bridge.adoptAliveIds(scene_id)
+            } catch (err) {
+              console.warn('[agent] alive-id adoption failed after reload:', err)
+            }
+          }
           this.reply(cmd.id, { ok: true })
           break
         }

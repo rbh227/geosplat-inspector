@@ -35,6 +35,10 @@ export interface RendererBridge {
   /** Force one synchronous render of the current scene + camera. */
   renderOnce(): void
   loadSplat(url: string): Promise<void>
+  /** Adopt the backend's alive splat IDs after a reload, so the shared ID
+   *  space stays aligned (v0.7 — the cleanup controller reloads mid-run).
+   *  Optional: harnesses and mock bridges may omit it. */
+  adoptAliveIds?(sceneId: string): Promise<void>
   isLoaded(): boolean
 
   // v0.2 — the shared selection/movement action layer (R13 parity)

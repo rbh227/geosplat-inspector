@@ -7,7 +7,7 @@
  */
 import type { RendererBridge } from '@agent'
 import type { ViewerHandle } from '../types/viewer'
-import { BACKEND_URL } from './client'
+import { BACKEND_URL, getAliveIds } from './client'
 
 export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
   return {
@@ -25,6 +25,13 @@ export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
     loadSplat: (url: string) => {
       const abs = url.startsWith('/scene/') ? `${BACKEND_URL}${url}` : url
       return viewer.loadSplat(abs)
+    },
+    // v0.7 — after a mid-run reload the viewer's ID map still describes the
+    // PRE-edit scene; adopt the backend's alive IDs so agent tints and edits
+    // keep addressing the same splats (mirrors useSession.reloadAuthoritative).
+    adoptAliveIds: async (sceneId: string) => {
+      const ids = await getAliveIds(sceneId)
+      viewer.setIdMapFromIds(ids)
     },
     // v0.2 — shared selection/movement action layer
     getCentersWorld: () => viewer.getCentersWorld(),

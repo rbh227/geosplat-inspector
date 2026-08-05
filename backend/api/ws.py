@@ -288,6 +288,13 @@ class WSChannel(FrontendChannel):
         # the sole connected client (single-window and test setups).
         self._client_id = client_id
 
+    @property
+    def scene_id(self) -> str:
+        """The scene this channel drives. The cleanup controller needs it to
+        ask the renderer to reload the authoritative scene mid-run (it builds
+        `/scene/{id}.ply` + the `/ids` adoption from it)."""
+        return self._scene_id
+
     async def send_command(self, cmd: dict) -> dict:
         ctype = cmd.get("type")
         if ctype not in COMMAND_TYPES:

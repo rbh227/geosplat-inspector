@@ -431,3 +431,55 @@ describe('ws-client proposal overlay lifecycle', () => {
     expect(bridge.proposalBox).not.toBeNull()
   })
 })
+
+/**
+ * Codex adversarial review: a mid-run reload MUST adopt the backend's alive
+ * IDs. loadSplat alone leaves the viewer's ID map describing the pre-edit
+ * scene, so the very next select_by_ids tint would highlight the wrong splats
+ * — worse than not reloading at all.
+ */
+class ReloadBridge {
+  loaded: string[] = []
+  adopted: string[] = []
+  adoptFails = false
+  loadSplat(url: string): Promise<void> { this.loaded.push(url); return Promise.resolve() }
+  async adoptAliveIds(sceneId: string): Promise<void> {
+    if (this.adoptFails) throw new Error('ids fetch failed')
+    this.adopted.push(sceneId)
+  }
+}
+
+describe('ws-client reload_scene adopts the authoritative ID map', () => {
+  let transport: FakeTransport
+  let bridge: ReloadBridge
+
+  beforeEach(() => {
+    transport = new FakeTransport()
+    bridge = new ReloadBridge()
+    void new AgentWSClient(
+      transport as unknown as Transport,
+      bridge as unknown as RendererBridge,
+      { resetTrail() {} } as unknown as Overlay,
+      new PanelBus(),
+    )
+  })
+
+  it('loads the scene and then adopts its ids', async () => {
+    await transport.handler!({ type: 'reload_scene', id: 'r1', payload: { url: '/scene/s1.ply', scene_id: 's1' } })
+    expect(bridge.loaded).toEqual(['/scene/s1.ply'])
+    expect(bridge.adopted).toEqual(['s1'])
+    expect(transport.sent.at(-1)).toMatchObject({ id: 'r1', payload: { ok: true } })
+  })
+
+  it('still replies when the id adoption fails (never hangs the run)', async () => {
+    bridge.adoptFails = true
+    await transport.handler!({ type: 'reload_scene', id: 'r2', payload: { url: '/scene/s1.ply', scene_id: 's1' } })
+    expect(transport.sent.at(-1)).toMatchObject({ id: 'r2' })
+  })
+
+  it('skips adoption when no scene_id came with the command', async () => {
+    await transport.handler!({ type: 'reload_scene', id: 'r3', payload: { url: '/scene/s1.ply' } })
+    expect(bridge.loaded).toEqual(['/scene/s1.ply'])
+    expect(bridge.adopted).toEqual([])
+  })
+})
