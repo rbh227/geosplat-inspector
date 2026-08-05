@@ -84,8 +84,46 @@ function downscale(canvas: HTMLCanvasElement): HTMLCanvasElement {
   return out
 }
 
+/** Burn a labeled grid into a capture (cells A1..D4; columns A-D left→right,
+ *  rows 1-4 top→bottom — MUST match backend/analysis/clusters.cell_index). */
+export function drawGridOverlay(canvas: HTMLCanvasElement, grid = 4): void {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const w = canvas.width, h = canvas.height
+  ctx.save()
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+  ctx.lineWidth = Math.max(1, Math.round(w / 500))
+  ctx.font = `bold ${Math.round(h / 24)}px sans-serif`
+  ctx.fillStyle = 'rgba(255,220,0,0.9)'
+  for (let i = 1; i < grid; i++) {
+    ctx.beginPath(); ctx.moveTo((w * i) / grid, 0); ctx.lineTo((w * i) / grid, h); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, (h * i) / grid); ctx.lineTo(w, (h * i) / grid); ctx.stroke()
+  }
+  for (let row = 0; row < grid; row++) {
+    for (let col = 0; col < grid; col++) {
+      const label = String.fromCharCode(65 + col) + String(row + 1)
+      ctx.fillText(label, (w * col) / grid + w / (grid * 12), (h * row) / grid + h / (grid * 7))
+    }
+  }
+  ctx.restore()
+}
+
+/** Copy a canvas so overlays never touch the live renderer backbuffer. */
+function copyCanvas(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement('canvas')
+  out.width = canvas.width
+  out.height = canvas.height
+  const ctx = out.getContext('2d')
+  if (!ctx) return canvas
+  ctx.drawImage(canvas, 0, 0)
+  return out
+}
+
 /** Render the current view and return a clean, opaque PNG as a data URL. */
-export async function capturePNG(bridge: RendererBridge): Promise<string> {
+export async function capturePNG(
+  bridge: RendererBridge,
+  opts?: { grid?: boolean },
+): Promise<string> {
   const renderer = bridge.getRenderer()
   const prevColor = new THREE.Color()
   renderer.getClearColor(prevColor)
@@ -98,7 +136,13 @@ export async function capturePNG(bridge: RendererBridge): Promise<string> {
     bridge.renderOnce()
 
     const canvas = renderer.domElement
-    const source = downscale(canvas)
+    let source = downscale(canvas)
+    if (opts?.grid) {
+      // downscale() may hand back the LIVE renderer canvas (when it already
+      // fits) — never draw the overlay on that; copy first.
+      if (source === canvas) source = copyCanvas(canvas)
+      drawGridOverlay(source)
+    }
     const blob = await new Promise<Blob | null>((resolve) =>
       source.toBlob((b) => resolve(b), 'image/png'),
     )

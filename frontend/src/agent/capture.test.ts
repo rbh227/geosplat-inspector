@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { captureSize, MAX_CAPTURE_EDGE } from './capture.ts'
+import { captureSize, drawGridOverlay, MAX_CAPTURE_EDGE } from './capture.ts'
 
 /**
  * Vision models bill by patch, so capture pixel dimensions are a cost and a
@@ -47,5 +47,57 @@ describe('captureSize', () => {
 
   it('degrades safely on a zero-sized canvas', () => {
     expect(captureSize(0, 0)).toEqual({ width: 1, height: 1 })
+  })
+})
+
+/** jsdom has no real 2D context (needs node-canvas), so record the calls on a
+ *  stub — these tests pin the CONVENTION: 4×4, labels A1..D4, columns A-D
+ *  left→right, rows 1-4 top→bottom (must match backend clusters.cell_index). */
+function stubCanvas(width: number, height: number) {
+  const texts: Array<{ text: string; x: number; y: number }> = []
+  const lines: Array<{ x: number; y: number }> = []
+  const ctx = {
+    save() {}, restore() {}, beginPath() {}, stroke() {},
+    moveTo(x: number, y: number) { lines.push({ x, y }) },
+    lineTo() {},
+    fillText(text: string, x: number, y: number) { texts.push({ text, x, y }) },
+    strokeStyle: '', fillStyle: '', lineWidth: 0, font: '',
+  }
+  const canvas = {
+    width, height,
+    getContext: (kind: string) => (kind === '2d' ? ctx : null),
+  } as unknown as HTMLCanvasElement
+  return { canvas, texts, lines }
+}
+
+describe('drawGridOverlay', () => {
+  it('draws 16 labels A1..D4; A left/top, D right, 4 bottom', () => {
+    const { canvas, texts } = stubCanvas(400, 400)
+    drawGridOverlay(canvas)
+    expect(texts).toHaveLength(16)
+    const names = texts.map((t) => t.text).sort()
+    const expected: string[] = []
+    for (const col of ['A', 'B', 'C', 'D']) for (let r = 1; r <= 4; r++) expected.push(col + r)
+    expect(names).toEqual(expected.sort())
+
+    const a1 = texts.find((t) => t.text === 'A1')!
+    const d4 = texts.find((t) => t.text === 'D4')!
+    const d1 = texts.find((t) => t.text === 'D1')!
+    expect(a1.x).toBeLessThan(100)        // col A = leftmost quarter
+    expect(a1.y).toBeLessThan(100)        // row 1 = top quarter
+    expect(d4.x).toBeGreaterThan(300)     // col D = rightmost quarter
+    expect(d4.y).toBeGreaterThan(300)     // row 4 = bottom quarter
+    expect(d1.y).toBeLessThan(100)        // D1 = top-right, not bottom
+  })
+
+  it('draws 6 divider lines (3 vertical + 3 horizontal) for a 4x4 grid', () => {
+    const { canvas, lines } = stubCanvas(400, 400)
+    drawGridOverlay(canvas)
+    expect(lines).toHaveLength(6)
+  })
+
+  it('is a no-op without a 2d context', () => {
+    const canvas = { width: 10, height: 10, getContext: () => null } as unknown as HTMLCanvasElement
+    expect(() => drawGridOverlay(canvas)).not.toThrow()
   })
 })

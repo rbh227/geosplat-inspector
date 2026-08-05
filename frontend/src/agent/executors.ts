@@ -77,6 +77,17 @@ export class FrontendExecutors {
       return { ok: true, count: summary.count, bbox: summary.bbox }
     }
 
+    // v0.7 — controller tint: exact stable ids (CleanupController-dispatched,
+    // never offered to the model)
+    if (tool === 'select_by_ids') {
+      const ids = args.ids as number[]
+      if (!Array.isArray(ids)) return { ok: false, error: 'ids must be an array' }
+      if (args.mode === 'replace') this.bridge.clearSelection()
+      this.bridge.updateSelection(ids, args.mode === 'remove' ? 'remove' : 'add')
+      const summary = this.bridge.getSelectionSummary()
+      return { ok: true, count: summary.count, bbox: summary.bbox }
+    }
+
     // v0.5 — proposal / good-cube surface
     if (tool === 'get_core_bounds') {
       const box = this.bridge.getCoreBoundsBox()
@@ -360,29 +371,46 @@ export class FrontendExecutors {
    *  never calls this — the agent loop dispatches it before the first model
    *  turn of an Understand run. `if_revision_not` lets the loop skip the
    *  flight when the scene hasn't changed since the stored survey. */
-  async survey_capture(args: { if_revision_not?: number }): Promise<ToolResult> {
+  async survey_capture(args: { if_revision_not?: number; grid?: boolean }): Promise<ToolResult> {
     const revision = this.bridge.getSceneRevision()
     if (args.if_revision_not !== undefined && args.if_revision_not === revision) {
       return { unchanged: true, revision }
     }
     const frames_base64: string[] = []
     const labels: string[] = []
+    // v0.7 — one render-space camera pose per frame, index-aligned with
+    // frames_base64: the cleanup controller reprojects grid marks through it.
+    const poses: Array<{ position: number[]; target: number[]; fov: number; aspect: number }> = []
+    const grid = args.grid === true
+    const snapPose = () => {
+      const { position, target } = this.bridge.getCameraPose()
+      const cam = this.bridge.getCamera()
+      const el = this.bridge.getRenderer().domElement
+      poses.push({
+        position: [position.x, position.y, position.z],
+        target: [target.x, target.y, target.z],
+        fov: cam.fov,
+        aspect: (el.clientWidth || el.width) / ((el.clientHeight || el.height) || 1),
+      })
+    }
 
     // Frame 1 — the operator's current view ("the angle I just put in").
-    frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge)))
+    frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge, { grid })))
     labels.push("operator's view")
+    snapPose()
 
     const core = this.bridge.getSceneCore()
     if (core && core.radius > 0) {
       for (const pose of surveyPoses(this.bridge.getCamera(), core)) {
         await animateTo(this.bridge, pose.position, pose.target, 600)
         await sleep(250) // let Spark's async depth-sort settle at the new pose
-        frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge)))
+        frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge, { grid })))
         labels.push(pose.label)
+        snapPose()
       }
     }
     this.breadcrumb()
-    return { frames_base64, labels, revision }
+    return { frames_base64, labels, poses, revision }
   }
 
   async capture_orbit(args: { center: number[]; n: number; radius?: number }): Promise<ToolResult> {

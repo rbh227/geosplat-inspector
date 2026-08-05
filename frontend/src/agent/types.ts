@@ -89,8 +89,14 @@ export type ToolResult =
   | { ok: false; error: string }
   | { png_base64: string; percept?: PerceptTag }  // capture_frame
   | { frames_base64: string[] }   // capture_orbit
-  // v0.6 survey_capture: full survey, or the unchanged-revision short-circuit
-  | { frames_base64: string[]; labels: string[]; revision: number }
+  // v0.6 survey_capture: full survey, or the unchanged-revision short-circuit.
+  // v0.7 adds one render-space camera pose per frame (grid-mark reprojection).
+  | {
+      frames_base64: string[]
+      labels: string[]
+      poses: Array<{ position: number[]; target: number[]; fov: number; aspect: number }>
+      revision: number
+    }
   | { unchanged: true; revision: number }
 
 /** Payload carried by a `camera_move` command (which specific camera tool). */
