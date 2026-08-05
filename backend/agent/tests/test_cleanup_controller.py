@@ -174,3 +174,159 @@ def test_interrupt_aborts_run_with_interrupted_status():
     assert result.status == "interrupted"
     events = [e.get("type") for e in channel.events]
     assert "complete" in events
+
+
+# ---------------------------------------------------------------------------
+# Task 7: judgment tour, batch proposal, execution, summary
+# ---------------------------------------------------------------------------
+def _judge(verdict, reason="because"):
+    return ModelResponse(text=None, tool_calls=[
+        ToolCall("judge_candidate", {"verdict": verdict, "reason": reason})])
+
+
+def _two_blob_arrays():
+    rng = np.random.default_rng(0)
+    building = rng.uniform(-0.5, 0.5, size=(2000, 3))
+    blob_a = np.array([10.0, 0.0, 0.0]) + rng.normal(0, 0.05, size=(80, 3))
+    blob_b = np.array([0.0, 12.0, 0.0]) + rng.normal(0, 0.05, size=(50, 3))
+    means = np.vstack([building, blob_a, blob_b])
+    arrays = {
+        "means": means,
+        "opacity": np.full(len(means), 0.8),
+        "ids": np.arange(len(means), dtype=np.int64),
+    }
+    return lambda: arrays
+
+
+class DeletingExecutor(RecordingExecutor):
+    """Records delete_selection id payloads for binding assertions."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.deleted_batches: list[list[int]] = []
+
+    def delete_selection(self, ids):
+        self.deleted_batches.append(list(ids))
+        return super().delete_selection(ids)
+
+
+def _tour_controller(provider, channel, executor, arrays=None):
+    return _controller(provider, channel, executor, arrays=arrays or _two_blob_arrays())
+
+
+def test_tour_judges_each_candidate_and_deletes_only_junk():
+    channel = TourChannel(verdicts=[{"verdict": "approved"},   # crop
+                                    {"verdict": "approved"}])  # batch
+    executor = DeletingExecutor()
+    provider = ChoiceProvider(
+        [_mark([]), _mark([]), _mark([])] +        # 3 survey frames
+        [_judge("junk"), _judge("structure")]      # 2 candidates, size order
+    )
+    c = _tour_controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    assert c.verdicts == {"A": "junk", "B": "structure"}
+    # only cluster A (the bigger blob, 80 splats) was deleted
+    assert len(executor.deleted_batches) == 1
+    assert len(executor.deleted_batches[0]) == 80
+    # tour flew to each candidate and tinted it
+    framed = [cmd for cmd in channel.commands if cmd.get("tool") == "frame_object"]
+    tinted = [cmd for cmd in channel.commands if cmd.get("tool") == "select_by_ids"]
+    assert len(framed) >= 2 and len(tinted) >= 2
+
+
+def test_look_closer_gets_one_extra_view_then_must_commit():
+    channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider(
+        [_mark([]), _mark([]), _mark([])] +
+        [_judge("look_closer"), _judge("junk"),          # candidate A: 2 calls
+         _judge("look_closer"), _judge("look_closer")]   # candidate B: coerced
+    )
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert c.verdicts["A"] == "junk"
+    assert c.verdicts["B"] == "structure"     # second look_closer coerces to keep
+    # look_closer flew an extra view per use
+    orbits = [cmd for cmd in channel.commands if cmd.get("tool") == "orbit"]
+    assert len(orbits) == 2
+
+
+def test_model_failure_during_tour_is_unsure_kept():
+    channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               RuntimeError("x"), RuntimeError("x"),   # A: retry then None
+                               _judge("junk")])                        # B
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert c.verdicts["A"] == "unsure"
+    # unsure is NOT deleted
+    assert all(len(b) != 80 for b in executor.deleted_batches)
+    assert len(executor.deleted_batches) == 1
+
+
+def test_batch_card_carries_cluster_rows_and_binds_ids():
+    channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    batch = next(cmd for cmd in channel.commands
+                 if cmd.get("type") == "proposal" and cmd["args"]["kind"] == "delete_clusters")
+    rows = batch["args"]["clusters"]
+    assert [r["label"] for r in rows] == ["A", "B"]
+    assert all({"label", "count", "verdict"} <= set(r) for r in rows)
+    assert len(executor.deleted_batches) == 2   # per-cluster sequential deletes
+
+
+def test_batch_rejected_deletes_nothing_and_still_summarizes():
+    channel = TourChannel(verdicts=[{"verdict": "approved"},   # crop
+                                    {"verdict": "rejected"}])  # batch
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert executor.deleted_batches == []
+    assert result.status == "answered"
+    assert "kept" in (result.answer or "").lower()
+
+
+def test_adjust_flips_verdict_then_reproposes():
+    channel = TourChannel(verdicts=[
+        {"verdict": "approved"},                                   # crop
+        {"verdict": "adjusted", "feedback": "keep A, it is a shed"},
+        {"verdict": "approved"},                                   # re-proposed batch
+    ])
+    executor = DeletingExecutor()
+    flip = ModelResponse(text=None, tool_calls=[ToolCall(
+        "apply_feedback", {"flips": [{"label": "A", "to": "keep"}]})])
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk"),
+                               flip])
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert c.verdicts["A"] == "structure"
+    assert len(executor.deleted_batches) == 1        # only B deleted
+    assert len(executor.deleted_batches[0]) == 50
+
+
+def test_no_candidates_short_circuits_to_clean_answer():
+    rng = np.random.default_rng(0)
+    arrays = {
+        "means": rng.uniform(-0.5, 0.5, size=(2000, 3)),
+        "opacity": np.full(2000, 0.8),
+        "ids": np.arange(2000, dtype=np.int64),
+    }
+    channel = TourChannel(verdicts=[{"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([])])
+    c = _tour_controller(provider, channel, executor, arrays=lambda: arrays)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    assert executor.deleted_batches == []
+    batch_cards = [cmd for cmd in channel.commands
+                   if cmd.get("type") == "proposal" and cmd["args"].get("kind") == "delete_clusters"]
+    assert batch_cards == []

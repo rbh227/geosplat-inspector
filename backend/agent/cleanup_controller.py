@@ -52,6 +52,38 @@ _MARK_INSTRUCTION = (
     "disconnected from the main structure. Use [] if this view looks clean."
 )
 
+_JUDGE_INSTRUCTION = (
+    "The highlighted (tinted) cluster of points is candidate {label}: "
+    "{count} splats, {dist:.1f} units from the main structure. Call "
+    "judge_candidate: 'junk' if it is floating debris/noise to delete, "
+    "'structure' if it is part of a real object to keep, or 'look_closer' "
+    "for one more view if you truly cannot tell."
+)
+
+# Controller-private (not a contract tool): translate operator adjust-feedback
+# into per-cluster keep/delete flips via one forced call.
+_FEEDBACK_SPEC = {
+    "name": "apply_feedback",
+    "description": "Translate the operator's feedback into per-cluster flips.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "flips": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "to": {"type": "string", "enum": ["keep", "delete"]},
+                    },
+                    "required": ["label", "to"],
+                },
+            },
+        },
+        "required": ["flips"],
+    },
+}
+
 
 class RunInterrupted(Exception):
     pass
@@ -238,10 +270,166 @@ class CleanupController:
             f"{from_model} spotted only by the model)."
         )
 
-    # ---- phases 4-6 (judgment tour, batch proposal, summary) --------------- #
+    # ---- phase 4: judgment tour ------------------------------------------ #
+    async def _phase4_tour(self) -> None:
+        for cand in self.candidates:
+            await self._checkpoint()
+            await self._say(
+                f"Visiting candidate {cand.label} ({cand.count} splats, {cand.provenance})."
+            )
+            await self._frame_and_tint(cand)
+            verdict, reason = await self._judge_once(cand)
+            looks = 0
+            while verdict == "look_closer":
+                looks += 1
+                if looks > self.config.max_look_closer:
+                    verdict, reason = "structure", "could not decide — keeping it (safe default)"
+                    break
+                await self._dispatch("orbit", {
+                    "center": [(a + b) / 2 for a, b in zip(cand.bbox_min, cand.bbox_max)],
+                    "deg": 70, "axis": "y", "duration_ms": 800,
+                })
+                verdict, reason = await self._judge_once(cand)
+                if verdict == "look_closer" and looks >= self.config.max_look_closer:
+                    verdict, reason = "structure", "could not decide — keeping it (safe default)"
+                    break
+            self.verdicts[cand.label] = verdict
+            self.reasons[cand.label] = reason
+            await self._say(f"Candidate {cand.label}: {verdict} — {reason}")
+        await self._dispatch("clear_selection", {})
+
+    async def _frame_and_tint(self, cand: Cluster) -> None:
+        pad = max(cand.extent * 0.5, 0.25)
+        bbox = {
+            "min": [v - pad for v in cand.bbox_min],
+            "max": [v + pad for v in cand.bbox_max],
+        }
+        await self._dispatch("frame_object", {"bbox": bbox, "duration_ms": 900})
+        await self._dispatch("select_by_ids", {"ids": [int(i) for i in cand.ids], "mode": "replace"})
+
+    async def _judge_once(self, cand: Cluster) -> tuple[str, str]:
+        cap = await self._dispatch("capture_frame", {})
+        frames = cap.get("frames") or []
+        image = frames[0] if frames else None
+        args = await self._ask(
+            _JUDGE_INSTRUCTION.format(label=cand.label, count=cand.count, dist=cand.dist_from_core),
+            "judge_candidate", image,
+        )
+        if args is None:
+            return "unsure", "model unavailable — kept by default"
+        verdict = args.get("verdict")
+        if verdict not in ("junk", "structure", "look_closer"):
+            return "unsure", "unusable model reply — kept by default"
+        return verdict, str(args.get("reason", ""))[:120]
+
+    # ---- phase 5: batch proposal + bound execution ------------------------- #
+    def _rows(self) -> list[dict]:
+        return [{
+            "label": c.label, "count": c.count,
+            "verdict": self.verdicts.get(c.label, "unsure"),
+            "reason": self.reasons.get(c.label, ""),
+            "provenance": c.provenance,
+        } for c in self.candidates]
+
+    async def _phase5_batch(self) -> tuple[int, int, int]:
+        """Returns (clusters_deleted, splats_deleted, clusters_skipped)."""
+        junk = [c for c in self.candidates if self.verdicts.get(c.label) == "junk"]
+        if not junk:
+            await self._say("No clusters judged junk — nothing to delete.")
+            return 0, 0, 0
+        rounds = 0
+        while True:
+            total = sum(c.count for c in junk)
+            kept = len(self.candidates) - len(junk)
+            reply = await self._dispatch("propose_decision", {
+                "kind": "delete_clusters",
+                "summary": f"Delete {len(junk)} cluster{'s' if len(junk) != 1 else ''} "
+                           f"({total:,} splats). Keeping {kept} judged structure/unsure.",
+                "clusters": self._rows(),
+            })
+            verdict = (reply.get("result") or {}) if reply.get("ok") else {}
+            v = verdict.get("verdict") if isinstance(verdict, dict) else None
+            if v == "approved":
+                return await self._execute_junk(junk)
+            if v == "adjusted" and rounds < self.config.max_adjust_rounds:
+                rounds += 1
+                await self._apply_feedback(str(verdict.get("feedback", "")))
+                junk = [c for c in self.candidates if self.verdicts.get(c.label) == "junk"]
+                if not junk:
+                    await self._say("After your adjustments nothing is marked junk.")
+                    return 0, 0, 0
+                continue
+            await self._say("Batch rejected — keeping everything.")
+            return 0, 0, 0
+
+    async def _apply_feedback(self, feedback: str) -> None:
+        labels = ", ".join(c.label for c in self.candidates)
+        # _FEEDBACK_SPEC is controller-private (not a contract tool), so this
+        # calls ask_forced directly rather than going through self._ask.
+        args = await ask_forced(
+            self.provider,
+            f"Cluster labels: {labels}. Current verdicts: "
+            + "; ".join(f"{k}={v}" for k, v in self.verdicts.items())
+            + f'. Operator feedback: "{feedback}". Call apply_feedback with the flips.',
+            _FEEDBACK_SPEC, None,
+            timeout_s=self.config.call_timeout_s, retries=self.config.call_retries,
+        )
+        if not args:
+            await self._say("Couldn't parse that feedback — showing the card again unchanged.")
+            return
+        for flip in args.get("flips", []):
+            if not isinstance(flip, dict):
+                continue
+            label = str(flip.get("label", "")).upper()
+            if label in self.verdicts:
+                self.verdicts[label] = "structure" if flip.get("to") == "keep" else "junk"
+                self.reasons[label] = f"operator: {feedback}"[:120]
+
+    async def _execute_junk(self, junk: list[Cluster]) -> tuple[int, int, int]:
+        alive_ids = set(int(i) for i in self._arrays()[2])
+        deleted = splats = skipped = 0
+        for c in junk:
+            await self._checkpoint()
+            ids = [int(i) for i in c.ids]
+            if not all(i in alive_ids for i in ids):
+                skipped += 1
+                await self._say(
+                    f"Cluster {c.label} changed since review — skipped (approval void for it)."
+                )
+                continue
+            await self._dispatch("select_by_ids", {"ids": ids, "mode": "replace"})
+            out = await self._guarded_edit("delete_selection", ids)
+            if out["ok"]:
+                deleted += 1
+                splats += len(ids)
+                alive_ids.difference_update(ids)
+                await self._say(f"Deleted cluster {c.label} ({len(ids):,} splats).")
+            else:
+                skipped += 1
+        await self._dispatch("clear_selection", {})
+        return deleted, splats, skipped
+
+    # ---- phase 6: summary --------------------------------------------------- #
     async def _phases_4_to_6(self) -> str:
-        # Implemented in the next task; the stub keeps phases 1-3 runnable.
-        return f"Cleanup survey complete: {len(self.candidates)} candidates."
+        if not self.candidates:
+            answer = "Scene looks clean: no junk candidates found after the crop."
+            await self._say(answer)
+            return answer
+        await self._phase4_tour()
+        deleted, splats, skipped = await self._phase5_batch()
+        kept = len(self.candidates) - deleted - skipped
+        parts = [
+            f"Cleanup done: {deleted} cluster{'s' if deleted != 1 else ''} "
+            f"deleted ({splats:,} splats)"
+        ]
+        parts.append(f"{kept} kept")
+        if skipped:
+            parts.append(f"{skipped} skipped (changed or reverted)")
+        if self.unresolved_marks:
+            parts.append(f"{self.unresolved_marks} model mark(s) resolved to nothing")
+        answer = ", ".join(parts) + "."
+        await self._say(answer)
+        return answer
 
 
 __all__ = ["CleanupConfig", "CleanupController", "RunInterrupted"]
