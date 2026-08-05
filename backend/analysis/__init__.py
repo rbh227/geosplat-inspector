@@ -4,6 +4,7 @@ Builds against the frozen contracts and Agent 1's ``SplatModel``. The outlier cr
 lives once in :func:`outlier_mask` and is imported by the editing engine (R3).
 """
 
+from .clusters import Cluster, core_box, find_clusters
 from .editing import EditingEngine
 from .history import ArrayPatch, Change, History
 from .metrics import (
@@ -16,6 +17,9 @@ from .metrics import (
 from .selection import resolve_selection
 
 __all__ = [
+    "Cluster",
+    "core_box",
+    "find_clusters",
     "EditingEngine",
     "History",
     "ArrayPatch",
