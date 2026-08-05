@@ -295,19 +295,19 @@ class CleanupController:
             await self._say(
                 f"Visiting candidate {cand.label} ({cand.count} splats, {cand.provenance})."
             )
-            await self._frame_and_tint(cand)
-            verdict, reason = await self._judge_once(cand)
+            framed = await self._frame_and_tint(cand)
+            verdict, reason = await self._judge_once(cand, framed)
             looks = 0
             while verdict == "look_closer":
                 looks += 1
                 if looks > self.config.max_look_closer:
                     verdict, reason = "structure", "could not decide — keeping it (safe default)"
                     break
-                await self._dispatch("orbit", {
+                orbit = await self._dispatch("orbit", {
                     "center": [(a + b) / 2 for a, b in zip(cand.bbox_min, cand.bbox_max)],
                     "deg": 70, "axis": "y", "duration_ms": 800,
                 })
-                verdict, reason = await self._judge_once(cand)
+                verdict, reason = await self._judge_once(cand, bool(orbit.get("ok")))
                 if verdict == "look_closer" and looks >= self.config.max_look_closer:
                     verdict, reason = "structure", "could not decide — keeping it (safe default)"
                     break
@@ -316,22 +316,39 @@ class CleanupController:
             await self._say(f"Candidate {cand.label}: {verdict} — {reason}")
         await self._dispatch("clear_selection", {})
 
-    async def _frame_and_tint(self, cand: Cluster) -> None:
+    async def _frame_and_tint(self, cand: Cluster) -> bool:
+        """Fly to the cluster and tint it. Returns False if either step failed —
+        the model must never judge an unframed or untinted view."""
         pad = max(cand.extent * 0.5, 0.25)
         bbox = {
             "min": [v - pad for v in cand.bbox_min],
             "max": [v + pad for v in cand.bbox_max],
         }
-        await self._dispatch("frame_object", {"bbox": bbox, "duration_ms": 900})
-        await self._dispatch("select_by_ids", {"ids": [int(i) for i in cand.ids], "mode": "replace"})
+        framed = await self._dispatch("frame_object", {"bbox": bbox, "duration_ms": 900})
+        tinted = await self._dispatch(
+            "select_by_ids", {"ids": [int(i) for i in cand.ids], "mode": "replace"},
+        )
+        return bool(framed.get("ok")) and bool(tinted.get("ok"))
 
-    async def _judge_once(self, cand: Cluster) -> tuple[str, str]:
+    async def _judge_once(self, cand: Cluster, framed: bool = True) -> tuple[str, str]:
+        """One forced verdict. Fails CLOSED: without a framed, tinted, actually
+        captured view there is nothing to judge, so the cluster is kept and the
+        model is not asked at all (a blind 'junk' would delete real geometry)."""
+        if not framed:
+            await self._say(
+                f"Candidate {cand.label}: the viewer could not frame or tint it — keeping it."
+            )
+            return "unsure", "viewer could not show the cluster — kept by default"
         cap = await self._dispatch("capture_frame", {})
         frames = cap.get("frames") or []
-        image = frames[0] if frames else None
+        if not frames:
+            await self._say(
+                f"Candidate {cand.label}: no frame came back from the viewer — keeping it."
+            )
+            return "unsure", "no captured view — kept by default"
         args = await self._ask(
             _JUDGE_INSTRUCTION.format(label=cand.label, count=cand.count, dist=cand.dist_from_core),
-            "judge_candidate", image,
+            "judge_candidate", frames[0],
         )
         if args is None:
             return "unsure", "model unavailable — kept by default"

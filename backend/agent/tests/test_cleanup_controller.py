@@ -379,3 +379,64 @@ def test_error_path_reports_scene_changed_after_an_edit():
     assert result.status == "error"
     assert "crop_bbox" in executor.edit_calls
     assert _complete(channel)["scene_changed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Codex adversarial review: a verdict requires a real, tinted, framed view
+# ---------------------------------------------------------------------------
+class FlakyChannel(TourChannel):
+    """Fails a chosen frontend tool the way a renderer timeout does (dispatch
+    turns the exception into {ok: False, error}, it never raises)."""
+
+    def __init__(self, fail_tool: str, *, empty_capture: bool = False, **kw):
+        super().__init__(**kw)
+        self.fail_tool = fail_tool
+        self.empty_capture = empty_capture
+
+    async def send_command(self, cmd):
+        tool = cmd.get("tool")
+        if tool == self.fail_tool and tool != "survey_capture":
+            self.commands.append(cmd)
+            self._sends += 1
+            raise TimeoutError("renderer busy")
+        if tool == "capture_frame" and self.empty_capture:
+            self.commands.append(cmd)
+            self._sends += 1
+            return {"ok": True}          # replied, but no frame came back
+        return await super().send_command(cmd)
+
+
+def test_capture_without_a_frame_forces_unsure_and_never_asks_the_model():
+    channel = FlakyChannel("", empty_capture=True, verdicts=[{"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert set(c.verdicts.values()) == {"unsure"}
+    assert executor.deleted_batches == []
+    # the model was never asked to judge a cluster it could not see
+    judge_calls = [k for k in provider.calls if k["tools"] == ["judge_candidate"]]
+    assert judge_calls == []
+
+
+def test_failed_tint_forces_unsure():
+    channel = FlakyChannel("select_by_ids", verdicts=[{"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert set(c.verdicts.values()) == {"unsure"}
+    assert executor.deleted_batches == []
+
+
+def test_failed_framing_forces_unsure():
+    channel = FlakyChannel("frame_object", verdicts=[{"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("junk"), _judge("junk")])
+    c = _tour_controller(provider, channel, executor)
+    _run(c.run("cleanup_scene"))
+    assert set(c.verdicts.values()) == {"unsure"}
+    assert executor.deleted_batches == []
