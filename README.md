@@ -198,15 +198,18 @@ touch the scene, by construction.
   <img src="docs/diagrams/agent-cleanup.svg" width="860" alt="Cleaner agent: propose, review, gated edit loop">
 </p>
 
-The cleanup agent works **proposed-and-reviewed**: it surveys the mess,
-proposes a decision (crop-outside-box, delete-selection, keep-only, or a
-statistical bulk-edit sweep), and shows it as a ProposalCard with an SDF dim +
-wireframe preview and a selection tint on the pending set. Nothing destructive
-fires until you approve — and the approval binds the *exact* reviewed
-operation. *Adjust* feeds your natural-language feedback back into the loop;
-*reject* drops the proposal. You can move the camera freely during review;
-Stop ends the run cleanly. The stock routine: one good-cube crop to throw away
-the far junk, then brush rounds for the small stuff.
+The cleanup agent works **proposed-and-reviewed**, structured as a *judgment
+tour*: the app computes the crop box and finds candidate junk clusters
+(statistics + the model marking noise cells on gridded survey views), then
+flies the camera to each candidate, tints it, and asks the model one forced
+question — junk, structure, or look closer. Verdicts land on a single batch
+ProposalCard listing every cluster; nothing destructive fires until you
+approve, and the approval binds exactly the reviewed clusters. *Adjust* flips
+individual verdicts in plain language ("keep B, it's a shed"); *reject* keeps
+everything. The model never invents coordinates and never picks tools — a
+failed model call just means a cluster is kept — so the flow survives even
+small local models. You can move the camera freely during review; Stop ends
+the run cleanly.
 
 ---
 

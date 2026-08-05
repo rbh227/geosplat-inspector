@@ -45,13 +45,20 @@ TELEPORT_TOOLS: frozenset[str] = frozenset(
 # unreachable in the Understand stage.
 UNDERSTAND_TOOLS: frozenset[str] = frozenset({"narrate", "answer"})
 
+# App-dispatched only (v0.6 survey, v0.7 judgment-tour tint): the loop or the
+# CleanupController sends these; the model must never see them as options.
+# survey_capture was previously exposed in Clean by accident of "registry minus
+# teleports" (tools.py says loop-dispatched only).
+CONTROLLER_ONLY_TOOLS: frozenset[str] = frozenset({"survey_capture", "select_by_ids"})
+
 
 def stage_tools(stage: Stage) -> frozenset[str]:
     """Tool names offered to the model in a stage."""
     if stage == "understand":
         return UNDERSTAND_TOOLS
-    # Clean: the full editor surface MINUS the teleport tools (button-only nav).
-    return frozenset(TOOL_BY_NAME) - TELEPORT_TOOLS
+    # Clean: the full editor surface MINUS the teleport tools (button-only nav)
+    # MINUS the app-dispatched tools (the model never drives those).
+    return frozenset(TOOL_BY_NAME) - TELEPORT_TOOLS - CONTROLLER_ONLY_TOOLS
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +106,13 @@ SKILLS: list[Skill] = [
     {
         "name": "cleanup_scene",
         "stage": "clean",
-        "description": "Reviewed good-cube crop: I seed the box, you move and resize it, then approve the crop.",
-        "recipe": "Start IMMEDIATELY — the box comes from the DATA, not your view. In order: 1) capture_frame once for context, 2) get_core_bounds, 3) show_box_preview with exactly those bounds, 4) narrate that the operator can move and resize the box, 5) propose_decision(kind='crop_outside_box'), 6) crop_bbox on approval — the operator's final box is bound automatically, so pass the previewed bounds and let the backend substitute theirs. Then verify: get_metrics and one capture_frame, report before/after counts, and call answer. Do NOT brush, sweep, or crop again.",
+        "description": "Full reviewed cleanup: app-computed crop, then a judgment tour of junk candidates you approve as one batch.",
+        "recipe": "APP-RUN ROUTINE — the app drives this end to end (crop card, "
+                  "gridded noise survey, cluster judgment tour, one batch approval); "
+                  "the model only answers where-is-noise and is-it-junk questions. "
+                  "If asked to clean the whole scene, tell the operator to use the "
+                  "Cleanup scene button (or type cleanup_scene); do not attempt the "
+                  "routine tool-by-tool.",
     },
     {
         "name": "verify_cleanup",

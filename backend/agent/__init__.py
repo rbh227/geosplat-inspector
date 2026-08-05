@@ -17,7 +17,7 @@ Everything imports from the frozen `/backend/contracts`; nothing here edits it.
 """
 
 from .capabilities import CAPABILITIES, capability_index
-from .closed_loops import flagship_floater_cleanup, run_fix_verify
+from .cleanup_controller import CleanupConfig, CleanupController
 from .config import AgentConfig
 from .dispatch import BackendExecutor, ToolDispatcher
 from .grounding import GroundingError, GroundingLedger
@@ -38,8 +38,8 @@ __all__ = [
     "SYSTEM_PROMPT",
     "build_tool_specs",
     "verify_edit",
-    "run_fix_verify",
-    "flagship_floater_cleanup",
+    "CleanupConfig",
+    "CleanupController",
     "CAPABILITIES",
     "capability_index",
 ]

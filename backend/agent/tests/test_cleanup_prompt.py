@@ -66,8 +66,16 @@ def test_clean_recipes_route_through_propose_decision():
     clean = {s["name"]: s for s in skills_for("clean")}
     assert "propose_decision(kind='delete_selection')" in clean["clean_floaters"]["recipe"]
     assert "propose_decision" in clean["trim_background"]["recipe"]
-    assert "get_core_bounds" in clean["cleanup_scene"]["recipe"]
-    assert "propose_decision(kind='crop_outside_box')" in clean["cleanup_scene"]["recipe"]
+
+
+def test_cleanup_scene_recipe_is_app_run_v07():
+    """v0.7 judgment-tour: cleanup_scene is a controller routine, not a
+    tool-by-tool recipe the model executes."""
+    clean = {s["name"]: s for s in skills_for("clean")}
+    recipe = clean["cleanup_scene"]["recipe"]
+    assert "APP-RUN ROUTINE" in recipe
+    assert "get_core_bounds" not in recipe
+    assert "propose_decision" not in recipe
 
 
 # ── v0.6: box sizing belongs to the operator ─────────────────────────────

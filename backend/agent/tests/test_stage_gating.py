@@ -38,10 +38,15 @@ def test_understand_specs_contain_zero_mutating_tools():
 
 def test_clean_specs_contain_the_full_registry_minus_teleports():
     # Button-only nav (docs/plans/2026-07-20-001): the teleport/absolute camera
-    # tools are removed from BOTH stages' offered sets; everything else remains.
+    # tools are removed from BOTH stages' offered sets. v0.6/v0.7: the
+    # app-dispatched tools (survey_capture, select_by_ids) are removed too —
+    # the loop/CleanupController drives those, never the model.
+    from backend.agent.system_prompt import CONTROLLER_ONLY_TOOLS
+
     names = {spec.name for spec in build_tool_specs("clean")}
-    assert names == {t.name for t in TOOL_REGISTRY} - TELEPORT_TOOLS
+    assert names == {t.name for t in TOOL_REGISTRY} - TELEPORT_TOOLS - CONTROLLER_ONLY_TOOLS
     assert names.isdisjoint(TELEPORT_TOOLS)
+    assert names.isdisjoint(CONTROLLER_ONLY_TOOLS)
     assert {"move_camera", "turn", "dolly"} <= names
 
 
