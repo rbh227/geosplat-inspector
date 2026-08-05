@@ -101,6 +101,9 @@ export const FRONTEND_TOOLS = [
   "reframe",
   // v0.5 — proposal / good-cube (agent-cleanup-proposals spec)
   "get_core_bounds", "show_box_preview", "adjust_box_preview", "propose_decision",
+  // v0.7 — controller tint: exact stable ids (judgment-tour cleanup; the
+  // CleanupController dispatches it, never the model)
+  "select_by_ids",
 ] as const;
 
 export const BACKEND_TOOLS = [
@@ -164,6 +167,24 @@ export type WSCommandType =
  * looked at rather than the one the agent previewed.
  */
 export const PROPOSAL_DECISION_FIELDS = ['verdict', 'feedback', 'box'] as const
+
+/** Proposal kinds (mirror: tools.py propose_decision kind enum).
+ *  v0.7 adds delete_clusters — the judgment-tour batch card. */
+export const PROPOSAL_KINDS = [
+  'crop_outside_box', 'delete_selection', 'keep_only_selection', 'bulk_edit',
+  'delete_clusters',
+] as const
+export type ProposalKind = typeof PROPOSAL_KINDS[number]
+
+/** v0.7 — judgment-tour batch proposal rows (mirror: tools.py clusters items). */
+export const CLUSTER_ROW_FIELDS = ['label', 'count', 'verdict', 'reason', 'provenance'] as const
+export interface ClusterRow {
+  label: string
+  count: number
+  verdict: 'junk' | 'structure' | 'unsure'
+  reason?: string
+  provenance?: 'stats' | 'model' | 'both'
+}
 
 export interface WSCommand {
   type: WSCommandType;

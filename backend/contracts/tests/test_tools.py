@@ -25,9 +25,10 @@ def test_v02_counts():
     # v0.3 added `turn`, v0.4 added `reframe` (both frontend): 22 -> 24 frontend.
     # v0.5 adds the four proposal / good-cube frontend tools: 24 -> 28 frontend,
     # 42 -> 46 total. v0.6 adds survey_capture: 28 -> 29 frontend, 46 -> 47 total.
-    assert len(FRONTEND_TOOLS) == 29
+    # v0.7 adds select_by_ids: 29 -> 30 frontend, 47 -> 48 total.
+    assert len(FRONTEND_TOOLS) == 30
     assert len(BACKEND_TOOLS) == 18
-    assert len(TOOL_REGISTRY) == 47
+    assert len(TOOL_REGISTRY) == 48
 
 
 def test_v03_turn_tool_present_and_routed():
@@ -80,3 +81,33 @@ def test_proposal_decision_fields_v06():
 def test_v06_survey_capture_present_and_routed():
     assert "survey_capture" in FRONTEND_TOOLS
     assert TOOL_BY_NAME["survey_capture"].runs_on == "frontend"
+
+
+def test_v07_select_by_ids_registered():
+    entry = TOOL_BY_NAME["select_by_ids"]
+    assert entry.runs_on == "frontend"
+    props = entry.params["properties"]
+    assert props["ids"]["type"] == "array"
+    assert set(entry.params["required"]) == {"ids"}
+
+
+def test_v07_delete_clusters_kind():
+    kinds = TOOL_BY_NAME["propose_decision"].params["properties"]["kind"]["enum"]
+    assert "delete_clusters" in kinds
+    props = TOOL_BY_NAME["propose_decision"].params["properties"]
+    assert "clusters" in props
+    row = props["clusters"]["items"]["properties"]
+    assert set(row) == {"label", "count", "verdict", "reason", "provenance"}
+
+
+def test_v07_controller_choice_specs():
+    from backend.contracts.tools import CONTROLLER_CHOICE_SPECS
+
+    mark = CONTROLLER_CHOICE_SPECS["mark_noise"]
+    judge = CONTROLLER_CHOICE_SPECS["judge_candidate"]
+    assert mark["parameters"]["properties"]["cells"]["items"]["type"] == "string"
+    verdicts = judge["parameters"]["properties"]["verdict"]["enum"]
+    assert verdicts == ["junk", "structure", "look_closer"]
+    # choice specs are NOT dispatchable registry tools
+    assert "mark_noise" not in TOOL_BY_NAME
+    assert "judge_candidate" not in TOOL_BY_NAME

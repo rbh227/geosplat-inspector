@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { BACKEND_TOOLS, FRONTEND_TOOLS, PROPOSAL_DECISION_FIELDS } from '../contracts.ts'
+import { BACKEND_TOOLS, CLUSTER_ROW_FIELDS, FRONTEND_TOOLS, PROPOSAL_DECISION_FIELDS, PROPOSAL_KINDS } from '../contracts.ts'
 import type { WSCommandType } from '../contracts.ts'
 
 // Mirror-drift guard: these counts and names must match the Python registry
 // (backend/contracts/tools.py, asserted in backend/contracts/tests/test_tools.py).
 describe('contracts v0.2 mirror', () => {
-  it('matches the Python registry counts (29 frontend / 18 backend)', () => {
+  it('matches the Python registry counts (30 frontend / 18 backend)', () => {
     // v0.3 added `turn`, v0.4 added `reframe`, v0.5 added the four proposal /
-    // good-cube tools, v0.6 added `survey_capture` (all frontend):
-    // 22 -> 24 -> 28 -> 29.
-    expect(FRONTEND_TOOLS.length).toBe(29)
+    // good-cube tools, v0.6 added `survey_capture`, v0.7 added `select_by_ids`
+    // (all frontend): 22 -> 24 -> 28 -> 29 -> 30.
+    expect(FRONTEND_TOOLS.length).toBe(30)
     expect(BACKEND_TOOLS.length).toBe(18)
   })
 
@@ -55,6 +55,14 @@ describe('contracts v0.2 mirror', () => {
   it('has no duplicate names across the registry', () => {
     const all = [...FRONTEND_TOOLS, ...BACKEND_TOOLS]
     expect(new Set(all).size).toBe(all.length)
+  })
+})
+
+describe('v0.7 judgment-tour additions', () => {
+  it('carries select_by_ids, the delete_clusters kind, and the cluster row fields', () => {
+    expect(new Set<string>(FRONTEND_TOOLS).has('select_by_ids')).toBe(true)
+    expect(PROPOSAL_KINDS).toContain('delete_clusters')
+    expect(CLUSTER_ROW_FIELDS).toEqual(['label', 'count', 'verdict', 'reason', 'provenance'])
   })
 })
 

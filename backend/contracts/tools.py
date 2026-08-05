@@ -10,6 +10,10 @@ op (docs/plans/2026-07-20-002). v0.5 adds the proposal / good-cube tools
 propose-and-review cleanup flow (docs/superpowers/specs/2026-07-22-agent-cleanup-
 proposals-design.md). v0.6 adds `survey_capture` — the app-owned analyst
 survey (docs/superpowers/specs/2026-08-03-app-owned-survey-analyst-design.md).
+v0.7 adds select_by_ids (controller tint), the delete_clusters proposal kind +
+clusters payload rows, and CONTROLLER_CHOICE_SPECS — forced-choice schemas for
+the judgment-tour cleanup controller, never dispatched (docs/superpowers/specs/
+2026-08-04-judgment-tour-cleanup-design.md).
 Additions only — nothing is removed or renamed.
 """
 
@@ -194,6 +198,17 @@ TOOL_REGISTRY: list[ToolEntry] = [
     ToolEntry("get_selection_state", "frontend", {
         "type": "object", "properties": {},
     }, "{count, bbox}"),
+    # v0.7 — controller tint: select EXACT stable ids (judgment-tour cleanup).
+    # Dispatched by the CleanupController only; never offered to the model.
+    ToolEntry("select_by_ids", "frontend", {
+        "type": "object",
+        "properties": {
+            "ids": {"type": "array", "items": {"type": "integer"},
+                    "description": "Stable splat ids to select"},
+            "mode": {"type": "string", "enum": ["add", "remove", "replace"]},
+        },
+        "required": ["ids"],
+    }, "{count, bbox}"),
 
     # ── frontend (movement) — v0.2 ──
     ToolEntry("move_camera", "frontend", {
@@ -247,10 +262,12 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "type": "object",
         "properties": {
             "kind": {"type": "string",
-                     "enum": ["crop_outside_box", "delete_selection", "keep_only_selection", "bulk_edit"],
+                     "enum": ["crop_outside_box", "delete_selection", "keep_only_selection", "bulk_edit",
+                              "delete_clusters"],
                      "description": "delete_selection deletes the selected splats; "
                                     "keep_only_selection deletes everything EXCEPT them — "
-                                    "materially different consent, so distinct kinds"},
+                                    "materially different consent, so distinct kinds. "
+                                    "delete_clusters (v0.7) is the judgment-tour batch card"},
             "summary": {"type": "string",
                         "description": "One or two sentences the operator reads before deciding"},
             "operation": {
@@ -264,6 +281,24 @@ TOOL_REGISTRY: list[ToolEntry] = [
                     "params": {"type": "object"},
                 },
                 "required": ["tool"],
+            },
+            # v0.7 — delete_clusters only: the reviewed rows the operator sees
+            "clusters": {
+                "type": "array",
+                "description": "delete_clusters only: the reviewed rows",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string"},
+                        "count": {"type": "integer"},
+                        "verdict": {"type": "string",
+                                    "enum": ["junk", "structure", "unsure"]},
+                        "reason": {"type": "string"},
+                        "provenance": {"type": "string",
+                                       "enum": ["stats", "model", "both"]},
+                    },
+                    "required": ["label", "count", "verdict"],
+                },
             },
         },
         "required": ["kind", "summary"],
@@ -380,6 +415,39 @@ TOOL_REGISTRY: list[ToolEntry] = [
 # approval to it (mirror: frontend/src/contracts.ts PROPOSAL_DECISION_FIELDS).
 PROPOSAL_DECISION_FIELDS: tuple[str, ...] = ("verdict", "feedback", "box")
 
+# v0.7 — forced-choice schemas for the CleanupController. These are provider
+# ToolSpec dicts (name/description/parameters), NOT registry entries: the
+# controller offers exactly one of them per model call and dispatches nothing.
+CONTROLLER_CHOICE_SPECS: dict[str, dict] = {
+    "mark_noise": {
+        "name": "mark_noise",
+        "description": "Mark grid cells that contain floating junk, debris "
+                       "mist, or disconnected fragments. Empty list if none.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cells": {"type": "array", "items": {"type": "string"},
+                          "description": "Cell labels like B3 (columns A-D, rows 1-4)"},
+                "note": {"type": "string"},
+            },
+            "required": ["cells"],
+        },
+    },
+    "judge_candidate": {
+        "name": "judge_candidate",
+        "description": "Judge the highlighted cluster.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "verdict": {"type": "string",
+                            "enum": ["junk", "structure", "look_closer"]},
+                "reason": {"type": "string", "description": "One short sentence"},
+            },
+            "required": ["verdict", "reason"],
+        },
+    },
+}
+
 # Quick lookups
 TOOL_BY_NAME: dict[str, ToolEntry] = {t.name: t for t in TOOL_REGISTRY}
 FRONTEND_TOOLS: set[str] = {t.name for t in TOOL_REGISTRY if t.runs_on == "frontend"}
@@ -392,4 +460,5 @@ __all__ = [
     "FRONTEND_TOOLS",
     "BACKEND_TOOLS",
     "PROPOSAL_DECISION_FIELDS",
+    "CONTROLLER_CHOICE_SPECS",
 ]
