@@ -597,7 +597,13 @@ export function useSession(opts: SessionOptions): Session {
           // panels.running, whose subscribe REPLAYS the current value (false)
           // — without this the whole first run shows no thinking indicator.
           setIsThinking(true)
-          return runAgent(sceneId, text, stageRef.current, clientId())
+          // The bare routine name routes to the app-owned cleanup controller;
+          // send the explicit mode too so the routing never depends on the
+          // prompt string alone (v0.7 judgment-tour cleanup).
+          const mode = stageRef.current === 'clean' && text.trim() === 'cleanup_scene'
+            ? 'cleanup' as const
+            : undefined
+          return runAgent(sceneId, text, stageRef.current, clientId(), mode)
         })
         .catch((err) => {
           const text404 = err instanceof Error ? err.message : String(err)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, SendHorizonal, ChevronRight, Square } from 'lucide-react'
+import { X, SendHorizonal, ChevronRight, Sparkles, Square } from 'lucide-react'
 import type { ChatMessage } from '../types/agent'
 import type { ProposalState } from '@agent'
 import ActionCard from './ActionCard'
@@ -214,6 +214,23 @@ export default function ChatPanel({
 
       {/* Input bar */}
       <div className="shrink-0 px-4 py-3 border-t border-border-subtle">
+        {/* Quick action: the app-run judgment-tour cleanup (v0.7). Clean stage
+            only; hidden while a run is active. */}
+        {stage === 'clean' && !isThinking && (
+          <div className="flex items-center gap-2 pb-2">
+            <button
+              onClick={() => onSend('cleanup_scene')}
+              className="
+                flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full
+                border border-accent-amber/40 text-accent-amber
+                hover:bg-accent-amber-dim transition-colors duration-150 focus-ring
+              "
+            >
+              <Sparkles size={12} />
+              Cleanup scene
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}

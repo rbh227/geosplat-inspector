@@ -32,7 +32,7 @@ class BlockingRunner:
         self.started = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def run(self, prompt, scene, channel, stage: str = "clean") -> None:
+    async def run(self, prompt, scene, channel, stage: str = "clean", mode=None) -> None:
         self.started.set()
         await self.release.wait()
 

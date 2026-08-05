@@ -204,7 +204,9 @@ class RealAgentRunner:
     (routes._drive) rather than at import time.
     """
 
-    async def run(self, prompt: str, scene, channel, stage: str = "clean") -> None:  # scene: RealScene
+    async def run(
+        self, prompt: str, scene, channel, stage: str = "clean", mode: str | None = None,
+    ) -> None:  # scene: RealScene
         # Imported lazily: keeps server boot independent of google-genai being
         # installed (the loop only needs it at run time).
         from backend.agent import AgentLoop, ToolDispatcher
@@ -216,6 +218,36 @@ class RealAgentRunner:
         executor = RealBackendExecutor(scene)
         dispatcher = ToolDispatcher(executor, channel)
         cfg = get_store().resolve()
+
+        # v0.7 — judgment-tour cleanup: the app-owned controller replaces the
+        # freeform loop for cleanup runs (spec 2026-08-04). Routed by explicit
+        # mode OR by the bare routine name typed as a prompt.
+        if resolved == "clean" and (mode == "cleanup" or prompt.strip() == "cleanup_scene"):
+            import numpy as np
+
+            from backend.agent.cleanup_controller import CleanupController
+
+            provider = get_provider(
+                cfg.provider,
+                cfg.model,
+                api_key=cfg.api_key,
+                base_url=cfg.base_url,
+                system_instruction="You are a visual inspector for a 3D scan. "
+                                   "Always answer by calling the provided tool.",
+            )
+
+            def splat_arrays() -> dict:
+                m = scene.model
+                return {
+                    "means": np.asarray(m.means[m.alive], dtype=np.float64),
+                    "opacity": np.asarray(m.opacity(alive_only=True), dtype=np.float64),
+                    "ids": np.asarray(m.alive_indices(), dtype=np.int64),
+                }
+
+            controller = CleanupController(provider, dispatcher, channel, executor, splat_arrays)
+            await controller.run(prompt)
+            return
+
         provider = get_provider(
             cfg.provider,
             cfg.model,

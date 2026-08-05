@@ -316,7 +316,7 @@ def create_router(
 
         async def _drive():
             try:
-                await runner.run(req.prompt, state.scene, channel, stage=req.stage)
+                await runner.run(req.prompt, state.scene, channel, stage=req.stage, mode=req.mode)
             except Exception as exc:  # surface failures as a trace event
                 await manager.emit_event(req.scene_id, "complete", {"error": str(exc)})
 

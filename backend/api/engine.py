@@ -71,4 +71,11 @@ class AgentRunner(Protocol):
     commands through `channel`. Must honor cancellation cooperatively.
     """
 
-    async def run(self, prompt: str, scene: Scene, channel: FrontendChannel, stage: str = "clean") -> None: ...
+    async def run(
+        self,
+        prompt: str,
+        scene: Scene,
+        channel: FrontendChannel,
+        stage: str = "clean",
+        mode: str | None = None,
+    ) -> None: ...

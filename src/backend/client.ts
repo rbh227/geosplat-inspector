@@ -155,13 +155,19 @@ export async function runAgent(
   prompt: string,
   stage: 'clean' | 'understand' = 'clean',
   clientId?: string,
+  mode?: 'cleanup',
 ): Promise<void> {
   const res = await fetch(`${BACKEND_URL}/agent/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // client_id binds the run to THIS window's renderer, so with the editor and
     // analyst both open the tools execute where the operator started them.
-    body: JSON.stringify({ scene_id: sceneId, prompt, stage, client_id: clientId ?? null }),
+    // mode: 'cleanup' routes a Clean-stage run to the app-owned judgment-tour
+    // controller (v0.7) instead of the freeform loop.
+    body: JSON.stringify({
+      scene_id: sceneId, prompt, stage,
+      client_id: clientId ?? null, mode: mode ?? null,
+    }),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')

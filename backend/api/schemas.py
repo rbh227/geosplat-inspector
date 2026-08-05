@@ -47,6 +47,10 @@ class AgentRunRequest(BaseModel):
     # Which window's renderer runs this. Two windows (editor + analyst) can be
     # open on one scene; None falls back to the sole connected renderer.
     client_id: str | None = None
+    # v0.7 (judgment-tour cleanup): "cleanup" routes a Clean-stage run to the
+    # app-owned CleanupController instead of the freeform loop. The backend
+    # also routes a bare "cleanup_scene" prompt there, so typing works too.
+    mode: str | None = None
 
 
 class AgentRunResponse(BaseModel):
