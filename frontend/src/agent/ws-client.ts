@@ -225,6 +225,15 @@ export class AgentWSClient {
                 type: 'tool_result', id,
                 payload: { ok: true, verdict, ...(feedback ? { feedback } : {}), ...(box ? { box } : {}) },
               } as WSResponse)
+              // A DECIDED box comes down with the card. It used to survive
+              // until `complete`, so every later capture — the noise survey and
+              // the whole judgment tour — was taken through a dimmed, wireframed
+              // scene the operator had already finished reviewing.
+              // `adjusted` is the exception: the loop answers it with
+              // adjust_box_preview, which needs the box still live.
+              if (verdict !== 'adjusted') {
+                try { this.bridge.clearProposalBox() } catch { /* bridge may lack a scene */ }
+              }
               this.panels.clearProposal()
             },
           })

@@ -369,3 +369,65 @@ describe('ws-client command envelopes (dispatcher wraps everything as {tool, arg
     expect(lastReplyPayload().ok).toBe(false)
   })
 })
+
+/**
+ * Codex adversarial review: a decided proposal must take its box overlay down.
+ * The overlay was only cleared on `complete`, so after the crop card resolved
+ * the scene stayed dimmed and wireframed for the whole rest of the run — every
+ * later capture (noise survey, judgment tour) showed a dimmed, boxed scene
+ * instead of the geometry being judged. `adjusted` is the exception: the
+ * freeform loop answers it with adjust_box_preview, which errors out unless the
+ * box is still live.
+ */
+class ProposalPanelBridge {
+  proposalBox: { min: number[]; max: number[] } | null = { min: [0, 0, 0], max: [1, 1, 1] }
+  cropBox: { min: number[]; max: number[] } | null = null
+  getProposalBox() { return this.proposalBox }
+  getCropBox() { return this.cropBox }
+  clearProposalBox(): void { this.proposalBox = null }
+  clearSelection(): void {}
+}
+
+function proposalCmd(kind = 'crop_outside_box') {
+  return { type: 'proposal', id: 'p1', payload: { tool: 'propose_decision', args: { kind, summary: 's' } } }
+}
+
+describe('ws-client proposal overlay lifecycle', () => {
+  let transport: FakeTransport
+  let bridge: ProposalPanelBridge
+  let panels: PanelBus
+
+  beforeEach(() => {
+    transport = new FakeTransport()
+    bridge = new ProposalPanelBridge()
+    panels = new PanelBus()
+    void new AgentWSClient(
+      transport as unknown as Transport,
+      bridge as unknown as RendererBridge,
+      {} as unknown as Overlay,
+      panels,
+    )
+  })
+
+  it('clears the box overlay when the operator approves', async () => {
+    await transport.handler!(proposalCmd())
+    panels.proposal.get()!.resolve('approved')
+    expect(bridge.proposalBox).toBeNull()
+    // the approved box still rode back to the backend before the clear
+    const reply = transport.sent.at(-1) as { payload: { verdict: string; box?: unknown } }
+    expect(reply.payload.verdict).toBe('approved')
+    expect(reply.payload.box).toEqual({ min: [0, 0, 0], max: [1, 1, 1] })
+  })
+
+  it('clears the box overlay when the operator rejects', async () => {
+    await transport.handler!(proposalCmd())
+    panels.proposal.get()!.resolve('rejected')
+    expect(bridge.proposalBox).toBeNull()
+  })
+
+  it('KEEPS the box on adjusted — adjust_box_preview needs a live box', async () => {
+    await transport.handler!(proposalCmd())
+    panels.proposal.get()!.resolve('adjusted', 'a bit bigger')
+    expect(bridge.proposalBox).not.toBeNull()
+  })
+})
