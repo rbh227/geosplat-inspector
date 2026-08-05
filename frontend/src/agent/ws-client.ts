@@ -14,7 +14,7 @@
  * for captures). This stays within the frozen type union. Flagged to Agents
  * 3/4 as a coordination detail — not a contract change.
  */
-import type { WSCommand, WSTraceEvent, WSResponse } from '../contracts.ts'
+import type { ClusterRow, WSCommand, WSTraceEvent, WSResponse } from '../contracts.ts'
 import type { RendererBridge, CameraMovePayload, TraceEntry } from './types.ts'
 import { FrontendExecutors, runCameraTool } from './executors.ts'
 import type { Overlay } from './overlay.ts'
@@ -163,7 +163,12 @@ export class AgentWSClient {
         }
         case 'proposal': {
           const { args } = p as unknown as {
-            args: { kind: string; summary: string; operation?: { tool?: unknown; params?: unknown } }
+            args: {
+              kind: string
+              summary: string
+              operation?: { tool?: unknown; params?: unknown }
+              clusters?: unknown
+            }
           }
           const id = cmd.id
           // Carry the canonical operation to the card (Codex adversarial
@@ -192,11 +197,19 @@ export class AgentWSClient {
           // Latch the resolver: a rapid double-click on the ProposalCard must
           // never send two tool_results for the same id. The exactly-one-reply
           // invariant is guaranteed here, not delegated to the caller.
+          // v0.7 — judgment-tour batch rows: sanitize before they reach React.
+          const rawRows = args?.clusters
+          const clusters = Array.isArray(rawRows)
+            ? rawRows.filter((r): r is ClusterRow =>
+                !!r && typeof (r as ClusterRow).label === 'string'
+                && typeof (r as ClusterRow).count === 'number')
+            : undefined
           let done = false
           this.panels.setProposal({
             kind: args?.kind ?? '',
             summary: args?.summary ?? '',
             operation,
+            clusters,
             resolve: (verdict, feedback) => {
               if (done) return
               done = true

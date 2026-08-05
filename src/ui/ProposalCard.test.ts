@@ -20,6 +20,10 @@ describe('proposalTitle', () => {
     )
   })
 
+  it('maps delete_clusters to the judgment-tour batch question (v0.7)', () => {
+    expect(proposalTitle('delete_clusters')).toBe('Delete the junk clusters the tour flagged?')
+  })
+
   it('falls back to a generic question for unknown kinds', () => {
     expect(proposalTitle('some_future_kind')).toBe('Apply this edit?')
   })

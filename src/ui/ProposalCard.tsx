@@ -15,6 +15,7 @@ const KIND_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   delete_selection: Eraser,
   keep_only_selection: Focus,
   bulk_edit: Sparkles,
+  delete_clusters: Eraser,
 }
 
 export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) {
@@ -49,6 +50,25 @@ export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) 
       <p className="text-xs text-text-secondary leading-relaxed">
         {proposal.summary}
       </p>
+
+      {/* v0.7 judgment-tour batch: one reviewed row per candidate cluster */}
+      {proposal.clusters && proposal.clusters.length > 0 && (
+        <div className="text-xs font-mono bg-bg-elevated border border-border-subtle rounded-lg px-2 py-1.5 max-h-40 overflow-y-auto">
+          {proposal.clusters.map((row) => (
+            <div key={row.label} className="flex items-center gap-2 py-0.5">
+              <span className="w-5 text-accent-amber font-semibold">{row.label}</span>
+              <span className="w-16 text-right text-text-secondary">{row.count.toLocaleString()}</span>
+              <span className={
+                row.verdict === 'junk' ? 'w-14 text-red-400' :
+                row.verdict === 'structure' ? 'w-14 text-green-400' : 'w-14 text-text-dim'
+              }>
+                {row.verdict === 'junk' ? 'delete' : row.verdict === 'structure' ? 'keep' : 'unsure'}
+              </span>
+              <span className="flex-1 truncate text-text-secondary">{row.reason ?? ''}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* The canonical operation the approval authorizes — shown verbatim so
           the operator reviews the real payload, never just the summary. */}
@@ -89,7 +109,9 @@ export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) 
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Adjust it — e.g. make the box a bit bigger"
+          placeholder={proposal.clusters?.length
+            ? "Adjust it — e.g. keep B, it's a shed"
+            : 'Adjust it — e.g. make the box a bit bigger'}
           className="
             flex-1 bg-bg-elevated border border-border-subtle rounded-lg
             px-3 py-2 text-sm text-text-primary placeholder:text-text-dim

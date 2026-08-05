@@ -10,6 +10,8 @@ export function proposalTitle(kind: string): string {
       return 'Keep ONLY the highlighted splats — delete everything else?'
     case 'bulk_edit':
       return 'Run this scene-wide cleanup?'
+    case 'delete_clusters':
+      return 'Delete the junk clusters the tour flagged?'
     default:
       return 'Apply this edit?'
   }

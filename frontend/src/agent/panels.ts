@@ -4,7 +4,7 @@
  * A tiny pub/sub the React panels subscribe to: trace stream, narration,
  * latest metrics, and the capability-launcher catalog. No JSX here.
  */
-import type { Metrics } from '../contracts.ts'
+import type { ClusterRow, Metrics } from '../contracts.ts'
 import { FRONTEND_TOOLS, BACKEND_TOOLS } from '../contracts.ts'
 import type { TraceEntry } from './types.ts'
 
@@ -23,6 +23,9 @@ export interface ProposalState {
    *  the card so the operator reviews the real payload, never just the
    *  model-authored summary (Codex adversarial review). */
   operation?: { tool: string; params?: Record<string, unknown> } | null
+  /** For delete_clusters (v0.7): the judgment-tour rows the operator reviews —
+   *  one line per candidate cluster with its verdict and the model's reason. */
+  clusters?: ClusterRow[]
   resolve: (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => void
 }
 
