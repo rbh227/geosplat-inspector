@@ -17,6 +17,7 @@
 import type { ClusterRow, WSCommand, WSTraceEvent, WSResponse } from '../contracts.ts'
 import type { RendererBridge, CameraMovePayload, TraceEntry } from './types.ts'
 import { FrontendExecutors, runCameraTool } from './executors.ts'
+import * as subjectPreview from './subjectPreview.ts'
 import type { Overlay } from './overlay.ts'
 import type { PanelBus } from './panels.ts'
 import type { Transport } from './transport.ts'
@@ -215,12 +216,24 @@ export class AgentWSClient {
                 !!r && typeof (r as ClusterRow).label === 'string'
                 && typeof (r as ClusterRow).count === 'number')
             : undefined
+          // v0.8 — keep_only_subject: surface the slider state parked by the
+          // preceding show_subject_preview; the slider re-tints locally.
+          const isSubject = args?.kind === 'keep_only_subject'
+          const subjectState = isSubject ? subjectPreview.getState() : null
+          const subject = subjectState
+            ? {
+                counts: subjectState.counts,
+                level: subjectState.level,
+                onLevel: (k: number) => { subjectPreview.applyLevel(this.bridge, k) },
+              }
+            : undefined
           let done = false
           this.panels.setProposal({
             kind: args?.kind ?? '',
             summary: args?.summary ?? '',
             operation,
             clusters,
+            subject,
             resolve: (verdict, feedback) => {
               if (done) return
               done = true
@@ -232,10 +245,23 @@ export class AgentWSClient {
               const box = verdict === 'approved'
                 ? (this.bridge.getCropBox() ?? this.bridge.getProposalBox())
                 : null
+              // v0.8: an approved subject card carries the slider's FINAL
+              // level; the backend maps it to level_ids server-side.
+              const lvl = isSubject && verdict === 'approved'
+                ? subjectPreview.getState()?.level
+                : undefined
               this.transport.send({
                 type: 'tool_result', id,
-                payload: { ok: true, verdict, ...(feedback ? { feedback } : {}), ...(box ? { box } : {}) },
+                payload: {
+                  ok: true, verdict,
+                  ...(feedback ? { feedback } : {}),
+                  ...(box ? { box } : {}),
+                  ...(lvl !== undefined ? { level: lvl } : {}),
+                },
               } as WSResponse)
+              // A DECIDED subject preview comes down with the card, same rule
+              // as the box below.
+              if (isSubject) subjectPreview.clear(this.bridge)
               // A DECIDED box comes down with the card. It used to survive
               // until `complete`, so every later capture — the noise survey and
               // the whole judgment tour — was taken through a dimmed, wireframed
@@ -276,7 +302,9 @@ export class AgentWSClient {
       // backend correlator is gone) and clear its viewport artifacts.
       if (this.panels.proposal.get()) this.panels.clearProposal()
       try { this.bridge.clearProposalBox() } catch { /* bridge may lack a scene */ }
-      try { this.bridge.clearSelection() } catch { /* bridge may lack a scene */ }
+      // Clears the selection AND drops v0.8 subject-preview module state, so a
+      // dead run's levels can never leak into the next run's card.
+      try { subjectPreview.clear(this.bridge) } catch { /* bridge may lack a scene */ }
     }
   }
 }

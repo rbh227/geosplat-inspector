@@ -10,6 +10,7 @@ import { animateOrbit, animateTo, clampToCore, coreInView, poseForBox, resolveAi
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
 import { adjustBox, projectBoxToScreen, viewBasisFromCamera } from './proposalBox.ts'
 import type { AdjustOpts, Box } from './proposalBox.ts'
+import * as subjectPreview from './subjectPreview.ts'
 import type { Overlay } from './overlay.ts'
 // Shared pure selection math — the SAME module the manual SelectionOverlay
 // uses, so agent and human selections resolve identically (R13 parity).
@@ -86,6 +87,25 @@ export class FrontendExecutors {
       this.bridge.updateSelection(ids, args.mode === 'remove' ? 'remove' : 'add')
       const summary = this.bridge.getSelectionSummary()
       return { ok: true, count: summary.count, bbox: summary.bbox }
+    }
+
+    // v0.8 — subject lock-on preview (CleanupController-dispatched only).
+    // With base_ids it installs the nested levels and tints one; a level-only
+    // call is the local slider path re-dispatched by the controller.
+    if (tool === 'show_subject_preview') {
+      if (Array.isArray(args.base_ids)) {
+        const count = subjectPreview.setSubject(this.bridge, {
+          baseIds: args.base_ids as number[],
+          deltas: (args.deltas as number[][]) ?? [],
+          counts: (args.counts as number[]) ?? [],
+          level: Number(args.level ?? 0),
+        })
+        await sleep(350)  // paced so the operator sees the highlight land (SC2)
+        return { ok: true, count }
+      }
+      const count = subjectPreview.applyLevel(this.bridge, Number(args.level ?? 0))
+      await sleep(350)
+      return { ok: true, count }
     }
 
     // v0.5 — proposal / good-cube surface

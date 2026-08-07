@@ -26,6 +26,9 @@ export interface ProposalState {
   /** For delete_clusters (v0.7): the judgment-tour rows the operator reviews —
    *  one line per candidate cluster with its verdict and the model's reason. */
   clusters?: ClusterRow[]
+  /** For keep_only_subject (v0.8): slider state — counts per level, current
+   *  level, and the local re-tint callback (no round trip while parked). */
+  subject?: { counts: number[]; level: number; onLevel: (k: number) => void }
   resolve: (verdict: 'approved' | 'rejected' | 'adjusted', feedback?: string) => void
 }
 

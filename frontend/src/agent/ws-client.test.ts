@@ -433,6 +433,92 @@ describe('ws-client proposal overlay lifecycle', () => {
 })
 
 /**
+ * v0.8 subject lock-on: a keep_only_subject proposal parked after a
+ * show_subject_preview must (a) surface the slider state on ProposalState,
+ * (b) carry the CURRENT slider level back in the approved tool_result (the
+ * backend keeps level_ids server-side and executes keep_only_ids from it),
+ * and (c) tear the tint + module state down with the card — same rule as the
+ * crop box: a DECIDED preview never outlives its card.
+ */
+class SubjectBridge {
+  calls: Array<{ op: 'update'; ids: number[] } | { op: 'clear' }> = []
+  updateSelection(ids: Iterable<number>): number {
+    const arr = Array.from(ids)
+    this.calls.push({ op: 'update', ids: arr })
+    return arr.length
+  }
+  clearSelection(): number { this.calls.push({ op: 'clear' }); return 0 }
+  getSelectionSummary() { return { count: 0, bbox: null } }
+  getCropBox() { return null }
+  getProposalBox() { return null }
+  clearProposalBox(): void {}
+}
+
+describe('ws-client keep_only_subject proposal (slider level plumbing)', () => {
+  let transport: FakeTransport
+  let bridge: SubjectBridge
+  let panels: PanelBus
+
+  beforeEach(async () => {
+    transport = new FakeTransport()
+    bridge = new SubjectBridge()
+    panels = new PanelBus()
+    void new AgentWSClient(
+      transport as unknown as Transport,
+      bridge as unknown as RendererBridge,
+      {} as unknown as Overlay,
+      panels,
+    )
+    // Controller ships the nested levels, tinting level 1.
+    await transport.handler!({
+      type: 'selection_tool', id: 's1',
+      payload: {
+        tool: 'show_subject_preview',
+        args: { base_ids: [1, 2], deltas: [[3], [4, 5]], counts: [2, 3, 5], level: 1 },
+      },
+    })
+  })
+
+  it('show_subject_preview tints the requested level and replies with its count', () => {
+    expect(transport.sent.at(-1)).toMatchObject({
+      type: 'tool_result', id: 's1', payload: { ok: true, count: 3 },
+    })
+  })
+
+  it('parks the card with slider state, and approve carries the current level then clears', async () => {
+    await transport.handler!({
+      type: 'proposal', id: 'p1',
+      payload: { tool: 'propose_decision', args: { kind: 'keep_only_subject', summary: 'keep the subject' } },
+    })
+    const state = panels.proposal.get()
+    expect(state!.subject).toMatchObject({ counts: [2, 3, 5], level: 1 })
+
+    // Operator slides looser: re-tint is local (no round trip while parked).
+    state!.subject!.onLevel(2)
+    expect(bridge.calls.at(-1)).toEqual({ op: 'update', ids: [1, 2, 3, 4, 5] })
+
+    state!.resolve('approved')
+    const reply = transport.sent.at(-1) as { id: string; payload: Record<string, unknown> }
+    expect(reply.id).toBe('p1')
+    expect(reply.payload).toMatchObject({ ok: true, verdict: 'approved', level: 2 })
+    // decided preview comes down with the card
+    expect(bridge.calls.at(-1)).toEqual({ op: 'clear' })
+  })
+
+  it('reject clears the subject preview too and carries no level', async () => {
+    await transport.handler!({
+      type: 'proposal', id: 'p2',
+      payload: { tool: 'propose_decision', args: { kind: 'keep_only_subject', summary: 's' } },
+    })
+    panels.proposal.get()!.resolve('rejected')
+    const reply = transport.sent.at(-1) as { payload: Record<string, unknown> }
+    expect(reply.payload.verdict).toBe('rejected')
+    expect(reply.payload.level).toBeUndefined()
+    expect(bridge.calls.at(-1)).toEqual({ op: 'clear' })
+  })
+})
+
+/**
  * Codex adversarial review: a mid-run reload MUST adopt the backend's alive
  * IDs. loadSplat alone leaves the viewer's ID map describing the pre-edit
  * scene, so the very next select_by_ids tint would highlight the wrong splats
