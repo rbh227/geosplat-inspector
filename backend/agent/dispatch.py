@@ -93,6 +93,12 @@ _FRONTEND_CMD_TYPE: dict[str, str] = {
     "show_box_preview": "selection_tool",
     "adjust_box_preview": "selection_tool",
     "propose_decision": "proposal",
+    # v0.7 — controller tint. Was MISSING from this map, so it fell back to
+    # camera_move and the viewer rejected it as an unknown camera tool: every
+    # judgment-tour tint failed closed and every candidate was kept by default.
+    "select_by_ids": "selection_tool",
+    # v0.8 — subject lock-on preview (controller-dispatched)
+    "show_subject_preview": "selection_tool",
 }
 
 # Backend tools that operate on the CURRENT frontend selection: dispatch pulls

@@ -23,6 +23,10 @@ export default defineConfig({
     // the agent WS without tripping COEP `require-corp` / CORS / canvas taint.
     proxy: {
       '/scene': BACKEND_PROXY_TARGET,
+      // /ids backs alive-id adoption after every authoritative reload. Without
+      // it Vite answers with index.html, adoption fails, and the viewer keeps a
+      // pre-edit ID map — so select_by_ids tints the WRONG splats.
+      '/ids': BACKEND_PROXY_TARGET,
       '/metrics': BACKEND_PROXY_TARGET,
       '/edit': BACKEND_PROXY_TARGET,
       '/undo': BACKEND_PROXY_TARGET,
