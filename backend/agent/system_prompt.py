@@ -49,7 +49,11 @@ UNDERSTAND_TOOLS: frozenset[str] = frozenset({"narrate", "answer"})
 # CleanupController sends these; the model must never see them as options.
 # survey_capture was previously exposed in Clean by accident of "registry minus
 # teleports" (tools.py says loop-dispatched only).
-CONTROLLER_ONLY_TOOLS: frozenset[str] = frozenset({"survey_capture", "select_by_ids"})
+CONTROLLER_ONLY_TOOLS: frozenset[str] = frozenset({
+    "survey_capture", "select_by_ids",
+    # v0.8 — subject lock-on preview: CleanupController-dispatched only.
+    "show_subject_preview",
+})
 
 
 def stage_tools(stage: Stage) -> frozenset[str]:

@@ -26,9 +26,10 @@ def test_v02_counts():
     # v0.5 adds the four proposal / good-cube frontend tools: 24 -> 28 frontend,
     # 42 -> 46 total. v0.6 adds survey_capture: 28 -> 29 frontend, 46 -> 47 total.
     # v0.7 adds select_by_ids: 29 -> 30 frontend, 47 -> 48 total.
-    assert len(FRONTEND_TOOLS) == 30
+    # v0.8 adds show_subject_preview: 30 -> 31 frontend, 48 -> 49 total.
+    assert len(FRONTEND_TOOLS) == 31
     assert len(BACKEND_TOOLS) == 18
-    assert len(TOOL_REGISTRY) == 48
+    assert len(TOOL_REGISTRY) == 49
 
 
 def test_v03_turn_tool_present_and_routed():
@@ -98,6 +99,33 @@ def test_v07_delete_clusters_kind():
     assert "clusters" in props
     row = props["clusters"]["items"]["properties"]
     assert set(row) == {"label", "count", "verdict", "reason", "provenance"}
+
+
+def test_v08_show_subject_preview_registered():
+    entry = TOOL_BY_NAME["show_subject_preview"]
+    assert entry.runs_on == "frontend"
+    props = entry.params["properties"]
+    assert props["base_ids"]["type"] == "array"
+    assert props["deltas"]["items"]["type"] == "array"
+    assert set(entry.params["required"]) == {"level"}
+
+
+def test_v08_keep_only_subject_kind_and_level_field():
+    from backend.contracts.tools import PROPOSAL_DECISION_FIELDS
+
+    kinds = TOOL_BY_NAME["propose_decision"].params["properties"]["kind"]["enum"]
+    assert "keep_only_subject" in kinds
+    assert "level" in PROPOSAL_DECISION_FIELDS
+
+
+def test_v08_judge_subject_choice_spec():
+    from backend.contracts.tools import CONTROLLER_CHOICE_SPECS
+
+    judge = CONTROLLER_CHOICE_SPECS["judge_subject"]
+    verdicts = judge["parameters"]["properties"]["verdict"]["enum"]
+    assert verdicts == ["good", "clipping_structure", "including_junk"]
+    assert set(judge["parameters"]["required"]) == {"verdict", "reason"}
+    assert "judge_subject" not in TOOL_BY_NAME
 
 
 def test_v07_controller_choice_specs():

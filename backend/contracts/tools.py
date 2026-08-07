@@ -209,6 +209,22 @@ TOOL_REGISTRY: list[ToolEntry] = [
         },
         "required": ["ids"],
     }, "{count, bbox}"),
+    # v0.8 — subject-first cleanup: ship nested keep-levels to the viewer and
+    # tint one. Controller-dispatched only; never offered to the model.
+    ToolEntry("show_subject_preview", "frontend", {
+        "type": "object",
+        "properties": {
+            "base_ids": {"type": "array", "items": {"type": "integer"},
+                         "description": "Level-0 (tightest) stable splat ids"},
+            "deltas": {"type": "array",
+                       "items": {"type": "array", "items": {"type": "integer"}},
+                       "description": "Ids ADDED by each successive level"},
+            "counts": {"type": "array", "items": {"type": "integer"}},
+            "level": {"type": "integer",
+                      "description": "Level to tint now (0 = tightest)"},
+        },
+        "required": ["level"],
+    }, "{ok, count}"),
 
     # ── frontend (movement) — v0.2 ──
     ToolEntry("move_camera", "frontend", {
@@ -263,11 +279,13 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "properties": {
             "kind": {"type": "string",
                      "enum": ["crop_outside_box", "delete_selection", "keep_only_selection", "bulk_edit",
-                              "delete_clusters"],
+                              "delete_clusters", "keep_only_subject"],
                      "description": "delete_selection deletes the selected splats; "
                                     "keep_only_selection deletes everything EXCEPT them — "
                                     "materially different consent, so distinct kinds. "
-                                    "delete_clusters (v0.7) is the judgment-tour batch card"},
+                                    "delete_clusters (v0.7) is the judgment-tour batch card. "
+                                    "keep_only_subject (v0.8) is the subject lock-on card — "
+                                    "its reply may carry the slider's level"},
             "summary": {"type": "string",
                         "description": "One or two sentences the operator reads before deciding"},
             "operation": {
@@ -413,7 +431,8 @@ TOOL_REGISTRY: list[ToolEntry] = [
 # v0.6 — fields a proposal reply may carry. `box` is the operator's edited crop
 # box in backend coordinates; on an `approved` verdict the backend rebinds the
 # approval to it (mirror: frontend/src/contracts.ts PROPOSAL_DECISION_FIELDS).
-PROPOSAL_DECISION_FIELDS: tuple[str, ...] = ("verdict", "feedback", "box")
+# v0.8 — `level` is the subject card's slider position (keep_only_subject only).
+PROPOSAL_DECISION_FIELDS: tuple[str, ...] = ("verdict", "feedback", "box", "level")
 
 # v0.7 — forced-choice schemas for the CleanupController. These are provider
 # ToolSpec dicts (name/description/parameters), NOT registry entries: the
@@ -441,6 +460,21 @@ CONTROLLER_CHOICE_SPECS: dict[str, dict] = {
             "properties": {
                 "verdict": {"type": "string",
                             "enum": ["junk", "structure", "look_closer"]},
+                "reason": {"type": "string", "description": "One short sentence"},
+            },
+            "required": ["verdict", "reason"],
+        },
+    },
+    # v0.8 — subject-first cleanup: per-view vote on the tinted keep-region.
+    "judge_subject": {
+        "name": "judge_subject",
+        "description": "Judge whether the bright-tinted keep-region matches "
+                       "the real structure.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "verdict": {"type": "string",
+                            "enum": ["good", "clipping_structure", "including_junk"]},
                 "reason": {"type": "string", "description": "One short sentence"},
             },
             "required": ["verdict", "reason"],

@@ -104,6 +104,9 @@ export const FRONTEND_TOOLS = [
   // v0.7 — controller tint: exact stable ids (judgment-tour cleanup; the
   // CleanupController dispatches it, never the model)
   "select_by_ids",
+  // v0.8 — subject-first cleanup: nested keep-levels shipped once, tint one
+  // (CleanupController dispatches it, never the model)
+  "show_subject_preview",
 ] as const;
 
 export const BACKEND_TOOLS = [
@@ -165,14 +168,16 @@ export type WSCommandType =
  * box in BACKEND coordinates; when present on an `approved` verdict the backend
  * rebinds the approval to it, so the crop runs on the box the operator actually
  * looked at rather than the one the agent previewed.
+ * v0.8 — `level` is the subject card's slider position (keep_only_subject only).
  */
-export const PROPOSAL_DECISION_FIELDS = ['verdict', 'feedback', 'box'] as const
+export const PROPOSAL_DECISION_FIELDS = ['verdict', 'feedback', 'box', 'level'] as const
 
 /** Proposal kinds (mirror: tools.py propose_decision kind enum).
- *  v0.7 adds delete_clusters — the judgment-tour batch card. */
+ *  v0.7 adds delete_clusters — the judgment-tour batch card.
+ *  v0.8 adds keep_only_subject — the subject lock-on card. */
 export const PROPOSAL_KINDS = [
   'crop_outside_box', 'delete_selection', 'keep_only_selection', 'bulk_edit',
-  'delete_clusters',
+  'delete_clusters', 'keep_only_subject',
 ] as const
 export type ProposalKind = typeof PROPOSAL_KINDS[number]
 

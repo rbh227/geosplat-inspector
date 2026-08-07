@@ -5,11 +5,11 @@ import type { WSCommandType } from '../contracts.ts'
 // Mirror-drift guard: these counts and names must match the Python registry
 // (backend/contracts/tools.py, asserted in backend/contracts/tests/test_tools.py).
 describe('contracts v0.2 mirror', () => {
-  it('matches the Python registry counts (30 frontend / 18 backend)', () => {
+  it('matches the Python registry counts (31 frontend / 18 backend)', () => {
     // v0.3 added `turn`, v0.4 added `reframe`, v0.5 added the four proposal /
-    // good-cube tools, v0.6 added `survey_capture`, v0.7 added `select_by_ids`
-    // (all frontend): 22 -> 24 -> 28 -> 29 -> 30.
-    expect(FRONTEND_TOOLS.length).toBe(30)
+    // good-cube tools, v0.6 added `survey_capture`, v0.7 added `select_by_ids`,
+    // v0.8 added `show_subject_preview` (all frontend): 22 -> 24 -> 28 -> 29 -> 30 -> 31.
+    expect(FRONTEND_TOOLS.length).toBe(31)
     expect(BACKEND_TOOLS.length).toBe(18)
   })
 
@@ -63,6 +63,14 @@ describe('v0.7 judgment-tour additions', () => {
     expect(new Set<string>(FRONTEND_TOOLS).has('select_by_ids')).toBe(true)
     expect(PROPOSAL_KINDS).toContain('delete_clusters')
     expect(CLUSTER_ROW_FIELDS).toEqual(['label', 'count', 'verdict', 'reason', 'provenance'])
+  })
+})
+
+describe('v0.8 subject-first cleanup additions', () => {
+  it('carries show_subject_preview, the keep_only_subject kind, and the level field', () => {
+    expect(new Set<string>(FRONTEND_TOOLS).has('show_subject_preview')).toBe(true)
+    expect(PROPOSAL_KINDS).toContain('keep_only_subject')
+    expect(PROPOSAL_DECISION_FIELDS).toContain('level')
   })
 })
 
