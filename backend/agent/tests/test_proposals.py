@@ -64,6 +64,7 @@ class RecordingExecutor(MockBackendExecutor):
         super().__init__(**kw)
         self.edit_calls: list[str] = []
         self.last_crop: dict | None = None
+        self.kept_ids: list[int] | None = None
 
     def crop_bbox(self, min, max):  # noqa: A002
         self.edit_calls.append("crop_bbox")
@@ -79,6 +80,14 @@ class RecordingExecutor(MockBackendExecutor):
         before = self.state["count"]
         self.state["count"] = max(0, before - len(ids))
         return {"before": before, "after": self.state["count"], "removed": len(ids)}
+
+    def keep_only_ids(self, ids):
+        # v0.8 — the subject card's approved edit
+        self.edit_calls.append("keep_only_ids")
+        self.kept_ids = list(ids)
+        before = self.state["count"]
+        self.state["count"] = len(ids)
+        return {"before": before, "after": len(ids), "removed": before - len(ids)}
 
     def keep_selection(self, ids):
         self.edit_calls.append("keep_selection")

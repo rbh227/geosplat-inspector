@@ -1,13 +1,15 @@
-"""App-owned judgment-tour cleanup (spec 2026-08-04-judgment-tour-cleanup).
+"""App-owned judgment-tour cleanup (spec 2026-08-04-judgment-tour-cleanup;
+subject-first rework 2026-08-07).
 
 A Python phase machine replaces the freeform loop for cleanup runs. The model
-is consulted ONLY through ask_forced(): grid marks in phase 2, verdicts in
-phase 4, feedback flips in phase 5. Everything spatial and procedural is code.
+is consulted ONLY through ask_forced(): subject votes in phase 1, grid marks
+in phase 2, verdicts in phase 4, feedback flips in phase 5. Everything spatial
+and procedural is code.
 
-Phases: 1 crop -> 2 survey & mark -> 3 lock-in -> 4 tour -> 5 batch proposal
--> 6 summary. Every phase boundary checks interrupt/pause; every model failure
-degrades one datum to a safe default (unsure = keep). The run always reaches
-the summary.
+Phases: 1 subject lock-on -> 2 survey & mark -> 3 lock-in -> 4 tour -> 5 batch
+proposal -> 6 summary. Every phase boundary checks interrupt/pause; every
+model failure degrades one datum to a safe default (unsure = keep / default
+level). The run always reaches the summary.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from backend.analysis.clusters import (
     find_clusters,
     resolve_marks,
 )
+from backend.analysis.subject import SubjectLevels, find_subject
 from backend.contracts import FrontendChannel, ModelProvider, ToolCall
 from backend.contracts.constants import VISIBILITY_ALPHA
 from backend.contracts.tools import CONTROLLER_CHOICE_SPECS
@@ -44,6 +47,9 @@ class CleanupConfig:
     max_adjust_rounds: int = 3
     min_cluster_splats: int = 30
     cell_frac: float = 0.03
+    subject_levels: int = 5
+    subject_judge_frames: int = 3
+    subject_judge_rounds: int = 2
 
 
 _MARK_INSTRUCTION = (
@@ -51,6 +57,14 @@ _MARK_INSTRUCTION = (
     "(columns A-D left to right, rows 1-4 top to bottom). Call mark_noise with "
     "the cells that contain floating junk, debris mist, or fragments "
     "disconnected from the main structure. Use [] if this view looks clean."
+)
+
+_SUBJECT_INSTRUCTION = (
+    "The bright-tinted splats are the region I plan to KEEP; everything dim "
+    "will be DELETED. Call judge_subject: 'good' if the tint covers exactly "
+    "the real structure, 'clipping_structure' if any real scenery is dim "
+    "(keep-region too tight), or 'including_junk' if floating debris or "
+    "disconnected fragments are tinted (too loose)."
 )
 
 _JUDGE_INSTRUCTION = (
@@ -221,7 +235,7 @@ class CleanupController:
     async def run(self, prompt: str) -> LoopResult:
         result = LoopResult(status="answered")
         try:
-            await self._phase1_crop()
+            await self._phase1_subject()
             await self._checkpoint()
             await self._phase2_survey_and_mark()
             await self._checkpoint()
@@ -245,33 +259,101 @@ class CleanupController:
         result.steps = self._step
         return result
 
-    # ---- phase 1: crop ---------------------------------------------------- #
-    async def _phase1_crop(self) -> None:
-        means, _, _ = self._arrays()
-        mn, mx = core_box(means)
-        box_min = [float(v) for v in mn]
-        box_max = [float(v) for v in mx]
-        await self._say(
-            "Proposing a crop to the dense core — adjust the box or reject to skip cropping."
+    # ---- phase 1: subject lock-on ----------------------------------------- #
+    async def _phase1_subject(self) -> None:
+        means, opacity, ids = self._arrays()
+        subject = find_subject(
+            means, opacity, ids,
+            cell_frac=self.config.cell_frac, levels=self.config.subject_levels,
         )
-        await self._dispatch("show_box_preview", {"min": box_min, "max": box_max})
+        if subject is None:
+            await self._say("Could not isolate a subject — skipping the keep-only pass.")
+            return
+        level = subject.default_level
+        await self._say("Locking onto the subject — bright is what I plan to keep.")
+        await self._dispatch("show_subject_preview", {
+            "base_ids": [int(i) for i in subject.level_ids[0]],
+            "deltas": [
+                [int(i) for i in np.setdiff1d(b, a)]
+                for a, b in zip(subject.level_ids, subject.level_ids[1:])
+            ],
+            "counts": subject.counts,
+            "level": level,
+        })
+        level = await self._judge_subject_rounds(subject, level)
+
+        n_total = len(ids)
+        n_keep = subject.counts[level]
         reply = await self._dispatch("propose_decision", {
-            "kind": "crop_outside_box",
-            "summary": "Crop away everything outside the highlighted core box. "
-                       "Drag the box to adjust before approving.",
+            "kind": "keep_only_subject",
+            "summary": f"Keep the highlighted subject ({n_keep} splats) and delete "
+                       f"the {n_total - n_keep} splats outside it. Slide "
+                       "looser/tighter to adjust before approving.",
         })
         verdict = (reply.get("result") or {}) if reply.get("ok") else {}
         if isinstance(verdict, dict) and verdict.get("verdict") == "approved":
-            box = verdict.get("box") or {"min": box_min, "max": box_max}
-            out = await self._guarded_edit("crop_bbox", box["min"], box["max"])
+            # The reply's level is the slider's FINAL position — it binds the
+            # edit to exactly what the operator reviewed on screen.
+            try:
+                lvl = int(verdict.get("level", level))
+            except (TypeError, ValueError):
+                lvl = level
+            lvl = max(0, min(len(subject.level_ids) - 1, lvl))
+            out = await self._guarded_edit(
+                "keep_only_ids", [int(i) for i in subject.level_ids[lvl]],
+            )
             if out["ok"]:
                 self.crop_result = out["result"]
-                await self._say("Crop applied.")
-            # Resync either way: a reverted crop also snapshotted+undid, and the
+                await self._say("Kept the subject — everything outside it is gone.")
+            # Resync either way: a reverted edit also snapshotted+undid, and the
             # survey that follows must photograph the authoritative scene.
             await self._resync_renderer()
         else:
-            await self._say("Crop skipped — moving on to the noise survey.")
+            await self._say("Keep-only skipped — moving on to the noise survey.")
+        await self._dispatch("clear_selection", {})
+
+    async def _judge_subject_rounds(self, subject: SubjectLevels, level: int) -> int:
+        """Up to subject_judge_rounds voting rounds; each frames the subject,
+        orbits between captures, and takes one forced judge_subject vote per
+        frame. Model failures are abstentions — the level never moves on them."""
+        max_level = len(subject.level_ids) - 1
+        for _ in range(self.config.subject_judge_rounds):
+            await self._checkpoint()
+            framed = await self._dispatch("frame_object", {
+                "bbox": {"min": subject.bbox_min, "max": subject.bbox_max},
+                "duration_ms": 900,
+            })
+            if not framed.get("ok"):
+                return level          # fail closed: never judge an unframed view
+            votes: list[str] = []
+            center = [(a + b) / 2 for a, b in zip(subject.bbox_min, subject.bbox_max)]
+            for j in range(self.config.subject_judge_frames):
+                if j:
+                    await self._dispatch("orbit", {
+                        "center": center,
+                        "deg": 360 // self.config.subject_judge_frames,
+                        "axis": "y", "duration_ms": 700,
+                    })
+                cap = await self._dispatch("capture_frame", {})
+                frames = cap.get("frames") or []
+                if not frames:
+                    continue
+                args = await self._ask(_SUBJECT_INSTRUCTION, "judge_subject", frames[0])
+                v = (args or {}).get("verdict")
+                if v in ("good", "clipping_structure", "including_junk"):
+                    votes.append(v)
+            loosen = votes.count("clipping_structure")
+            tighten = votes.count("including_junk")
+            if loosen > tighten and level < max_level:
+                level += 1
+                await self._say("The model says the highlight clips real structure — loosening one step.")
+            elif tighten > loosen and level > 0:
+                level -= 1
+                await self._say("The model says the highlight includes junk — tightening one step.")
+            else:
+                break
+            await self._dispatch("show_subject_preview", {"level": level})
+        return level
 
     # ---- phase 2: survey & mark ------------------------------------------ #
     async def _phase2_survey_and_mark(self) -> None:
