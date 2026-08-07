@@ -12,6 +12,8 @@ export function proposalTitle(kind: string): string {
       return 'Run this scene-wide cleanup?'
     case 'delete_clusters':
       return 'Delete the junk clusters the tour flagged?'
+    case 'keep_only_subject':
+      return 'Keep the highlighted subject — delete everything else?'
     default:
       return 'Apply this edit?'
   }

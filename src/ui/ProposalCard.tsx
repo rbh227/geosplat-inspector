@@ -16,10 +16,12 @@ const KIND_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   keep_only_selection: Focus,
   bulk_edit: Sparkles,
   delete_clusters: Eraser,
+  keep_only_subject: Focus,
 }
 
 export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) {
   const [feedback, setFeedback] = useState('')
+  const [level, setLevel] = useState(proposal.subject?.level ?? 0)
   const Icon = KIND_ICONS[proposal.kind] ?? HelpCircle
 
   function handleAdjust() {
@@ -50,6 +52,32 @@ export default function ProposalCard({ proposal, onDecide }: ProposalCardProps) 
       <p className="text-xs text-text-secondary leading-relaxed">
         {proposal.summary}
       </p>
+
+      {/* v0.8 subject lock-on: looser/tighter slider — re-tints locally via
+          onLevel; the approved reply carries the final level. */}
+      {proposal.subject && (
+        <div className="flex items-center gap-2 text-xs text-text-secondary">
+          <span>tighter</span>
+          <input
+            type="range"
+            min={0}
+            max={proposal.subject.counts.length - 1}
+            step={1}
+            value={level}
+            onChange={(e) => {
+              const k = Number(e.target.value)
+              setLevel(k)
+              proposal.subject!.onLevel(k)
+            }}
+            className="flex-1 accent-accent-amber"
+            aria-label="Keep-region size"
+          />
+          <span>looser</span>
+          <span className="w-16 text-right font-mono text-text-primary">
+            {proposal.subject.counts[level]?.toLocaleString() ?? ''}
+          </span>
+        </div>
+      )}
 
       {/* v0.7 judgment-tour batch: one reviewed row per candidate cluster */}
       {proposal.clusters && proposal.clusters.length > 0 && (

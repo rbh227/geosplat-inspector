@@ -24,6 +24,12 @@ describe('proposalTitle', () => {
     expect(proposalTitle('delete_clusters')).toBe('Delete the junk clusters the tour flagged?')
   })
 
+  it('maps keep_only_subject to the subject lock-on question (v0.8)', () => {
+    expect(proposalTitle('keep_only_subject')).toBe(
+      'Keep the highlighted subject — delete everything else?',
+    )
+  })
+
   it('falls back to a generic question for unknown kinds', () => {
     expect(proposalTitle('some_future_kind')).toBe('Apply this edit?')
   })
