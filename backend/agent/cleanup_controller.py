@@ -50,6 +50,10 @@ class CleanupConfig:
     subject_levels: int = 5
     subject_judge_frames: int = 3
     subject_judge_rounds: int = 2
+    # Consecutive failed asks before the model is dropped for the rest of the
+    # run (live-found: a tunnel that dies mid-run otherwise costs the full
+    # 45s x 2 timeout ladder on EVERY remaining datum — ~30 min of dead air).
+    model_failure_limit: int = 2
 
 
 _MARK_INSTRUCTION = (
@@ -121,6 +125,10 @@ class CleanupController:
         self.splat_arrays = splat_arrays
         self.config = config or CleanupConfig()
         self._step = 0
+        # Model circuit breaker: consecutive failed asks; once the limit trips
+        # the model is out of the loop for the rest of the run.
+        self._ask_failures = 0
+        self._model_down = False
         # Did any destructive edit actually land? Reported as `scene_changed`
         # on EVERY completion path: an edit that succeeded before an interrupt
         # or a controller bug still leaves the renderer showing a stale scene
@@ -165,10 +173,23 @@ class CleanupController:
         return result
 
     async def _ask(self, instruction: str, spec_name: str, image: bytes | None) -> dict | None:
-        return await ask_forced(
+        if self._model_down:
+            return None
+        args = await ask_forced(
             self.provider, instruction, CONTROLLER_CHOICE_SPECS[spec_name], image,
             timeout_s=self.config.call_timeout_s, retries=self.config.call_retries,
         )
+        if args is None:
+            self._ask_failures += 1
+            if self._ask_failures >= self.config.model_failure_limit:
+                self._model_down = True
+                await self._say(
+                    "The model isn't responding — continuing with safe defaults "
+                    "(everything unjudged is kept)."
+                )
+        else:
+            self._ask_failures = 0
+        return args
 
     def _scene_changed(self) -> bool:
         return self._edits_applied > 0
@@ -331,8 +352,14 @@ class CleanupController:
         orbits between captures, and takes one forced judge_subject vote per
         frame. Model failures are abstentions — the level never moves on them."""
         max_level = len(subject.level_ids) - 1
-        for _ in range(self.config.subject_judge_rounds):
+        for r in range(self.config.subject_judge_rounds):
             await self._checkpoint()
+            # Narrate per round: each vote can take a full model call, and the
+            # operator must never face minutes of unexplained silence.
+            await self._say(
+                f"Reviewing the highlight from {self.config.subject_judge_frames} "
+                f"angles (round {r + 1})."
+            )
             framed = await self._dispatch("frame_object", {
                 "bbox": {"min": subject.bbox_min, "max": subject.bbox_max},
                 "duration_ms": 900,

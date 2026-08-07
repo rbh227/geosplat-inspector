@@ -186,6 +186,42 @@ def test_subject_reject_skips_edit():
     assert result.status == "answered"
 
 
+def test_model_breaker_stops_asking_after_consecutive_failures():
+    """Live-found: a tunnel that dies mid-run makes EVERY forced call ride the
+    full timeout ladder (45s x 2 attempts), turning graceful degradation into
+    ~30 minutes of silent dead air across the phases. After
+    `model_failure_limit` consecutive failed asks the provider must not be
+    consulted again this run — everything degrades to safe defaults fast."""
+    channel = TourChannel(verdicts=[{"verdict": "rejected"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([RuntimeError("down")] * 50)
+    c = _controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    # 2 failed asks x (try + retry) = 4 provider calls; nothing after the trip
+    assert len(provider.calls) == 4
+    # the operator was told once that the model is out of the loop
+    texts = [e.get("text", "") for e in channel.events if e.get("type") == "narrate"]
+    assert any("safe defaults" in t for t in texts)
+
+
+def test_model_breaker_resets_on_success():
+    """One flaky ask must not poison the run: a success between failures
+    resets the count, so the model stays in the loop."""
+    channel = TourChannel(verdicts=[{"verdict": "rejected"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider(
+        [RuntimeError("blip"), RuntimeError("blip"),   # ask 1 fails (try+retry)
+         _js("good"), _js("good")] +                   # asks 2-3 succeed: reset
+        [_mark(["B3"]), _mark([]), _mark([])]          # marks still consulted
+    )
+    c = _controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    mark_calls = [k for k in provider.calls if k["tools"] == ["mark_noise"]]
+    assert len(mark_calls) == 3                        # breaker never tripped
+
+
 def test_no_subject_found_skips_phase():
     """A degenerate scene (find_subject → None): no preview, no card, phase 2
     still runs."""
