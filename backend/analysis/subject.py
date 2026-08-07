@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from backend.analysis.clusters import core_box
+
 _OFFSETS = [
     (dx, dy, dz)
     for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
@@ -41,8 +43,34 @@ def find_subject(
     if len(means) < min_splats:
         return None
 
-    scene_radius = float(np.linalg.norm(means.max(axis=0) - means.min(axis=0))) / 2.0
-    cell = max(scene_radius * cell_frac, 1e-6)
+    # Live-found (iona_park, 2M splats): the raw bbox radius is inflated
+    # ~1000x by a handful of far outliers, which makes the cell so large the
+    # whole scene collapses into a few voxels and the "subject" swallows the
+    # junk. Derive the scale from the median±MAD core box instead — the same
+    # robust primitive find_clusters keys off.
+    mn, mx = core_box(means)
+    radius = float(np.linalg.norm(mx - mn)) / 2.0
+    cell = max(radius * cell_frac, 1e-6)
+    # A robust cell can undershoot sparse demo scenes (occupancy < 1
+    # splat/voxel means NOTHING clears the dense threshold); grow it until
+    # the dense core coheres. Bounded — a scene with no coherent core at any
+    # of these scales genuinely has no subject.
+    for _ in range(5):
+        found = _subject_at_cell(means, ids, cell, levels=levels, min_splats=min_splats)
+        if found is not None:
+            return found
+        cell *= 2.0
+    return None
+
+
+def _subject_at_cell(
+    means: np.ndarray,
+    ids: np.ndarray,
+    cell: float,
+    *,
+    levels: int,
+    min_splats: int,
+) -> SubjectLevels | None:
     keys = np.floor(means / cell).astype(np.int64)
 
     buckets: dict[tuple[int, int, int], list[int]] = {}

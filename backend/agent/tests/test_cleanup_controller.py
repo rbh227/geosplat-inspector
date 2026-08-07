@@ -122,7 +122,9 @@ def test_subject_votes_loosen_then_card():
     previews = [cmd for cmd in channel.commands if cmd.get("tool") == "show_subject_preview"]
     assert len(previews) == 2
     assert previews[0]["args"]["level"] == 2            # default level of 5
-    assert "base_ids" in previews[0]["args"]
+    # complement form: ship the (small) excluded set, never the keep-set
+    assert "outside_ids" in previews[0]["args"]
+    assert "base_ids" not in previews[0]["args"]
     assert previews[1]["args"] == {"level": 3}          # loosened, level-only re-tint
     cards = [cmd for cmd in channel.commands
              if cmd.get("type") == "proposal" and cmd["args"]["kind"] == "keep_only_subject"]
@@ -514,6 +516,27 @@ def test_failed_tint_forces_unsure():
     _run(c.run("cleanup_scene"))
     assert set(c.verdicts.values()) == {"unsure"}
     assert executor.deleted_batches == []
+
+
+def test_failed_subject_preview_fails_closed_and_skips_the_card():
+    """Live-found: the controller used to ignore a failed tint dispatch and
+    march on to judge/propose a highlight nobody could see. A preview that
+    cannot be shown must skip the whole keep-only pass — same rule as an
+    unframed tour candidate."""
+    channel = FlakyChannel("show_subject_preview", verdicts=[{"verdict": "approved"}])
+    executor = DeletingExecutor()
+    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+                               _judge("structure"), _judge("structure")])
+    c = _tour_controller(provider, channel, executor)
+    result = _run(c.run("cleanup_scene"))
+    # no card, no keep-only edit, no subject votes on an invisible tint
+    assert not any(cmd.get("type") == "proposal" and cmd["args"].get("kind") == "keep_only_subject"
+                   for cmd in channel.commands)
+    assert "keep_only_ids" not in executor.edit_calls
+    assert [k for k in provider.calls if k["tools"] == ["judge_subject"]] == []
+    # the run continues: survey + tour still happen
+    assert any(cmd.get("tool") == "survey_capture" for cmd in channel.commands)
+    assert result.status == "answered"
 
 
 def test_failed_framing_forces_unsure():

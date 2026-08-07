@@ -210,12 +210,17 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "required": ["ids"],
     }, "{count, bbox}"),
     # v0.8 — subject-first cleanup: ship nested keep-levels to the viewer and
-    # tint one. Controller-dispatched only; never offered to the model.
+    # tint one. COMPLEMENT form: the keep-set is ~N ids (17MB of JSON on a
+    # 2M-splat scene — live-found), the excluded set is the small one, so
+    # that's what travels; the viewer derives each keep-tint locally as
+    # invert-all-then-remove-excluded. Controller-dispatched only; never
+    # offered to the model.
     ToolEntry("show_subject_preview", "frontend", {
         "type": "object",
         "properties": {
-            "base_ids": {"type": "array", "items": {"type": "integer"},
-                         "description": "Level-0 (tightest) stable splat ids"},
+            "outside_ids": {"type": "array", "items": {"type": "integer"},
+                            "description": "Stable ids EXCLUDED even at the "
+                                           "loosest level (the junk)"},
             "deltas": {"type": "array",
                        "items": {"type": "array", "items": {"type": "integer"}},
                        "description": "Ids ADDED by each successive level"},

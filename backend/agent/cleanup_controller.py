@@ -261,9 +261,13 @@ class CleanupController:
 
     # ---- phase 1: subject lock-on ----------------------------------------- #
     async def _phase1_subject(self) -> None:
+        # Narrate BEFORE the analysis: on a 2M-splat scene the subject search
+        # takes ~15s and the operator must not stare at dead air. to_thread
+        # keeps the event loop (WS heartbeats, Stop/pause) responsive.
+        await self._say("Looking for the main subject — this can take a moment on big scenes.")
         means, opacity, ids = self._arrays()
-        subject = find_subject(
-            means, opacity, ids,
+        subject = await asyncio.to_thread(
+            find_subject, means, opacity, ids,
             cell_frac=self.config.cell_frac, levels=self.config.subject_levels,
         )
         if subject is None:
@@ -271,8 +275,11 @@ class CleanupController:
             return
         level = subject.default_level
         await self._say("Locking onto the subject — bright is what I plan to keep.")
-        await self._dispatch("show_subject_preview", {
-            "base_ids": [int(i) for i in subject.level_ids[0]],
+        # Complement form (live-found at 2M splats): ship the small excluded
+        # set, never the ~N-id keep-set. The viewer inverts locally.
+        outside = np.setdiff1d(ids, subject.level_ids[-1])
+        shown = await self._dispatch("show_subject_preview", {
+            "outside_ids": [int(i) for i in outside],
             "deltas": [
                 [int(i) for i in np.setdiff1d(b, a)]
                 for a, b in zip(subject.level_ids, subject.level_ids[1:])
@@ -280,6 +287,13 @@ class CleanupController:
             "counts": subject.counts,
             "level": level,
         })
+        if not shown.get("ok"):
+            # Fail closed — never judge or propose a highlight nobody can see
+            # (same rule as an unframed tour candidate).
+            await self._say(
+                "The viewer could not show the subject highlight — skipping the keep-only pass."
+            )
+            return
         level = await self._judge_subject_rounds(subject, level)
 
         n_total = len(ids)

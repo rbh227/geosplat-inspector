@@ -90,12 +90,12 @@ export class FrontendExecutors {
     }
 
     // v0.8 — subject lock-on preview (CleanupController-dispatched only).
-    // With base_ids it installs the nested levels and tints one; a level-only
-    // call is the local slider path re-dispatched by the controller.
+    // With outside_ids it installs the nested levels (complement form) and
+    // tints one; a level-only call is the controller nudging the slider.
     if (tool === 'show_subject_preview') {
-      if (Array.isArray(args.base_ids)) {
+      if (Array.isArray(args.outside_ids)) {
         const count = subjectPreview.setSubject(this.bridge, {
-          baseIds: args.base_ids as number[],
+          outsideIds: args.outside_ids as number[],
           deltas: (args.deltas as number[][]) ?? [],
           counts: (args.counts as number[]) ?? [],
           level: Number(args.level ?? 0),

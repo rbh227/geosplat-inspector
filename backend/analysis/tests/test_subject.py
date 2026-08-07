@@ -38,3 +38,26 @@ def test_subject_captures_core_and_excludes_floaters():
 def test_degenerate_scene_returns_none():
     means = np.random.default_rng(0).normal(size=(10, 3))
     assert find_subject(means, np.full(10, 0.9), np.arange(10)) is None
+
+
+def test_extreme_outliers_do_not_degrade_the_voxel_scale():
+    """Live-found (iona_park.ply, 2M splats): a handful of far outliers
+    inflated the raw bbox ~1000x, so the voxel cell became huge, the whole
+    scene collapsed into a few voxels, and the 'subject' was 99.8% of the
+    scene INCLUDING the junk. The cell must derive from a robust (median/MAD)
+    radius so nearby floaters still resolve as junk."""
+    means, opacity, ids = _sphere_plus_floaters()
+    far = np.array([
+        [3000.0, 0.0, 0.0], [-2800.0, 100.0, 0.0], [0.0, 3100.0, 50.0],
+        [0.0, -2900.0, 0.0], [50.0, 0.0, 3050.0],
+    ])
+    means = np.vstack([means, far])
+    opacity = np.full(len(means), 0.9)
+    ids = np.arange(len(means), dtype=np.int64)
+    s = find_subject(means, opacity, ids)
+    assert s is not None
+    core_ids = ids[:600]
+    junk_ids = ids[600:]
+    assert np.isin(core_ids, s.level_ids[s.default_level]).mean() >= 0.95
+    # the moderate floaters AND the extreme outliers stay out at every level
+    assert not np.isin(junk_ids, s.level_ids[-1]).any()

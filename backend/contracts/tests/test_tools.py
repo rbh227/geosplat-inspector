@@ -105,7 +105,10 @@ def test_v08_show_subject_preview_registered():
     entry = TOOL_BY_NAME["show_subject_preview"]
     assert entry.runs_on == "frontend"
     props = entry.params["properties"]
-    assert props["base_ids"]["type"] == "array"
+    # Complement form (live-found at 2M splats): the keep-set is ~N ids, the
+    # excluded set is the small one — ship THAT, never the keep-set.
+    assert props["outside_ids"]["type"] == "array"
+    assert "base_ids" not in props
     assert props["deltas"]["items"]["type"] == "array"
     assert set(entry.params["required"]) == {"level"}
 
