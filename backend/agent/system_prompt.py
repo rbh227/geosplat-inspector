@@ -55,14 +55,31 @@ CONTROLLER_ONLY_TOOLS: frozenset[str] = frozenset({
     "show_subject_preview",
 })
 
+# v0.8.2 — the crop-box flow is RETIRED from the agent surface entirely
+# (operator decision, live 2026-08-07: the freeform model followed the old
+# good-cube script from its prompt and narrate-spiraled; the Agent chat must
+# never produce a crop box). Scene-wide cleanup is the app-run controller;
+# targeted removal is the selection grammar. The tools stay in the frozen
+# registry; the manual crop gizmo in the left rail is untouched.
+RETIRED_BOX_TOOLS: frozenset[str] = frozenset({
+    "get_core_bounds", "show_box_preview", "adjust_box_preview",
+    "crop_bbox", "crop_sphere",
+})
+
 
 def stage_tools(stage: Stage) -> frozenset[str]:
     """Tool names offered to the model in a stage."""
     if stage == "understand":
         return UNDERSTAND_TOOLS
     # Clean: the full editor surface MINUS the teleport tools (button-only nav)
-    # MINUS the app-dispatched tools (the model never drives those).
-    return frozenset(TOOL_BY_NAME) - TELEPORT_TOOLS - CONTROLLER_ONLY_TOOLS
+    # MINUS the app-dispatched tools (the model never drives those) MINUS the
+    # retired crop-box flow (v0.8.2).
+    return (
+        frozenset(TOOL_BY_NAME)
+        - TELEPORT_TOOLS
+        - CONTROLLER_ONLY_TOOLS
+        - RETIRED_BOX_TOOLS
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -102,21 +119,16 @@ SKILLS: list[Skill] = [
         "recipe": "list_problem_regions -> move_camera/turn until the worst region is in view -> capture_frame -> select_by_brush on the floaters you SEE (or select_by_sphere on a tight cluster) -> get_selection_state to sanity-check the count -> propose_decision(kind='delete_selection') -> delete_selection once approved -> verify with get_metrics + capture_frame.",
     },
     {
-        "name": "trim_background",
-        "stage": "clean",
-        "description": "Isolate the subject and drop everything else.",
-        "recipe": "No navigation needed — the box comes from the data. get_core_bounds -> show_box_preview -> capture_frame to confirm the subject sits inside -> adjust_box_preview if clipped -> propose_decision(kind='crop_outside_box') -> crop_bbox on approval. Verify the subject survived with a capture before moving on.",
-    },
-    {
         "name": "cleanup_scene",
         "stage": "clean",
-        "description": "Full reviewed cleanup: app-computed crop, then a judgment tour of junk candidates you approve as one batch.",
-        "recipe": "APP-RUN ROUTINE — the app drives this end to end (crop card, "
-                  "gridded noise survey, cluster judgment tour, one batch approval); "
-                  "the model only answers where-is-noise and is-it-junk questions. "
-                  "If asked to clean the whole scene, tell the operator to use the "
-                  "Cleanup scene button (or type cleanup_scene); do not attempt the "
-                  "routine tool-by-tool.",
+        "description": "Full reviewed cleanup: the model outlines the real scene, the app carves and proposes the deletion set, then a judgment tour you approve as one batch.",
+        "recipe": "APP-RUN ROUTINE — the app drives this end to end (subject "
+                  "outline & carve, one reviewed deletion card, gridded noise "
+                  "survey, cluster judgment tour, one batch approval); the "
+                  "model only answers where-is-the-scene and is-it-junk "
+                  "questions. If asked to clean the whole scene, tell the "
+                  "operator to use the Cleanup scene button (or type "
+                  "cleanup_scene); do not attempt the routine tool-by-tool.",
     },
     {
         "name": "verify_cleanup",
@@ -179,8 +191,7 @@ Operating rules:
   or behind you — coverage means nothing then; turn toward the scene first.
   Coverage is a tool for SEEING, not a goal: only adjust the camera when you
   need a clearer look at something (e.g. before brushing floaters). Never
-  spend turns fixing the coverage number, and never before the good-cube
-  routine — it works from the data, not the view.
+  spend turns fixing the coverage number.
   If you get lost or the view goes empty, call `reframe` to return to the
   operator's starting view, then continue from there.
 - SELECT WHAT YOU SEE: prefer select_by_brush / select_by_lasso on the floaters
@@ -198,28 +209,20 @@ Operating rules:
   scene-wide sweeps — and they need approval too (see PROPOSE BEFORE DELETING).
 - PROPOSE BEFORE DELETING: every deleting tool is LOCKED until the operator
   approves a matching propose_decision, and the approval authorizes EXACTLY
-  what the operator reviewed — the app enforces it. Kind 'crop_outside_box'
-  requires a previewed box (show_box_preview first) and the crop runs on THAT
-  box regardless of what you pass. Kind 'delete_selection' unlocks ONLY
-  delete_selection; kind 'keep_only_selection' unlocks ONLY keep_selection
-  (which deletes everything EXCEPT the selection — never substitute one for
-  the other). Both bind the tinted selection as reviewed — changing the
-  selection after approval voids it.
+  what the operator reviewed — the app enforces it. Kind 'delete_selection'
+  unlocks ONLY delete_selection; kind 'keep_only_selection' unlocks ONLY
+  keep_selection (which deletes everything EXCEPT the selection — never
+  substitute one for the other). Both bind the tinted selection as reviewed —
+  changing the selection after approval voids it.
   Kind 'bulk_edit' must name the sweep in the operation field (tool +
   params) and only that sweep with those parameters will run. One approval =
   one edit.
-  If the verdict is 'adjusted', apply the feedback (adjust_box_preview for the
-  cube; re-brush for selections) and propose again. If 'rejected', clear the
-  preview/selection and ask what they'd rather do.
-- GOOD-CUBE ROUTINE (the whole cleanup pass): get_core_bounds ->
-  show_box_preview -> tell the operator they can drag and resize the box ->
-  propose_decision(kind='crop_outside_box') -> on approval, crop_bbox. You do
-  NOT size the box: the operator does, and their final box is what gets cropped
-  regardless of the bounds you pass. You do not need to navigate or fix coverage
-  first; get_core_bounds computes the dense core from the DATA, not from your
-  view. After the crop, measure, capture once, and answer. Nothing else.
-  Cropping to the good core is the POINT of this pass — the "never crop TO a
-  problem region" rule means never crop to a FLOATER cluster, not never crop.
+  If the verdict is 'adjusted', apply the feedback (re-brush the selection)
+  and propose again. If 'rejected', clear the selection and ask what they'd
+  rather do.
+- SCENE-WIDE CLEANUP IS APP-RUN: when asked to clean the whole scene, tell
+  the operator to use the "Cleanup scene" action in the panel. The app drives
+  that routine end to end — never attempt it tool-by-tool.
 - BRUSH ROUNDS (fine cleanup): from the current view, brush every floater
   cluster you can see (they tint as you select), then ONE
   propose_decision(kind='delete_selection') for the batch. After the verdict,
@@ -230,10 +233,9 @@ Operating rules:
 - REVERSIBLE: every edit is snapshotted automatically. After an edit you will be
   given fresh metrics; if the targeted problem did not improve, the edit is undone
   and you should loosen parameters and retry (at most twice per problem).
-- crop_bbox / crop_sphere and keep_selection KEEP what is selected/inside and
-  DELETE everything else — they are ONLY for trimming background/junk. NEVER
-  crop TO a problem region. Any edit that removes the subject's solid core is
-  auto-reverted.
+- keep_selection KEEPS what is selected and DELETES everything else — it is
+  ONLY for trimming background/junk around a selected subject. Any edit that
+  removes the subject's solid core is auto-reverted.
 - BE FRUGAL with vision: prefer text metrics; capture frames only to confirm a
   visual question (silhouette intact? floaters gone?).
 - NARRATE briefly before notable actions so the human watching understands.

@@ -122,238 +122,42 @@ def _rejections(result, name):
 
 
 # ── gate blocks without approval ─────────────────────────────────────────
-def test_crop_bbox_without_approval_is_rejected():
-    executor = RecordingExecutor()
-    channel = ProposalChannel()
-    provider = MockProvider(script=[
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
+# v0.8.2 — the crop-box flow is retired from the agent surface
+# (RETIRED_BOX_TOOLS): its gate/binding tests went with it. The generic
+# approval machinery stays covered via delete/keep/bulk kinds below.
 
-    assert result.status == "answered"
-    assert executor.edit_calls == []  # executor never touched
-    rej = _rejections(result, "crop_bbox")
-    assert rej, "expected a gate rejection mentioning propose_decision"
-    assert "crop_outside_box" in str(rej[0]["result"]["error"])
-
-
-# ── one approval unlocks exactly one edit ────────────────────────────────
-def test_approved_proposal_unlocks_one_crop_then_relocks():
-    executor = RecordingExecutor()
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", {"min": [0, 0, 0], "max": [1, 1, 1]})),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
-
-    assert result.status == "answered"
-    # exactly ONE crop dispatched; the second was re-locked (consumed approval)
-    assert executor.edit_calls == ["crop_bbox"]
-    assert len(_rejections(result, "crop_bbox")) == 1
-
-
-def test_crop_approval_without_preview_is_not_banked():
-    """An approval binds a reviewed box; approving with no box ever previewed
-    banks NOTHING (Codex adversarial review) — the crop stays locked."""
-    executor = RecordingExecutor()
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),  # no preview!
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
-        tool_turn(("crop_sphere", {"center": [0, 0, 0], "radius": 0.5})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
-    assert result.status == "answered"
-    assert executor.edit_calls == []  # nothing unlocked
-    assert _rejections(result, "crop_bbox")
-    assert _rejections(result, "crop_sphere")
-
-
-# ── Fix 2: an approval binds the REVIEWED box, not just the kind ─────────
-def test_approved_box_overrides_differing_crop_bbox_args():
-    """The operator reviewed a specific previewed box; the crop must use THAT
-    box even when the model calls crop_bbox with different coordinates."""
-    executor = RecordingExecutor()
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    reviewed = {"min": [0.0, 0.0, 0.0], "max": [2.0, 2.0, 2.0]}
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", {"min": reviewed["min"], "max": reviewed["max"]})),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        # model tries to crop a DIFFERENT box than the one the operator reviewed
-        tool_turn(("crop_bbox", {"min": [9, 9, 9], "max": [10, 10, 10]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]
-    # the executor received the REVIEWED box, not the model's [9,9,9]..[10,10,10]
-    assert executor.last_crop == reviewed
-    # the override is surfaced honestly in the trace
-    narrations = [e for e in result.trace if e.get("type") == "narrate"]
-    assert any("operator approved" in str(e) for e in narrations)
-
-
-# ── v0.6: the approval binds the OPERATOR'S edited box ───────────────────
-def test_approved_crop_uses_the_operators_edited_box():
-    """The operator moved the box after the agent previewed it; the crop must
-    run on THEIR box, not the preview (v0.6)."""
-    executor = RecordingExecutor()
-    previewed = {"min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 1.0]}
-    edited = {"min": [2.0, 2.0, 2.0], "max": [5.0, 5.0, 5.0]}
-    channel = ProposalChannel(verdicts=[{"verdict": "approved", "box": edited}])
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", previewed)),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", previewed)),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean it"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]
-    assert executor.last_crop == edited
-
-
-def test_approved_crop_without_a_box_uses_the_preview():
-    """Unchanged v0.5 behaviour when the reply carries no box."""
-    executor = RecordingExecutor()
-    previewed = {"min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 1.0]}
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", previewed)),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", {"min": [9.0, 9.0, 9.0], "max": [9.0, 9.0, 9.0]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean it"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]
-    assert executor.last_crop == previewed
-
-
-def test_malformed_operator_box_falls_back_to_the_preview():
-    """A junk `box` must not bind — fall back to the reviewed preview rather
-    than cropping to nonsense."""
-    executor = RecordingExecutor()
-    previewed = {"min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 1.0]}
-    channel = ProposalChannel(
-        verdicts=[{"verdict": "approved", "box": {"min": [1.0, 2.0], "max": "nope"}}]
-    )
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", previewed)),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", previewed)),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean it"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]
-    assert executor.last_crop == previewed
-
-
-def test_operator_box_without_a_preview_still_banks_the_approval():
-    """The operator can place a box themselves with no agent preview on record;
-    their box IS the reviewed artifact, so the approval banks."""
-    executor = RecordingExecutor()
-    edited = {"min": [2.0, 2.0, 2.0], "max": [5.0, 5.0, 5.0]}
-    channel = ProposalChannel(verdicts=[{"verdict": "approved", "box": edited}])
-    provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),  # no preview
-        tool_turn(("crop_bbox", {"min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 1.0]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean it"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]
-    assert executor.last_crop == edited
-
-
-def test_crop_sphere_after_box_approval_is_rejected_with_guidance():
-    """Once a box was reviewed and approved, a sphere crop is not the reviewed
-    artifact — reject and steer the model to crop_bbox."""
-    executor = RecordingExecutor()
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", {"min": [0, 0, 0], "max": [2, 2, 2]})),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_sphere", {"center": [1, 1, 1], "radius": 1.0})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == []  # sphere never reached the engine
-    sphere_rej = [
-        e for e in _tool_results(result, "crop_sphere")
-        if e.get("result", {}).get("ok") is False
-        and "crop_bbox" in str(e.get("result", {}).get("error", ""))
-    ]
-    assert sphere_rej, "expected a rejection steering the model to crop_bbox"
-
-
-def test_crop_sphere_rejection_refunds_the_approval_for_a_crop_bbox_retry():
-    """The rejected sphere refunds the approval so a follow-up crop_bbox (the
-    reviewed artifact) can still consume it."""
-    executor = RecordingExecutor()
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    reviewed = {"min": [0.0, 0.0, 0.0], "max": [2.0, 2.0, 2.0]}
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", {"min": reviewed["min"], "max": reviewed["max"]})),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_sphere", {"center": [1, 1, 1], "radius": 1.0})),  # rejected
-        tool_turn(("crop_bbox", {"min": [9, 9, 9], "max": [10, 10, 10]})),  # retry works
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]
-    assert executor.last_crop == reviewed  # still bound to the reviewed box
-
-
-# ── adjusted / rejected bank nothing ─────────────────────────────────────
 def test_adjusted_verdict_banks_no_approval_and_feeds_back_feedback():
     executor = RecordingExecutor()
     channel = ProposalChannel(
-        verdicts=[{"verdict": "adjusted", "feedback": "make the box tighter on the left"}]
+        verdicts=[{"verdict": "adjusted", "feedback": "brush the left cluster too"}]
     )
     provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
+        tool_turn(("propose_decision", {"kind": "delete_selection"})),
+        tool_turn(("delete_selection", {})),
         tool_turn(("answer", {"text": "done"})),
     ])
     result = asyncio.run(_loop(provider, channel, executor).run("clean"))
 
     assert result.status == "answered"
     assert executor.edit_calls == []  # adjusted != approved: still locked
-    assert _rejections(result, "crop_bbox")
+    assert _rejections(result, "delete_selection")
     # the operator's feedback made it back into the fed-back tool result
     proposal_results = _tool_results(result, "propose_decision")
-    assert any("make the box tighter" in str(e.get("result")) for e in proposal_results)
+    assert any("brush the left cluster" in str(e.get("result")) for e in proposal_results)
 
 
 def test_rejected_verdict_banks_no_approval():
     executor = RecordingExecutor()
     channel = ProposalChannel(verdicts=[{"verdict": "rejected"}])
     provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
+        tool_turn(("propose_decision", {"kind": "delete_selection"})),
+        tool_turn(("delete_selection", {})),
         tool_turn(("answer", {"text": "done"})),
     ])
     result = asyncio.run(_loop(provider, channel, executor).run("clean"))
     assert result.status == "answered"
     assert executor.edit_calls == []
-    assert _rejections(result, "crop_bbox")
+    assert _rejections(result, "delete_selection")
 
 
 # ── delete_selection / keep_selection gated on the delete_selection kind ──
@@ -419,22 +223,6 @@ def test_keep_only_kind_does_not_unlock_delete_selection():
     assert _rejections(result, "delete_selection")
 
 
-def test_delete_kind_does_not_unlock_a_crop():
-    """Kinds are namespaced: a delete_selection approval must not unlock crops."""
-    executor = RecordingExecutor()
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    provider = MockProvider(script=[
-        tool_turn(("propose_decision", {"kind": "delete_selection"})),
-        tool_turn(("crop_bbox", {"min": [0, 0, 0], "max": [1, 1, 1]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor).run("clean"))
-    assert result.status == "answered"
-    assert executor.edit_calls == []
-    assert _rejections(result, "crop_bbox")
-
-
-# ── understand stage: the gate never engages; the stage backstop bites first ─
 def test_understand_stage_rejects_gated_tools_at_the_backstop():
     executor = RecordingExecutor()
     channel = ProposalChannel()
@@ -456,29 +244,6 @@ def test_understand_stage_rejects_gated_tools_at_the_backstop():
 
 
 # ── Fix 4: the production destructive path (gate → _handle_destructive) ───
-def test_approved_crop_flows_through_the_destructive_verify_branch():
-    """With verify_after_edit=True (the production config), an approved crop_bbox
-    passes the gate and flows through _handle_destructive: metrics measured
-    before/after, the edit reaches the executor, verify keeps it (count drops),
-    and the loop continues to answer."""
-    executor = RecordingExecutor()  # default count 200_000; crop_bbox -> 80%
-    channel = ProposalChannel(verdicts=[{"verdict": "approved"}])
-    provider = MockProvider(script=[
-        tool_turn(("show_box_preview", {"min": [-1, -1, -1], "max": [1, 1, 1]})),
-        tool_turn(("propose_decision", {"kind": "crop_outside_box"})),
-        tool_turn(("crop_bbox", {"min": [-1, -1, -1], "max": [1, 1, 1]})),
-        tool_turn(("answer", {"text": "done"})),
-    ])
-    result = asyncio.run(_loop(provider, channel, executor, verify=True).run("clean"))
-
-    assert result.status == "answered"
-    assert executor.edit_calls == ["crop_bbox"]  # reached the engine
-    assert result.edits_kept == 1  # verify kept it (gaussianCount decreased)
-    assert result.edits_reverted == 0
-    # the destructive branch emitted a verify:<tool> result
-    assert _tool_results(result, "verify:crop_bbox")
-
-
 # ── bulk_edit: statistical sweeps are gated too (operator decision 2026-07-22) ─
 class SweepRecordingExecutor(RecordingExecutor):
     def remove_outliers(self, k, std_ratio):
