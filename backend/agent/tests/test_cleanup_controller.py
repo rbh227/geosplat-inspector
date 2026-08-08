@@ -256,6 +256,27 @@ def test_giant_scale_splats_land_in_outside_ids():
     assert set(range(10)) <= outside
 
 
+def test_valid_box_accepts_qwen_0_1000_grounding_coords():
+    """Live-found (review ran the real forced call): Qwen answers in its
+    native 0-1000 grounding space — e.g. (178, 198, 822, 822) — regardless of
+    the schema asking for 0..1. The old validator clamped those to 1.0, saw a
+    zero-area box, and silently dropped EVERY outline: the whole reasoning
+    path was falling back to statistics on every run."""
+    from backend.agent.cleanup_controller import _valid_box
+
+    box = _valid_box({"x0": 178, "y0": 198, "x1": 822, "y1": 822})
+    assert box is not None
+    x0, y0, x1, y1 = box
+    assert abs(x0 - 0.178) < 1e-9 and abs(y1 - 0.822) < 1e-9
+    # already-normalized replies still pass through untouched
+    assert _valid_box({"x0": 0.1, "y0": 0.2, "x1": 0.9, "y1": 0.8}) == (0.1, 0.2, 0.9, 0.8)
+    # degenerate boxes are still unusable in either space
+    assert _valid_box({"x0": 500, "y0": 500, "x1": 510, "y1": 510}) is None
+    assert _valid_box({"x0": 0.5, "y0": 0.5, "x1": 0.5, "y1": 0.5}) is None
+    # pixel-style replies beyond 1000 (e.g. a 1024-wide image) normalize too
+    assert _valid_box({"x0": 0, "y0": 0, "x1": 1024, "y1": 660}) is not None
+
+
 def test_outlined_views_carve_the_keep_set():
     """v0.8.1 scene-hull: the model's outlines are the PRIMARY keep decision.
     With a camera that actually frames the building and outlines covering only

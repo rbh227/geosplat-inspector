@@ -102,4 +102,18 @@ describe('survey_capture', () => {
       vi.useRealTimers()
     }
   })
+
+  it('capture_frame times out instead of dangling (single-capture watchdog)', async () => {
+    vi.useFakeTimers()
+    try {
+      ;(capturePNG as unknown as ReturnType<typeof vi.fn>)
+        .mockImplementationOnce(() => new Promise(() => {}))   // toBlob never calls back
+      const ex = new FrontendExecutors(makeBridge() as never, overlay as never)
+      const pending = ex.capture_frame()
+      await vi.advanceTimersByTimeAsync(16000)
+      expect(await pending).toMatchObject({ ok: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

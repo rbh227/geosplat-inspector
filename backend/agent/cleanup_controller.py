@@ -71,11 +71,12 @@ _MARK_INSTRUCTION = (
 
 _OUTLINE_INSTRUCTION = (
     "This is one view of a 3D-scanned scene. Call outline_scene with the "
-    "tightest box (normalized 0-1 image coordinates: x0,y0 = top-left corner, "
-    "x1,y1 = bottom-right corner) containing the ACTUAL scene — the coherent "
-    "reconstructed structure. Exclude floating junk, debris mist, streaks, "
-    "and disconnected fragments. Use the full box if the real scene fills "
-    "the view."
+    "tightest bounding box containing the ACTUAL scene — the coherent "
+    "reconstructed structure. Use integer coordinates in a 0-1000 space: "
+    "x0,y0 = top-left corner, x1,y1 = bottom-right corner (0,0 is the "
+    "image's top-left, 1000,1000 its bottom-right). Exclude floating junk, "
+    "debris mist, streaks, and disconnected fragments. Use the full box if "
+    "the real scene fills the view."
 )
 
 _SUBJECT_INSTRUCTION = (
@@ -137,6 +138,12 @@ class RunInterrupted(Exception):
 
 def _valid_box(args: dict | None) -> tuple[float, float, float, float] | None:
     """Sanitize an outline_scene reply into a normalized (x0,y0,x1,y1) box.
+
+    Qwen-VL grounds in its native 0-1000 coordinate space no matter what the
+    schema asks for (live-found: every outline came back like (178, 198, 822,
+    822), was clamped to 1.0, and dropped as degenerate — silently disabling
+    the whole reasoning path). Values beyond 1.5 are treated as that style
+    and normalized; pixel-style replies beyond 1000 scale by their own max.
     Degenerate boxes (inverted or < 5% of the frame per axis) are unusable."""
     if not isinstance(args, dict):
         return None
@@ -144,6 +151,10 @@ def _valid_box(args: dict | None) -> tuple[float, float, float, float] | None:
         x0, y0, x1, y1 = (float(args[k]) for k in ("x0", "y0", "x1", "y1"))
     except (KeyError, TypeError, ValueError):
         return None
+    m = max(x0, y0, x1, y1)
+    if m > 1.5:
+        scale = 1000.0 if m <= 1000.0 else m
+        x0, y0, x1, y1 = x0 / scale, y0 / scale, x1 / scale, y1 / scale
     x0, x1 = max(0.0, min(1.0, x0)), max(0.0, min(1.0, x1))
     y0, y1 = max(0.0, min(1.0, y0)), max(0.0, min(1.0, y1))
     if x1 - x0 < 0.05 or y1 - y0 < 0.05:
@@ -325,7 +336,9 @@ class CleanupController:
             await self._checkpoint()
             await self._phase2_survey_and_mark()
             await self._checkpoint()
-            self._phase3_lock_in()
+            # to_thread: the voxel/cluster pass is seconds of numpy+python at
+            # 2M splats and must not freeze the event loop (WS, Stop).
+            await asyncio.to_thread(self._phase3_lock_in)
             await self._say(self._lock_in_summary())
             await self._checkpoint()
             answer = await self._phases_4_to_6()

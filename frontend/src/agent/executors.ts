@@ -30,6 +30,23 @@ const MAX_MOVE_MS = 8000
  *  whole run. */
 const POSE_TIMEOUT_MS = 15000
 
+/** Race async work against a hard timeout: a wedged render/capture costs one
+ *  step, never the run (null = timed out or threw). A raw setTimeout — never
+ *  the mockable sleep() — so the bound is real even when helpers are stubbed. */
+async function withTimeout<T>(work: () => Promise<T>, ms = POSE_TIMEOUT_MS): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms) }),
+    ])
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export class FrontendExecutors {
   constructor(private bridge: RendererBridge, private overlay: Overlay) {}
 
@@ -360,7 +377,11 @@ export class FrontendExecutors {
   async capture_frame(): Promise<ToolResult> {
     // Capture first, THEN read the pose/revision, so the tag matches exactly the
     // frame that was rendered (Codex boundary — every percept tied to state).
-    const png_base64 = dataUrlToBase64(await capturePNG(this.bridge))
+    // Watchdogged: a wedged toBlob/render must surface as a failed capture the
+    // backend can degrade on, never as un-cancellable dangling browser work.
+    const dataUrl = await withTimeout(() => capturePNG(this.bridge))
+    if (dataUrl === null) return { ok: false, error: 'capture timed out or failed' }
+    const png_base64 = dataUrlToBase64(dataUrl)
     const { position, target } = this.bridge.getCameraPose()
     const cam = this.bridge.getCamera()
     const coverage = sceneCoverage(position.clone(), cam.fov, this.bridge.getSceneCore())
@@ -420,24 +441,9 @@ export class FrontendExecutors {
 
     // Per-pose watchdog (live-found, three runs): a flight or capture that
     // wedges — occluded-window rAF throttling, GPU stalls at 2M splats —
-    // must cost ONE pose, never the whole run. A raw setTimeout (never the
-    // mockable sleep()) so the bound is real even when timers are stubbed.
-    const bounded = async <T,>(work: () => Promise<T>): Promise<T | null> => {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        return await Promise.race([
-          work(),
-          new Promise<null>((r) => { timer = setTimeout(() => r(null), POSE_TIMEOUT_MS) }),
-        ])
-      } catch {
-        return null                       // a failed pose is a skipped pose
-      } finally {
-        clearTimeout(timer)
-      }
-    }
-
+    // must cost ONE pose, never the whole run.
     // Frame 1 — the operator's current view ("the angle I just put in").
-    const first = await bounded(() => capturePNG(this.bridge, { grid }))
+    const first = await withTimeout(() => capturePNG(this.bridge, { grid }))
     if (first !== null) {
       frames_base64.push(dataUrlToBase64(first))
       labels.push("operator's view")
@@ -447,7 +453,7 @@ export class FrontendExecutors {
     const core = this.bridge.getSceneCore()
     if (core && core.radius > 0) {
       for (const pose of surveyPoses(this.bridge.getCamera(), core)) {
-        const png = await bounded(async () => {
+        const png = await withTimeout(async () => {
           await animateTo(this.bridge, pose.position, pose.target, 600)
           await sleep(250) // let Spark's async depth-sort settle at the new pose
           return capturePNG(this.bridge, { grid })
@@ -473,10 +479,13 @@ export class FrontendExecutors {
     const pngs: string[] = []
     const n = Math.max(1, Math.floor(args.n))
     for (let i = 0; i < n; i++) {
-      const offset = rotateAround(center.clone().add(start), center, 'y', (360 * i) / n)
-      await animateTo(this.bridge, offset, center.clone(), 600)
-      this.breadcrumb()
-      pngs.push(await capturePNG(this.bridge))
+      const png = await withTimeout(async () => {
+        const offset = rotateAround(center.clone().add(start), center, 'y', (360 * i) / n)
+        await animateTo(this.bridge, offset, center.clone(), 600)
+        this.breadcrumb()
+        return capturePNG(this.bridge)
+      })
+      if (png !== null) pngs.push(png)   // a wedged stop costs one frame, not the orbit
     }
     return { frames_base64: pngs.map(dataUrlToBase64) }
   }

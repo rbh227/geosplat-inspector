@@ -37,4 +37,4 @@ COPY --from=frontend /fe/dist ./dist
 EXPOSE 8000
 
 # API keys come from env at runtime (see docker-compose.yml) — never baked in.
-CMD ["uvicorn", "backend.server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.server:app", "--host", "0.0.0.0", "--port", "8000", "--ws-max-size", "67108864"]

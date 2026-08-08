@@ -482,11 +482,14 @@ CONTROLLER_CHOICE_SPECS: dict[str, dict] = {
                        "fragments. Full box if the scene fills the view.",
         "parameters": {
             "type": "object",
+            # 0-1000 integer space — Qwen-VL's native grounding convention
+            # (it answers in it regardless of what the schema requests; the
+            # controller normalizes 0..1 replies too).
             "properties": {
-                "x0": {"type": "number", "description": "left edge, 0..1"},
-                "y0": {"type": "number", "description": "top edge, 0..1"},
-                "x1": {"type": "number", "description": "right edge, 0..1"},
-                "y1": {"type": "number", "description": "bottom edge, 0..1"},
+                "x0": {"type": "number", "description": "left edge, 0-1000"},
+                "y0": {"type": "number", "description": "top edge, 0-1000"},
+                "x1": {"type": "number", "description": "right edge, 0-1000"},
+                "y1": {"type": "number", "description": "bottom edge, 0-1000"},
             },
             "required": ["x0", "y0", "x1", "y1"],
         },
