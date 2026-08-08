@@ -242,6 +242,9 @@ class RealAgentRunner:
                     "means": np.asarray(m.means[m.alive], dtype=np.float64),
                     "opacity": np.asarray(m.opacity(alive_only=True), dtype=np.float64),
                     "ids": np.asarray(m.alive_indices(), dtype=np.int64),
+                    # linear per-axis scales — the subject finder uses these to
+                    # drop streak/needle gaussians from the keep-set (v0.8.1)
+                    "scale": np.asarray(m.scale(alive_only=True), dtype=np.float64),
                 }
 
             controller = CleanupController(provider, dispatcher, channel, executor, splat_arrays)

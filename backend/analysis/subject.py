@@ -1,8 +1,10 @@
 """Subject lock-on for the cleanup run (subject-first cleanup, 2026-08-07).
 
 Finds THE subject — the largest dense connected component of occupied
-voxels — and returns nested keep-levels (tight -> loose) formed by dilating
-that component into surrounding occupied voxels. Pure numpy, headless.
+voxels — and returns nested keep-levels as strictness tiers: the tight end
+cuts by voxel occupancy, the loose end dilates into surrounding occupied
+voxels. Splats with extreme max-axis scale (streaks/needles) are excluded
+from every level. Pure numpy, headless.
 """
 from __future__ import annotations
 
@@ -37,11 +39,27 @@ def find_subject(
     cell_frac: float = 0.03,
     levels: int = 5,
     min_splats: int = 100,
+    scales: np.ndarray | None = None,
+    scale_cut_mult: float = 20.0,
 ) -> SubjectLevels | None:
     means = np.asarray(means, dtype=np.float64)
     ids = np.asarray(ids)
     if len(means) < min_splats:
         return None
+
+    # Live-found (iona_park): streak/needle gaussians up to 2000x the median
+    # scale sit with their CENTERS inside the dense core, so a center-only
+    # test keeps them at every level and the slider can never remove them.
+    # Splats with an extreme max-axis scale are excluded from the keep-set
+    # outright (they land in the complement and die with the approval).
+    if scales is not None:
+        smax = np.asarray(scales, dtype=np.float64)
+        if smax.ndim == 2:
+            smax = smax.max(axis=1)
+        ok = smax <= scale_cut_mult * float(np.median(smax))
+        means, ids = means[ok], ids[ok]
+        if len(means) < min_splats:
+            return None
 
     # Live-found (iona_park, 2M splats): the raw bbox radius is inflated
     # ~1000x by a handful of far outliers, which makes the cell so large the
@@ -108,12 +126,20 @@ def _subject_at_cell(
     if best_n < min_splats:
         return None
 
-    # Level k = component dilated k voxel-steps into ANY occupied voxel.
+    # Levels as STRICTNESS TIERS (live-found: dilation-only levels moved ~8%
+    # of splats end to end on a real drone scene — an invisible slider).
+    # The tight end cuts by voxel occupancy, the loose end grows by dilation:
+    #   L0            = component voxels with occupancy >= 2x dense_min
+    #   L1            = the component itself
+    #   L2 (default)  = component dilated 2 steps into ANY occupied voxel —
+    #                   identical to the previous default keep-set
+    #   L3..Ln        = dilated 3, 4, ... steps
+    hard = {v for v in best if len(buckets[v]) >= 2 * dense_min}
+    if not hard:                     # uniformly-dense subject: no tighter cut
+        hard = set(best)
+    tiers: list[set[tuple[int, int, int]]] = [hard, set(best)]
     ring = set(best)
-    level_ids: list[np.ndarray] = []
-    for _ in range(levels):
-        rows = np.asarray(sorted(i for v in ring for i in buckets[v]), dtype=np.int64)
-        level_ids.append(np.sort(ids[rows]))
+    for step in range(1, levels):
         grown = set(ring)
         for v in ring:
             for off in _OFFSETS:
@@ -121,6 +147,13 @@ def _subject_at_cell(
                 if nb in buckets:
                     grown.add(nb)
         ring = grown
+        if step >= 2:                # steps 2..levels-1 become the loose tiers
+            tiers.append(set(ring))
+    tiers = tiers[:levels]
+    level_ids = [
+        np.sort(ids[np.asarray(sorted(i for v in t for i in buckets[v]), dtype=np.int64)])
+        for t in tiers
+    ]
 
     default_level = levels // 2
     pos_of = {int(i): n for n, i in enumerate(ids)}

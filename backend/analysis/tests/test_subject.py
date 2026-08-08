@@ -40,6 +40,37 @@ def test_degenerate_scene_returns_none():
     assert find_subject(means, np.full(10, 0.9), np.arange(10)) is None
 
 
+def test_giant_scale_splats_are_excluded_from_every_level():
+    """Live-found (iona_park): streak/needle gaussians up to 2000x the median
+    scale sit with their CENTERS inside the dense core, so a center-only test
+    keeps them at every level and the slider can never remove them. Splats
+    with extreme max-axis scale must be excluded from the keep-set outright."""
+    means, opacity, ids = _sphere_plus_floaters()
+    scales = np.full((len(means), 3), 0.01)
+    scales[:10, 0] = 20.0                      # 10 core-centered giant streaks
+    s = find_subject(means, opacity, ids, scales=scales)
+    assert s is not None
+    assert not np.isin(ids[:10], s.level_ids[-1]).any()
+    # the rest of the core still keeps
+    assert np.isin(ids[10:600], s.level_ids[s.default_level]).mean() >= 0.95
+
+
+def test_levels_span_a_real_density_range():
+    """Live-found: dilation-only levels moved ~8% of splats end to end on a
+    real drone scene — an invisible slider. The tightest level must keep
+    meaningfully fewer splats than the loosest."""
+    rng = np.random.default_rng(3)
+    core = rng.normal(0.0, 0.3, size=(1500, 3))     # dense blob
+    halo = rng.normal(0.0, 1.2, size=(600, 3))      # sparse attached fringe
+    means = np.vstack([core, halo])
+    opacity = np.full(len(means), 0.9)
+    ids = np.arange(len(means), dtype=np.int64)
+    s = find_subject(means, opacity, ids)
+    assert s is not None
+    assert s.counts[0] > 0
+    assert s.counts[0] <= 0.9 * s.counts[-1]        # a visible swing, not 1%
+
+
 def test_extreme_outliers_do_not_degrade_the_voxel_scale():
     """Live-found (iona_park.ply, 2M splats): a handful of far outliers
     inflated the raw bbox ~1000x, so the voxel cell became huge, the whole

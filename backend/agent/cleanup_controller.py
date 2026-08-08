@@ -305,10 +305,16 @@ class CleanupController:
         # takes ~15s and the operator must not stare at dead air. to_thread
         # keeps the event loop (WS heartbeats, Stop/pause) responsive.
         await self._say("Looking for the main subject — this can take a moment on big scenes.")
-        means, opacity, ids = self._arrays()
+        a = self.splat_arrays()
+        means, opacity, ids = (
+            np.asarray(a["means"]), np.asarray(a["opacity"]), np.asarray(a["ids"]),
+        )
         subject = await asyncio.to_thread(
             find_subject, means, opacity, ids,
             cell_frac=self.config.cell_frac, levels=self.config.subject_levels,
+            # Per-splat scales let the finder drop streak/needle gaussians
+            # from the keep-set; harnesses that omit them just skip the filter.
+            scales=a.get("scale"),
         )
         if subject is None:
             await self._say("Could not isolate a subject — skipping the keep-only pass.")

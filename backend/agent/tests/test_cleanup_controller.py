@@ -222,6 +222,26 @@ def test_model_breaker_resets_on_success():
     assert len(mark_calls) == 3                        # breaker never tripped
 
 
+def test_giant_scale_splats_land_in_outside_ids():
+    """When the arrays carry per-splat scales, the controller must pass them
+    to find_subject so streak/needle gaussians are excluded from the keep-set
+    (they arrive at the frontend in outside_ids and die with the approval)."""
+    arrays = _scene_arrays()
+    n = len(arrays["ids"])
+    scales = np.full((n, 3), 0.01)
+    scales[:10, 0] = 20.0                      # 10 giant streaks in the core
+    arrays["scale"] = scales
+    channel = TourChannel(verdicts=[{"verdict": "rejected"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider(_good3())
+    c = _controller(provider, channel, executor, arrays=lambda: arrays)
+    _run(c.run("cleanup_scene"))
+    preview = next(cmd for cmd in channel.commands
+                   if cmd.get("tool") == "show_subject_preview")
+    outside = set(preview["args"]["outside_ids"])
+    assert set(range(10)) <= outside
+
+
 def test_no_subject_found_skips_phase():
     """A degenerate scene (find_subject → None): no preview, no card, phase 2
     still runs."""
