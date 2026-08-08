@@ -22,8 +22,6 @@ _TARGET: dict[str, tuple[str, bool]] = {
     "remove_outliers": ("spatial.outlierFraction", True),
     "prune_oversized": ("scale.oversizedFraction", True),
     "remove_needles": ("scale.axisRatio.needleFraction", True),
-    "crop_bbox": ("gaussianCount", True),
-    "crop_sphere": ("gaussianCount", True),
 }
 
 _APPEARANCE_ONLY = {"recolor", "adjust_opacity", "truncate_sh"}

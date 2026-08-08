@@ -55,16 +55,11 @@ CONTROLLER_ONLY_TOOLS: frozenset[str] = frozenset({
     "show_subject_preview",
 })
 
-# v0.8.2 — the crop-box flow is RETIRED from the agent surface entirely
-# (operator decision, live 2026-08-07: the freeform model followed the old
-# good-cube script from its prompt and narrate-spiraled; the Agent chat must
-# never produce a crop box). Scene-wide cleanup is the app-run controller;
-# targeted removal is the selection grammar. The tools stay in the frozen
-# registry; the manual crop gizmo in the left rail is untouched.
-RETIRED_BOX_TOOLS: frozenset[str] = frozenset({
-    "get_core_bounds", "show_box_preview", "adjust_box_preview",
-    "crop_bbox", "crop_sphere",
-})
+# v0.8.2 — the crop-box flow was DELETED from the repo entirely (operator
+# decision, live 2026-08-07: the freeform model followed the old good-cube
+# script from its prompt and narrate-spiraled; only code the app needs stays).
+# Scene-wide cleanup is the app-run controller; targeted removal is the
+# selection grammar; the manual crop gizmo in the left rail is untouched.
 
 
 def stage_tools(stage: Stage) -> frozenset[str]:
@@ -72,14 +67,8 @@ def stage_tools(stage: Stage) -> frozenset[str]:
     if stage == "understand":
         return UNDERSTAND_TOOLS
     # Clean: the full editor surface MINUS the teleport tools (button-only nav)
-    # MINUS the app-dispatched tools (the model never drives those) MINUS the
-    # retired crop-box flow (v0.8.2).
-    return (
-        frozenset(TOOL_BY_NAME)
-        - TELEPORT_TOOLS
-        - CONTROLLER_ONLY_TOOLS
-        - RETIRED_BOX_TOOLS
-    )
+    # MINUS the app-dispatched tools (the model never drives those).
+    return frozenset(TOOL_BY_NAME) - TELEPORT_TOOLS - CONTROLLER_ONLY_TOOLS
 
 
 # ---------------------------------------------------------------------------
@@ -326,8 +315,6 @@ _DESCRIPTIONS: dict[str, str] = {
     "remove_outliers": "Remove statistical k-NN spatial outliers.",
     "prune_oversized": "Remove Gaussians whose max axis exceeds a scene fraction.",
     "remove_needles": "Remove needle-like Gaussians above an axis-ratio cutoff.",
-    "crop_bbox": "Keep only Gaussians inside an axis-aligned box.",
-    "crop_sphere": "Keep/remove Gaussians inside a sphere (invert to remove).",
     "recolor": "Set the color of a selection.",
     "adjust_opacity": "Scale the opacity of a selection by a factor.",
     "truncate_sh": "Reduce spherical-harmonic degree to `degree`.",
@@ -350,9 +337,6 @@ _DESCRIPTIONS: dict[str, str] = {
     "move_camera": "Hold a fly-movement input (forward/back/left/right/up/down) for duration_ms — lights the on-screen pad.",
     "turn": "Hold a look input to turn the view (left/right = yaw, up/down = pitch) for duration_ms — the rotate pad. Relative; no coordinates.",
     # v0.5 — proposal / good-cube
-    "get_core_bounds": "Get the tight dense-subject box (solid splats, density-clustered — excludes the floater halo) — the seed for the good cube.",
-    "show_box_preview": "Render a persistent highlighted box (dim + wireframe) the operator and your captures both see.",
-    "adjust_box_preview": "Grow/shift the previewed box RELATIVE TO THE OPERATOR'S VIEW (units = the box's own size). No coordinates.",
     "propose_decision": "Ask the operator to approve a pending edit. BLOCKS until they answer: approved / rejected / adjusted (+feedback).",
 }
 

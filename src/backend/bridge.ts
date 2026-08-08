@@ -40,13 +40,8 @@ export function makeRendererBridge(viewer: ViewerHandle): RendererBridge {
     clearSelection: () => viewer.clearSelection(),
     invertSelection: () => viewer.invertSelection(),
     getSelectionSummary: () => viewer.getSelectionSummary(),
-    getCoreBoundsBox: () => viewer.getCoreBoundsBox(),
     showSelectionPreview: (s, c, z) => viewer.showSelectionPreview(s, c, z),
     clearSelectionPreview: () => viewer.clearSelectionPreview(),
-    showProposalBox: (min, max) => viewer.showProposalBox(min, max),
-    clearProposalBox: () => viewer.clearProposalBox(),
-    getProposalBox: () => viewer.getProposalBox(),
-    getCropBox: () => viewer.getCropBox(),
     setMovementInput: (d, a) => viewer.setMovementInput(d, a),
     setRotationInput: (d, a) => viewer.setRotationInput(d, a),
   }

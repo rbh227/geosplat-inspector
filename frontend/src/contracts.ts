@@ -99,8 +99,8 @@ export const FRONTEND_TOOLS = [
   "turn",
   // v0.4 — app-owned recovery: return to the operator's start view
   "reframe",
-  // v0.5 — proposal / good-cube (agent-cleanup-proposals spec)
-  "get_core_bounds", "show_box_preview", "adjust_box_preview", "propose_decision",
+  // v0.5 — proposal (the crop-box surface was DELETED in v0.8.2)
+  "propose_decision",
   // v0.7 — controller tint: exact stable ids (judgment-tour cleanup; the
   // CleanupController dispatches it, never the model)
   "select_by_ids",
@@ -112,7 +112,7 @@ export const FRONTEND_TOOLS = [
 export const BACKEND_TOOLS = [
   "get_metrics", "list_problem_regions",
   "opacity_threshold", "remove_outliers", "prune_oversized",
-  "remove_needles", "crop_bbox", "crop_sphere",
+  "remove_needles",
   "recolor", "adjust_opacity", "truncate_sh",
   "snapshot", "undo", "redo", "export_ply", "answer",
   // v0.2 — selection editing (IDs pulled from the frontend at dispatch time)
@@ -164,19 +164,18 @@ export type WSCommandType =
   | "proposal";
 
 /**
- * v0.6 — fields a proposal reply may carry. `box` is the operator's edited crop
- * box in BACKEND coordinates; when present on an `approved` verdict the backend
- * rebinds the approval to it, so the crop runs on the box the operator actually
- * looked at rather than the one the agent previewed.
- * v0.8 — `level` is the subject card's slider position (keep_only_subject only).
+ * Fields a proposal reply may carry.
+ * v0.8 — `level` is the subject card's slider position (keep_only_subject
+ * only). v0.8.2 — `box` was deleted with the crop-box flow.
  */
-export const PROPOSAL_DECISION_FIELDS = ['verdict', 'feedback', 'box', 'level'] as const
+export const PROPOSAL_DECISION_FIELDS = ['verdict', 'feedback', 'level'] as const
 
 /** Proposal kinds (mirror: tools.py propose_decision kind enum).
  *  v0.7 adds delete_clusters — the judgment-tour batch card.
- *  v0.8 adds keep_only_subject — the subject lock-on card. */
+ *  v0.8 adds keep_only_subject — the subject lock-on card.
+ *  v0.8.2 deletes crop_outside_box with the crop-box flow. */
 export const PROPOSAL_KINDS = [
-  'crop_outside_box', 'delete_selection', 'keep_only_selection', 'bulk_edit',
+  'delete_selection', 'keep_only_selection', 'bulk_edit',
   'delete_clusters', 'keep_only_subject',
 ] as const
 export type ProposalKind = typeof PROPOSAL_KINDS[number]

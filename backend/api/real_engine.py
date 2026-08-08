@@ -39,7 +39,7 @@ from backend.splat import GaussianSplatModel
 _EDIT_OPS = frozenset(
     {
         "opacity_threshold", "remove_outliers", "prune_oversized",
-        "remove_needles", "crop_bbox", "crop_sphere",
+        "remove_needles",
         "recolor", "adjust_opacity", "truncate_sh",
         # v0.2 — ID-based edits from the frontend's stable ID map
         "delete_by_ids", "keep_only_ids",
@@ -150,12 +150,6 @@ class RealBackendExecutor:
 
     def remove_needles(self, max_axis_ratio: float = NEEDLE_RATIO) -> dict:
         return self._s.editing.remove_needles(max_axis_ratio)
-
-    def crop_bbox(self, min: list[float], max: list[float]) -> dict:
-        return self._s.editing.crop_bbox(min, max)
-
-    def crop_sphere(self, center: list[float], radius: float, invert: bool = False) -> dict:
-        return self._s.editing.crop_sphere(center, radius, invert)
 
     def recolor(self, selection: dict, rgb: list[float]) -> dict:
         return self._s.editing.recolor(selection, rgb)

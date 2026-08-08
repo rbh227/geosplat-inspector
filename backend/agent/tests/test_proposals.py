@@ -1,6 +1,7 @@
 """v0.5 approval gate (docs task 3): in the CLEAN stage the destructive spatial
-ops (crop_bbox / crop_sphere / delete_selection / keep_selection) are locked
-until an operator-approved `propose_decision` of the matching kind is banked.
+ops (delete_selection / keep_selection; the crop ops were deleted in v0.8.2)
+are locked until an operator-approved `propose_decision` of the matching kind
+is banked.
 One approval unlocks exactly one edit; adjusted/rejected verdicts bank nothing.
 
 Scaffolding mirrors test_pause_resume.py: a scripted MockProvider drives the
@@ -44,11 +45,6 @@ class ProposalChannel(MockFrontendChannel):
             return {"verdict": "approved"}
         if ctype == "get_selection":
             return {"ok": True, "ids": list(self.selected_ids)}
-        # The good-cube preview tools echo {ok, min, max} — the loop absorbs the
-        # box so a crop_outside_box approval can bind it (Fix 2).
-        if ctype == "selection_tool" and cmd.get("tool") in ("show_box_preview", "adjust_box_preview"):
-            args = cmd.get("args", {})
-            return {"ok": True, "min": args.get("min"), "max": args.get("max")}
         if ctype == "capture_request":
             # v0.6: Understand runs app-dispatch survey_capture before the
             # model's first turn — answer it with a frame like the base mock.
@@ -63,17 +59,7 @@ class RecordingExecutor(MockBackendExecutor):
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
         self.edit_calls: list[str] = []
-        self.last_crop: dict | None = None
         self.kept_ids: list[int] | None = None
-
-    def crop_bbox(self, min, max):  # noqa: A002
-        self.edit_calls.append("crop_bbox")
-        self.last_crop = {"min": list(min), "max": list(max)}
-        return super().crop_bbox(min, max)
-
-    def crop_sphere(self, center, radius, invert: bool = False):
-        self.edit_calls.append("crop_sphere")
-        return super().crop_sphere(center, radius, invert)
 
     def delete_selection(self, ids):
         self.edit_calls.append("delete_selection")

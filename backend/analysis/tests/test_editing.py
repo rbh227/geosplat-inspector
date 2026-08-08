@@ -50,9 +50,7 @@ def _ops():
         ("remove_outliers", lambda e: e.remove_outliers()),
         ("prune_oversized", lambda e: e.prune_oversized(0.01)),
         ("remove_needles", lambda e: e.remove_needles(1.2)),
-        ("crop_bbox", lambda e: e.crop_bbox([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5])),
-        ("crop_sphere", lambda e: e.crop_sphere([0, 0, 0], 1.0)),
-        ("crop_sphere_invert", lambda e: e.crop_sphere([0, 0, 0], 1.0, invert=True)),
+        # crop_bbox / crop_sphere were DELETED with the crop-box flow (v0.8.2)
         ("recolor", lambda e: e.recolor({"mode": "all"}, [0.2, 0.4, 0.6])),
         ("adjust_opacity", lambda e: e.adjust_opacity({"mode": "all"}, 0.5)),
         ("truncate_sh", lambda e: e.truncate_sh(1)),

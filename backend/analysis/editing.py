@@ -125,28 +125,6 @@ class EditingEngine:
         keep[alive_idx[needle]] = False
         return self._apply_keep(keep)
 
-    def crop_bbox(self, min: list[float], max: list[float]) -> dict:
-        """Keep only Gaussians inside the axis-aligned box."""
-        keep = np.ones(self.model.alive.shape, dtype=bool)
-        alive_idx = self.model.alive_indices()
-        pts = self.model.means[alive_idx]
-        mn = np.asarray(min, dtype=np.float32)
-        mx = np.asarray(max, dtype=np.float32)
-        outside = ~np.all((pts >= mn) & (pts <= mx), axis=1)
-        keep[alive_idx[outside]] = False
-        return self._apply_keep(keep)
-
-    def crop_sphere(self, center: list[float], radius: float, invert: bool = False) -> dict:
-        """Keep Gaussians inside (or, if ``invert``, outside) a sphere."""
-        keep = np.ones(self.model.alive.shape, dtype=bool)
-        alive_idx = self.model.alive_indices()
-        pts = self.model.means[alive_idx]
-        d = np.linalg.norm(pts - np.asarray(center, dtype=np.float32), axis=1)
-        inside = d <= radius
-        drop = inside if invert else ~inside
-        keep[alive_idx[drop]] = False
-        return self._apply_keep(keep)
-
     # ------------------------------------------------------------------ #
     # ID-based deletion (v0.2) — the shared human/agent edit path
     # ------------------------------------------------------------------ #

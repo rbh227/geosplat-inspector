@@ -237,14 +237,6 @@ export class AgentWSClient {
             resolve: (verdict, feedback) => {
               if (done) return
               done = true
-              // v0.6: on approval, return the box as it stands NOW — the
-              // operator's editable crop-box gizmo (cyan channel), falling
-              // back to the agent's originally-previewed box (amber channel)
-              // if the operator never engaged the gizmo. Never the reverse:
-              // getProposalBox() stays the agent's own record.
-              const box = verdict === 'approved'
-                ? (this.bridge.getCropBox() ?? this.bridge.getProposalBox())
-                : null
               // v0.8: an approved subject card carries the slider's FINAL
               // level; the backend maps it to level_ids server-side.
               const lvl = isSubject && verdict === 'approved'
@@ -255,22 +247,11 @@ export class AgentWSClient {
                 payload: {
                   ok: true, verdict,
                   ...(feedback ? { feedback } : {}),
-                  ...(box ? { box } : {}),
                   ...(lvl !== undefined ? { level: lvl } : {}),
                 },
               } as WSResponse)
-              // A DECIDED subject preview comes down with the card, same rule
-              // as the box below.
+              // A DECIDED subject preview comes down with the card.
               if (isSubject) subjectPreview.clear(this.bridge)
-              // A DECIDED box comes down with the card. It used to survive
-              // until `complete`, so every later capture — the noise survey and
-              // the whole judgment tour — was taken through a dimmed, wireframed
-              // scene the operator had already finished reviewing.
-              // `adjusted` is the exception: the loop answers it with
-              // adjust_box_preview, which needs the box still live.
-              if (verdict !== 'adjusted') {
-                try { this.bridge.clearProposalBox() } catch { /* bridge may lack a scene */ }
-              }
               this.panels.clearProposal()
             },
           })
@@ -301,7 +282,6 @@ export class AgentWSClient {
       // The run is over: drop any still-parked proposal WITHOUT replying (the
       // backend correlator is gone) and clear its viewport artifacts.
       if (this.panels.proposal.get()) this.panels.clearProposal()
-      try { this.bridge.clearProposalBox() } catch { /* bridge may lack a scene */ }
       // Clears the selection AND drops v0.8 subject-preview module state, so a
       // dead run's levels can never leak into the next run's card.
       try { subjectPreview.clear(this.bridge) } catch { /* bridge may lack a scene */ }

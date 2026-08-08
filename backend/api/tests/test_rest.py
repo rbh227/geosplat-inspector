@@ -112,8 +112,8 @@ def test_undo_redo(client):
     base = client.get("/metrics", params={"scene_id": scene_id}).json()["gaussianCount"]
 
     after = client.post("/edit", json={
-        "scene_id": scene_id, "op": "crop_sphere",
-        "params": {"center": [0, 0, 0], "radius": 1.5},
+        "scene_id": scene_id, "op": "remove_outliers",
+        "params": {"k": 8, "std_ratio": 2.0},
     }).json()["after"]
     assert after != base
 

@@ -5,9 +5,8 @@ build; v0.2 adds spatial selection, movement, and selection-edit tools for the
 editor-first rework (docs/plans/2026-07-05-001). v0.3 adds the `turn` look tool
 (rotate pad) for button-only relative navigation (docs/plans/2026-07-20-001).
 v0.4 adds `reframe` — an app-owned "return to the operator's start view" recovery
-op (docs/plans/2026-07-20-002). v0.5 adds the proposal / good-cube tools
-(get_core_bounds, show_box_preview, adjust_box_preview, propose_decision) for the
-propose-and-review cleanup flow (docs/superpowers/specs/2026-07-22-agent-cleanup-
+op (docs/plans/2026-07-20-002). v0.5 adds the propose-and-review flow (propose_decision;
+its crop-box companions were DELETED in v0.8.2) (docs/superpowers/specs/2026-07-22-agent-cleanup-
 proposals-design.md). v0.6 adds `survey_capture` — the app-owned analyst
 survey (docs/superpowers/specs/2026-08-03-app-owned-survey-analyst-design.md).
 v0.7 adds select_by_ids (controller tint), the delete_clusters proposal kind +
@@ -252,38 +251,13 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "required": ["direction", "duration_ms"],
     }, "ok"),
 
-    # ── frontend (proposal / good-cube) — v0.5 ──
-    # The proposal surface (docs/superpowers/specs/2026-07-22-agent-cleanup-
-    # proposals-design.md): preview a region, then BLOCK on the operator's
-    # verdict. Clean-stage only; coordinates are backend space.
-    ToolEntry("get_core_bounds", "frontend", {
-        "type": "object", "properties": {},
-    }, "{min, max, count} — robust (5th-95th pct) core box"),
-    ToolEntry("show_box_preview", "frontend", {
-        "type": "object",
-        "properties": {
-            "min": _vec3("Box min corner, backend coords"),
-            "max": _vec3("Box max corner, backend coords"),
-        },
-        "required": ["min", "max"],
-    }, "{ok, min, max}"),
-    ToolEntry("adjust_box_preview", "frontend", {
-        "type": "object",
-        "properties": {
-            "grow": {"type": "number",
-                     "description": "Uniform scale about the box center (1.2 = 20% bigger)"},
-            "grow_axes": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
-                          "description": "Per-view-axis scale [right, up, forward]"},
-            "shift": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3,
-                      "description": "Move by [right, up, forward] in units of the box's own size, "
-                                     "relative to the OPERATOR'S current view"},
-        },
-    }, "{ok, min, max}"),
+    # ── frontend (proposal) — v0.5; the crop-box surface was DELETED in
+    # v0.8.2 (operator decision 2026-08-07: only code the app needs stays) ──
     ToolEntry("propose_decision", "frontend", {
         "type": "object",
         "properties": {
             "kind": {"type": "string",
-                     "enum": ["crop_outside_box", "delete_selection", "keep_only_selection", "bulk_edit",
+                     "enum": ["delete_selection", "keep_only_selection", "bulk_edit",
                               "delete_clusters", "keep_only_subject"],
                      "description": "delete_selection deletes the selected splats; "
                                     "keep_only_selection deletes everything EXCEPT them — "
@@ -366,20 +340,6 @@ TOOL_REGISTRY: list[ToolEntry] = [
         "properties": {"max_axis_ratio": {"type": "number"}},
         "required": ["max_axis_ratio"],
     }, "before/after counts"),
-    ToolEntry("crop_bbox", "backend", {
-        "type": "object",
-        "properties": {"min": _vec3(), "max": _vec3()},
-        "required": ["min", "max"],
-    }, "before/after counts"),
-    ToolEntry("crop_sphere", "backend", {
-        "type": "object",
-        "properties": {
-            "center": _vec3(),
-            "radius": {"type": "number"},
-            "invert": {"type": "boolean"},
-        },
-        "required": ["center", "radius"],
-    }, "before/after counts"),
     ToolEntry("recolor", "backend", {
         "type": "object",
         "properties": {
@@ -437,7 +397,9 @@ TOOL_REGISTRY: list[ToolEntry] = [
 # box in backend coordinates; on an `approved` verdict the backend rebinds the
 # approval to it (mirror: frontend/src/contracts.ts PROPOSAL_DECISION_FIELDS).
 # v0.8 — `level` is the subject card's slider position (keep_only_subject only).
-PROPOSAL_DECISION_FIELDS: tuple[str, ...] = ("verdict", "feedback", "box", "level")
+# v0.8.2 — "box" removed with the crop-box flow; "level" is the subject
+# card's slider position (keep_only_subject only).
+PROPOSAL_DECISION_FIELDS: tuple[str, ...] = ("verdict", "feedback", "level")
 
 # v0.7 — forced-choice schemas for the CleanupController. These are provider
 # ToolSpec dicts (name/description/parameters), NOT registry entries: the

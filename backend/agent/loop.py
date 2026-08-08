@@ -44,8 +44,7 @@ from .verify import silhouette_intact, verify_edit
 # Destructive spatial ops locked behind an operator-approved proposal (v0.5).
 # One approval unlocks exactly one edit of the matching kind.
 _APPROVAL_GATED: dict[str, str] = {
-    "crop_bbox": "crop_outside_box",
-    "crop_sphere": "crop_outside_box",
+    # crop_bbox / crop_sphere were DELETED with the crop-box flow (v0.8.2)
     "delete_selection": "delete_selection",
     # Keep-only DELETES EVERYTHING ELSE — materially different consent than
     # deleting the selection, so it has its own kind (Codex adversarial review).
@@ -139,14 +138,11 @@ class AgentLoop:
         # Banked operator approvals, per proposal kind (one approval = one edit).
         self._approvals: dict[str, int] = {}
         # Approvals bind the REVIEWED OPERATION, not just a kind (final review
-        # Fix 2 + Codex adversarial review): `_previewed_box` tracks the last box
-        # shown/adjusted via preview; the `_approved_*` fields hold the exact
-        # artifact the operator reviewed, captured at approval-banking time.
-        # Approvals that would bind nothing (no preview, no named sweep, empty
+        # Fix 2 + Codex adversarial review): the `_approved_*` fields hold the
+        # exact artifact the operator reviewed, captured at approval-banking
+        # time. Approvals that would bind nothing (no named sweep, empty
         # selection) are REFUSED at banking, so the enforcement branch can rely
         # on the artifact being present.
-        self._previewed_box: dict | None = None
-        self._approved_box: dict | None = None
         self._approved_sweep: dict | None = None      # {"tool": str, "params": dict}
         self._approved_ids: frozenset[int] | None = None
 
@@ -197,8 +193,6 @@ class AgentLoop:
         self._last_metrics = None
         self._result = LoopResult(status="running")
         self._approvals = {}
-        self._previewed_box = None
-        self._approved_box = None
         self._approved_sweep = None
         self._approved_ids = None
         if hasattr(self.dispatcher, "edits_applied"):
@@ -496,36 +490,7 @@ class AgentLoop:
             # a category. Checks run BEFORE the approval is consumed, so a
             # mismatched call leaves it intact for the correct retry; consuming
             # clears the bound artifact (one approval = one edit).
-            if kind == "crop_outside_box":
-                # Banking refuses box approvals without a preview, so the box is set.
-                if call.name == "crop_sphere":
-                    rejection = {
-                        "ok": False,
-                        "error": "the operator reviewed a box, not a sphere — "
-                                 "call crop_bbox to crop to the approved box "
-                                 "(crop_sphere is not bound to the reviewed artifact)",
-                    }
-                    await self._emit(ev_tool_result(call.name, rejection, step))
-                    self._feed_back(call.name, rejection)
-                    return False
-                approved_min = self._approved_box["min"] if self._approved_box else None
-                approved_max = self._approved_box["max"] if self._approved_box else None
-                if approved_min is None or approved_max is None:
-                    # Defensive: should be unreachable (banking requires a preview).
-                    rejection = {"ok": False, "error": "no reviewed box on record — propose_decision again after show_box_preview"}
-                    await self._emit(ev_tool_result(call.name, rejection, step))
-                    self._feed_back(call.name, rejection)
-                    return False
-                if call.args.get("min") != approved_min or call.args.get("max") != approved_max:
-                    await self._emit(ev_narrate(
-                        f"Cropping to the box the operator approved (min {approved_min}, "
-                        f"max {approved_max}), overriding the model's requested box."
-                    ))
-                call.args["min"] = approved_min
-                call.args["max"] = approved_max
-                self._approvals[kind] -= 1
-                self._approved_box = None
-            elif kind == "bulk_edit":
+            if kind == "bulk_edit":
                 sweep = self._approved_sweep or {}
                 if call.name != sweep.get("tool"):
                     rejection = {
@@ -660,8 +625,7 @@ class AgentLoop:
                     "reason": detail,
                     "hint": "that deleted most of the scene. Target the bad "
                     "Gaussians with remove_outliers / opacity_threshold / "
-                    "prune_oversized; do NOT crop to a problem region "
-                    "(crop_bbox/crop_sphere KEEP what's inside and delete the rest).",
+                    "prune_oversized, or brush a tighter selection.",
                 },
             )
             return
@@ -771,29 +735,7 @@ class AgentLoop:
         bind no artifact — the gate must never be passable by an approval the
         operator couldn't have meaningfully reviewed.
         """
-        if kind == "crop_outside_box":
-            # v0.6: the operator can move/resize the box before approving, and
-            # the reply carries what they finally looked at. Prefer it over the
-            # agent's preview — the approval must bind the reviewed artifact,
-            # and the reviewed artifact is theirs.
-            operator_box = (decision or {}).get("box")
-            if (
-                isinstance(operator_box, dict)
-                and _is_vec3(operator_box.get("min"))
-                and _is_vec3(operator_box.get("max"))
-            ):
-                self._approved_box = {
-                    "min": [float(v) for v in operator_box["min"]],
-                    "max": [float(v) for v in operator_box["max"]],
-                }
-            elif self._previewed_box is None:
-                return (
-                    "[system] approval not banked: no box was previewed. Call "
-                    "show_box_preview, verify with a capture, then propose again."
-                )
-            else:
-                self._approved_box = dict(self._previewed_box)
-        elif kind == "bulk_edit":
+        if kind == "bulk_edit":
             op = args.get("operation")
             tool = op.get("tool") if isinstance(op, dict) else None
             if tool not in _BULK_SWEEPS:
@@ -837,12 +779,6 @@ class AgentLoop:
             self._last_metrics = payload
         else:
             self._ledger.record_tool_result(payload)
-        # Fix 2: remember the last previewed box so a later crop_outside_box
-        # approval can bind it (both preview tools return {ok, min, max}).
-        if name in ("show_box_preview", "adjust_box_preview") and isinstance(payload, dict):
-            mn, mx = payload.get("min"), payload.get("max")
-            if _is_vec3(mn) and _is_vec3(mx):
-                self._previewed_box = {"min": [float(v) for v in mn], "max": [float(v) for v in mx]}
 
     def _feed_back(self, name: str, result: Any) -> None:
         self._messages.append(

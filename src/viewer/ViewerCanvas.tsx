@@ -95,9 +95,6 @@ const ViewerCanvas = forwardRef<ViewerHandle, ViewerCanvasProps>(
         keepSelection: () => mgr().keepSelection(),
         showSelectionPreview: (s, c, z) => mgr().showSelectionPreview(s, c, z),
         clearSelectionPreview: () => mgr().clearSelectionPreview(),
-        showProposalBox: (min, max) => mgr().showProposalBox(min, max),
-        clearProposalBox: () => mgr().clearProposalBox(),
-        getProposalBox: () => mgr().getProposalBox(),
         // ViewerHandle's seed type mirrors Box structurally (min/max triples)
         // but isn't declared as the same nominal type — assert to the real
         // Box type from cropBoxMath.ts rather than widening through `never`.

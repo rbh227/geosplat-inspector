@@ -58,9 +58,7 @@ async def test_non_proposal_command_keeps_default_timeout():
 @pytest.mark.parametrize(
     "tool_name,expected_type",
     [
-        ("get_core_bounds", "selection_tool"),
-        ("show_box_preview", "selection_tool"),
-        ("adjust_box_preview", "selection_tool"),
+        # v0.8.2 — the crop-box tools were deleted; the proposal itself stays
         ("propose_decision", "proposal"),
     ],
 )

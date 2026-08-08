@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import * as THREE from 'three'
 import { AgentWSClient } from './ws-client.ts'
-import { FrontendExecutors } from './executors.ts'
 import { PanelBus } from './panels.ts'
 import type { RendererBridge } from './types.ts'
 import type { Overlay } from './overlay.ts'
@@ -72,73 +70,6 @@ describe('ws-client movement/rotation routing (reads p.args)', () => {
       await transport.handler!(movementCmd('rotation_input', input))
       expect(bridge.rots).toContainEqual([expected, true])
     }
-  })
-})
-
-/**
- * v0.5 proposal / good-cube surface: the three selection_tool cases that seed a
- * crop box from the detected core and preview/adjust it view-relatively. Driven
- * straight through runSelectionTool with a stub bridge (no transport needed).
- */
-class ProposalBridge {
-  coreBox: { min: number[]; max: number[]; count: number } | null = { min: [0, 0, 0], max: [2, 2, 2], count: 42 }
-  proposal: { min: number[]; max: number[] } | null = null
-  shown: Array<{ min: number[]; max: number[] }> = []
-  getCoreBoundsBox() { return this.coreBox }
-  showProposalBox(min: number[], max: number[]): void {
-    this.proposal = { min, max }
-    this.shown.push({ min, max })
-  }
-  clearProposalBox(): void { this.proposal = null }
-  getProposalBox() { return this.proposal }
-  getCamera(): THREE.PerspectiveCamera { return new THREE.PerspectiveCamera() }
-}
-
-describe('runSelectionTool v0.5 proposal tools', () => {
-  let bridge: ProposalBridge
-  let ex: FrontendExecutors
-
-  beforeEach(() => {
-    bridge = new ProposalBridge()
-    ex = new FrontendExecutors(bridge as unknown as RendererBridge, {} as unknown as Overlay)
-  })
-
-  it('get_core_bounds returns the seeded core box', async () => {
-    const r = await ex.runSelectionTool('get_core_bounds', {})
-    expect(r).toEqual({ ok: true, min: [0, 0, 0], max: [2, 2, 2], count: 42 })
-  })
-
-  it('get_core_bounds returns an error when no scene is loaded', async () => {
-    bridge.coreBox = null
-    const r = await ex.runSelectionTool('get_core_bounds', {})
-    expect(r).toEqual({ ok: false, error: 'no scene loaded' })
-  })
-
-  it('show_box_preview shows the box and echoes it', async () => {
-    const r = await ex.runSelectionTool('show_box_preview', { min: [0, 0, 0], max: [2, 2, 2] })
-    expect(r).toEqual({ ok: true, min: [0, 0, 0], max: [2, 2, 2] })
-    expect(bridge.proposal).toEqual({ min: [0, 0, 0], max: [2, 2, 2] })
-  })
-
-  it('show_box_preview rejects a malformed box', async () => {
-    const r = await ex.runSelectionTool('show_box_preview', { min: [0, 0], max: [2, 2, 2] })
-    expect(r).toEqual({ ok: false, error: 'min/max must be [x,y,z]' })
-    expect(bridge.proposal).toBeNull()
-  })
-
-  it('adjust_box_preview with no active box returns an error', async () => {
-    const r = await ex.runSelectionTool('adjust_box_preview', { grow: 2 })
-    expect(r).toEqual({ ok: false, error: 'no box preview active — call show_box_preview first' })
-  })
-
-  it('adjust_box_preview grows the active box about its center and re-shows it', async () => {
-    bridge.proposal = { min: [0, 0, 0], max: [2, 2, 2] }
-    const r = await ex.runSelectionTool('adjust_box_preview', { grow: 2 }) as { ok: boolean; min: number[]; max: number[] }
-    expect(r.ok).toBe(true)
-    // uniform grow=2 about center [1,1,1] -> half-extent doubles to 2 each axis
-    expect(r.min).toEqual([-1, -1, -1])
-    expect(r.max).toEqual([3, 3, 3])
-    expect(bridge.proposal).toEqual({ min: [-1, -1, -1], max: [3, 3, 3] })
   })
 })
 
@@ -256,42 +187,13 @@ describe('ws-client proposal command (parked reply)', () => {
     })
   })
 
-  it('an approved verdict carries the current (operator-edited) box from getCropBox()', async () => {
-    await transport.handler!(proposalCmd('p9', 'crop_outside_box', 'crop it'))
-    bridge.cropBox = { min: [0, 0, 0], max: [1, 1, 1] }
-    panels.proposal.get()!.resolve('approved')
-    expect(transport.sent).toEqual([
-      { type: 'tool_result', id: 'p9', payload: { ok: true, verdict: 'approved', box: { min: [0, 0, 0], max: [1, 1, 1] } } },
-    ])
-  })
-
-  it('an approved verdict falls back to getProposalBox() when getCropBox() is null (operator never touched the gizmo)', async () => {
-    await transport.handler!(proposalCmd('p10', 'crop_outside_box', 'crop it'))
-    bridge.cropBox = null
-    bridge.proposalBox = { min: [2, 2, 2], max: [3, 3, 3] }
-    panels.proposal.get()!.resolve('approved')
-    expect(transport.sent).toEqual([
-      { type: 'tool_result', id: 'p10', payload: { ok: true, verdict: 'approved', box: { min: [2, 2, 2], max: [3, 3, 3] } } },
-    ])
-  })
-
-  it('a rejected verdict carries no box even when a crop box is live', async () => {
-    await transport.handler!(proposalCmd('p11', 'crop_outside_box', 'crop it'))
-    bridge.cropBox = { min: [0, 0, 0], max: [1, 1, 1] }
-    panels.proposal.get()!.resolve('rejected', 'no')
-    expect(transport.sent).toEqual([
-      { type: 'tool_result', id: 'p11', payload: { ok: true, verdict: 'rejected', feedback: 'no' } },
-    ])
-  })
-
-  it('complete trace with a pending proposal clears the signal without sending and calls clearProposalBox', async () => {
+  it('complete trace with a pending proposal clears the signal without sending', async () => {
     await transport.handler!(proposalCmd('p3', 'crop', 'crop it'))
     expect(panels.proposal.get()).not.toBeNull()
     transport.sent = []
     await transport.handler!({ type: 'complete', payload: {} })
     expect(panels.proposal.get()).toBeNull()
     expect(transport.sent).toEqual([])
-    expect(bridge.clearedProposalBox).toBe(1)
     expect(bridge.clearedSelection).toBe(1)
   })
 })
@@ -367,68 +269,6 @@ describe('ws-client command envelopes (dispatcher wraps everything as {tool, arg
   it('an unknown camera tool is rejected, not silently succeeded', async () => {
     await transport.handler!({ type: 'camera_move', id: 'c6', payload: { tool: 'warp_drive', args: {} } })
     expect(lastReplyPayload().ok).toBe(false)
-  })
-})
-
-/**
- * Codex adversarial review: a decided proposal must take its box overlay down.
- * The overlay was only cleared on `complete`, so after the crop card resolved
- * the scene stayed dimmed and wireframed for the whole rest of the run — every
- * later capture (noise survey, judgment tour) showed a dimmed, boxed scene
- * instead of the geometry being judged. `adjusted` is the exception: the
- * freeform loop answers it with adjust_box_preview, which errors out unless the
- * box is still live.
- */
-class ProposalPanelBridge {
-  proposalBox: { min: number[]; max: number[] } | null = { min: [0, 0, 0], max: [1, 1, 1] }
-  cropBox: { min: number[]; max: number[] } | null = null
-  getProposalBox() { return this.proposalBox }
-  getCropBox() { return this.cropBox }
-  clearProposalBox(): void { this.proposalBox = null }
-  clearSelection(): void {}
-}
-
-function proposalCmd(kind = 'crop_outside_box') {
-  return { type: 'proposal', id: 'p1', payload: { tool: 'propose_decision', args: { kind, summary: 's' } } }
-}
-
-describe('ws-client proposal overlay lifecycle', () => {
-  let transport: FakeTransport
-  let bridge: ProposalPanelBridge
-  let panels: PanelBus
-
-  beforeEach(() => {
-    transport = new FakeTransport()
-    bridge = new ProposalPanelBridge()
-    panels = new PanelBus()
-    void new AgentWSClient(
-      transport as unknown as Transport,
-      bridge as unknown as RendererBridge,
-      {} as unknown as Overlay,
-      panels,
-    )
-  })
-
-  it('clears the box overlay when the operator approves', async () => {
-    await transport.handler!(proposalCmd())
-    panels.proposal.get()!.resolve('approved')
-    expect(bridge.proposalBox).toBeNull()
-    // the approved box still rode back to the backend before the clear
-    const reply = transport.sent.at(-1) as { payload: { verdict: string; box?: unknown } }
-    expect(reply.payload.verdict).toBe('approved')
-    expect(reply.payload.box).toEqual({ min: [0, 0, 0], max: [1, 1, 1] })
-  })
-
-  it('clears the box overlay when the operator rejects', async () => {
-    await transport.handler!(proposalCmd())
-    panels.proposal.get()!.resolve('rejected')
-    expect(bridge.proposalBox).toBeNull()
-  })
-
-  it('KEEPS the box on adjusted — adjust_box_preview needs a live box', async () => {
-    await transport.handler!(proposalCmd())
-    panels.proposal.get()!.resolve('adjusted', 'a bit bigger')
-    expect(bridge.proposalBox).not.toBeNull()
   })
 })
 

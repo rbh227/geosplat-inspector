@@ -207,15 +207,6 @@ class MockBackendExecutor:
     def remove_needles(self, max_axis_ratio: float) -> dict:
         return self._edit("needle", 9_000)
 
-    def crop_bbox(self, min, max) -> dict:  # noqa: A002
-        before = self.state["count"]
-        self.state["count"] = int(before * 0.8)
-        return {"before": before, "after": self.state["count"], "removed": before - self.state["count"]}
-
-    def crop_sphere(self, center, radius, invert: bool = False) -> dict:
-        before = self.state["count"]
-        self.state["count"] = int(before * 0.9)
-        return {"before": before, "after": self.state["count"], "removed": before - self.state["count"]}
 
     def recolor(self, selection: dict, rgb) -> dict:
         return {"ok": True}

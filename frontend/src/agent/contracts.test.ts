@@ -5,12 +5,12 @@ import type { WSCommandType } from '../contracts.ts'
 // Mirror-drift guard: these counts and names must match the Python registry
 // (backend/contracts/tools.py, asserted in backend/contracts/tests/test_tools.py).
 describe('contracts v0.2 mirror', () => {
-  it('matches the Python registry counts (31 frontend / 18 backend)', () => {
-    // v0.3 added `turn`, v0.4 added `reframe`, v0.5 added the four proposal /
-    // good-cube tools, v0.6 added `survey_capture`, v0.7 added `select_by_ids`,
-    // v0.8 added `show_subject_preview` (all frontend): 22 -> 24 -> 28 -> 29 -> 30 -> 31.
-    expect(FRONTEND_TOOLS.length).toBe(31)
-    expect(BACKEND_TOOLS.length).toBe(18)
+  it('matches the Python registry counts (28 frontend / 16 backend)', () => {
+    // v0.3 `turn`, v0.4 `reframe`, v0.5 proposals, v0.6 `survey_capture`,
+    // v0.7 `select_by_ids`, v0.8 `show_subject_preview`; v0.8.2 DELETES the
+    // crop-box flow (3 frontend + 2 backend): 31 -> 28 frontend, 18 -> 16.
+    expect(FRONTEND_TOOLS.length).toBe(28)
+    expect(BACKEND_TOOLS.length).toBe(16)
   })
 
   it('carries the v0.3 turn and v0.4 reframe tools', () => {
@@ -23,11 +23,11 @@ describe('contracts v0.2 mirror', () => {
     expect(new Set<string>(FRONTEND_TOOLS).has('survey_capture')).toBe(true)
   })
 
-  it('carries the v0.5 proposal / good-cube tools', () => {
+  it('carries propose_decision and none of the deleted crop-box tools (v0.8.2)', () => {
     const fe = new Set<string>(FRONTEND_TOOLS)
-    for (const name of [
-      'get_core_bounds', 'show_box_preview', 'adjust_box_preview', 'propose_decision',
-    ]) expect(fe.has(name), name).toBe(true)
+    expect(fe.has('propose_decision')).toBe(true)
+    for (const name of ['get_core_bounds', 'show_box_preview', 'adjust_box_preview'])
+      expect(fe.has(name), name).toBe(false)
   })
 
   it('carries the v0.2 rotation_input and v0.5 proposal WS command types', () => {
@@ -75,9 +75,10 @@ describe('v0.8 subject-first cleanup additions', () => {
 })
 
 describe('v0.6 proposal decision', () => {
-  it('carries the operator-edited box alongside the verdict', () => {
+  it('carries verdict/feedback/level — box was deleted with the crop flow (v0.8.2)', () => {
     expect(PROPOSAL_DECISION_FIELDS).toContain('verdict')
     expect(PROPOSAL_DECISION_FIELDS).toContain('feedback')
-    expect(PROPOSAL_DECISION_FIELDS).toContain('box')
+    expect(PROPOSAL_DECISION_FIELDS).toContain('level')
+    expect(PROPOSAL_DECISION_FIELDS as readonly string[]).not.toContain('box')
   })
 })

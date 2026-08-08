@@ -2,8 +2,6 @@
  *  unit-tested without React and shared without tripping fast-refresh. */
 export function proposalTitle(kind: string): string {
   switch (kind) {
-    case 'crop_outside_box':
-      return 'Crop to this box?'
     case 'delete_selection':
       return 'Delete the highlighted splats?'
     case 'keep_only_selection':

@@ -1223,11 +1223,6 @@ export class SceneManager implements ViewerHandle {
     this.sdfPreviewSdf = null
   }
 
-  /* ---- Persistent proposal box (v0.5, agent-cleanup-proposals) ---- */
-  // Amber/warm — the agent's parked review box (fix pass 2, IMPORTANT 1: own
-  // channel, independent of the operator's crop-box tool below).
-  private proposalBoxOverlay = new BoxOverlay(() => this.splatMesh, 0xffcc44, new THREE.Color(1.4, 1.4, 0.6))
-
   /* ---- Operator crop-box tool ---- */
   // Cyan/cool — visually distinct from the agent's amber proposal box so the
   // operator can tell the two channels apart at a glance.
@@ -1236,24 +1231,6 @@ export class SceneManager implements ViewerHandle {
   private cropSample: Float32Array | null = null   // strided centers, backend coords
   private cropStride = 1
   private cropCount = 0
-
-  /** Persistent SDF dim + crisp wireframe, parented to the splat mesh so both
-   *  live in backend coords and appear in captures. Stays until cleared.
-   *  Agent-only channel (see `bridge.ts`) — never touched by the crop-box
-   *  tool, which drives its own `cropBoxOverlay` instance (IMPORTANT 1). */
-  showProposalBox(min: number[], max: number[]): void {
-    this.proposalBoxOverlay.show(min, max)
-  }
-
-  clearProposalBox(): void {
-    this.proposalBoxOverlay.clear()
-  }
-
-  getProposalBox(): { min: number[]; max: number[] } | null {
-    return this.proposalBoxOverlay.getState()
-  }
-
-  /* ---- Operator crop-box tool ---- */
 
   /** Start the crop-box tool. `seed` defaults to the tight core box. */
   beginCropBox(seed?: Box): void {
@@ -1810,10 +1787,8 @@ export class SceneManager implements ViewerHandle {
       this.cropSample = null
       this.cropCount = 0
       this.clearSelectionPreview()
-      this.clearProposalBox()
-      // Both overlay channels are parented to THIS mesh (IMPORTANT 1) — clear
-      // the crop-box one too, or it would keep a stale wireframe/SDF alive
-      // referencing an object about to be disposed.
+      // The overlay is parented to THIS mesh — clear it, or it would keep a
+      // stale wireframe/SDF alive referencing an object about to be disposed.
       this.cropBoxOverlay.clear()
       // Drop remembered tint colors — they belong to the buffer being torn
       // down; a fresh scene reuses the same original-ID space.

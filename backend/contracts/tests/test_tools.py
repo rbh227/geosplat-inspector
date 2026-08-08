@@ -11,8 +11,12 @@ V02_FRONTEND = {
 }
 V02_BACKEND = {"delete_selection", "keep_selection"}
 
-V05_FRONTEND = {
-    "get_core_bounds", "show_box_preview", "adjust_box_preview", "propose_decision",
+# v0.8.2 — the crop-box tools were DELETED from the registry; only the
+# proposal tool itself survives from v0.5.
+V05_FRONTEND = {"propose_decision"}
+DELETED_BOX_TOOLS = {
+    "get_core_bounds", "show_box_preview", "adjust_box_preview",
+    "crop_bbox", "crop_sphere",
 }
 
 
@@ -27,9 +31,18 @@ def test_v02_counts():
     # 42 -> 46 total. v0.6 adds survey_capture: 28 -> 29 frontend, 46 -> 47 total.
     # v0.7 adds select_by_ids: 29 -> 30 frontend, 47 -> 48 total.
     # v0.8 adds show_subject_preview: 30 -> 31 frontend, 48 -> 49 total.
-    assert len(FRONTEND_TOOLS) == 31
-    assert len(BACKEND_TOOLS) == 18
-    assert len(TOOL_REGISTRY) == 49
+    # v0.8.2 DELETES the crop-box flow (3 frontend + 2 backend): 31 -> 28
+    # frontend, 18 -> 16 backend, 49 -> 44 total.
+    assert len(FRONTEND_TOOLS) == 28
+    assert len(BACKEND_TOOLS) == 16
+    assert len(TOOL_REGISTRY) == 44
+
+
+def test_v082_box_tools_deleted():
+    for name in DELETED_BOX_TOOLS:
+        assert name not in TOOL_BY_NAME, f"{name} must be gone from the registry"
+    kinds = TOOL_BY_NAME["propose_decision"].params["properties"]["kind"]["enum"]
+    assert "crop_outside_box" not in kinds
 
 
 def test_v03_turn_tool_present_and_routed():
@@ -70,13 +83,14 @@ def test_ws_type_sets_carry_v02():
     assert {"agent_pause", "agent_resume", "selection", "tool_result"} <= REPLY_TYPES
 
 
-def test_proposal_decision_fields_v06():
-    """The operator's edited box rides back with an approved verdict (v0.6)."""
+def test_proposal_decision_fields():
+    """v0.8.2 — 'box' was deleted with the crop-box flow."""
     from backend.contracts.tools import PROPOSAL_DECISION_FIELDS
 
     assert "verdict" in PROPOSAL_DECISION_FIELDS
     assert "feedback" in PROPOSAL_DECISION_FIELDS
-    assert "box" in PROPOSAL_DECISION_FIELDS
+    assert "box" not in PROPOSAL_DECISION_FIELDS
+    assert "level" in PROPOSAL_DECISION_FIELDS
 
 
 def test_v06_survey_capture_present_and_routed():

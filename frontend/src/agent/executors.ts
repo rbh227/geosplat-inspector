@@ -8,8 +8,6 @@ import * as THREE from 'three'
 import type { MoveDirection, PerceptTag, RendererBridge, RotateDirection, ToolResult } from './types.ts'
 import { animateOrbit, animateTo, clampToCore, coreInView, poseForBox, resolveAimPoint, rotateAround, sceneCoverage, sleep, surveyPoses, toRenderSpace } from './camera.ts'
 import { capturePNG, dataUrlToBase64 } from './capture.ts'
-import { adjustBox, projectBoxToScreen, viewBasisFromCamera } from './proposalBox.ts'
-import type { AdjustOpts, Box } from './proposalBox.ts'
 import * as subjectPreview from './subjectPreview.ts'
 import type { Overlay } from './overlay.ts'
 // Shared pure selection math — the SAME module the manual SelectionOverlay
@@ -127,34 +125,6 @@ export class FrontendExecutors {
       const count = subjectPreview.applyLevel(this.bridge, Number(args.level ?? 0))
       await sleep(350)
       return { ok: true, count }
-    }
-
-    // v0.5 — proposal / good-cube surface
-    if (tool === 'get_core_bounds') {
-      const box = this.bridge.getCoreBoundsBox()
-      return box ? { ok: true, ...box } : { ok: false, error: 'no scene loaded' }
-    }
-    if (tool === 'show_box_preview') {
-      const mn = args.min as number[], mx = args.max as number[]
-      if (!Array.isArray(mn) || !Array.isArray(mx) || mn.length !== 3 || mx.length !== 3) {
-        return { ok: false, error: 'min/max must be [x,y,z]' }
-      }
-      this.bridge.showProposalBox(mn, mx)
-      await sleep(350)  // paced so the operator sees it land (SC2)
-      return { ok: true, min: mn, max: mx }
-    }
-    if (tool === 'adjust_box_preview') {
-      const cur = this.bridge.getProposalBox()
-      if (!cur) return { ok: false, error: 'no box preview active — call show_box_preview first' }
-      const basis = viewBasisFromCamera(this.bridge.getCamera())
-      const next = adjustBox(
-        { min: cur.min as Box['min'], max: cur.max as Box['max'] },
-        basis,
-        args as AdjustOpts,
-      )
-      this.bridge.showProposalBox(next.min, next.max)
-      await sleep(350)
-      return { ok: true, min: next.min, max: next.max }
     }
 
     // World-space volume tools (backend coords → render space via the flip).
@@ -391,22 +361,6 @@ export class FrontendExecutors {
       revision: this.bridge.getSceneRevision(),
       coverage: Math.round(coverage * 100) / 100,
       in_view: coreInView(cam, this.bridge.getSceneCore()),
-    }
-    // When a crop-proposal box is live, tag the capture with its projected
-    // footprint — the box becomes the model's on-screen ruler (deterministic,
-    // through the same camera matrices the screen-space selection tools use).
-    const pbox = this.bridge.getProposalBox()
-    if (pbox) {
-      cam.updateMatrixWorld()
-      const el = this.bridge.getRenderer().domElement
-      const w = el.clientWidth || el.width
-      const h = el.clientHeight || el.height
-      const viewProj = composeMatrices(
-        Array.from(cam.projectionMatrix.elements),
-        Array.from(cam.matrixWorldInverse.elements),
-      )
-      const bs = projectBoxToScreen({ min: pbox.min, max: pbox.max } as Box, viewProj, w, h)
-      if (bs) percept.box_screen = bs
     }
     return { png_base64, percept }
   }

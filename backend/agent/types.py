@@ -19,8 +19,6 @@ DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
         "remove_outliers",
         "prune_oversized",
         "remove_needles",
-        "crop_bbox",
-        "crop_sphere",
         "recolor",
         "adjust_opacity",
         "truncate_sh",

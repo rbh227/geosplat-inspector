@@ -41,16 +41,15 @@ def test_clean_specs_contain_the_full_registry_minus_teleports():
     # tools are removed from BOTH stages' offered sets. v0.6/v0.7: the
     # app-dispatched tools (survey_capture, select_by_ids) are removed too —
     # the loop/CleanupController drives those, never the model.
-    from backend.agent.system_prompt import CONTROLLER_ONLY_TOOLS, RETIRED_BOX_TOOLS
+    from backend.agent.system_prompt import CONTROLLER_ONLY_TOOLS
 
     names = {spec.name for spec in build_tool_specs("clean")}
-    assert names == (
-        {t.name for t in TOOL_REGISTRY}
-        - TELEPORT_TOOLS - CONTROLLER_ONLY_TOOLS - RETIRED_BOX_TOOLS
-    )
+    assert names == {t.name for t in TOOL_REGISTRY} - TELEPORT_TOOLS - CONTROLLER_ONLY_TOOLS
     assert names.isdisjoint(TELEPORT_TOOLS)
     assert names.isdisjoint(CONTROLLER_ONLY_TOOLS)
-    assert names.isdisjoint(RETIRED_BOX_TOOLS)   # v0.8.2 — no crop-box flow
+    # v0.8.2 — the crop-box flow is DELETED from the registry itself
+    assert names.isdisjoint({"get_core_bounds", "show_box_preview",
+                             "adjust_box_preview", "crop_bbox", "crop_sphere"})
     assert {"move_camera", "turn", "dolly"} <= names
 
 

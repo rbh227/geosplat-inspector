@@ -7,7 +7,6 @@
  */
 import type * as THREE from 'three'
 import type { FrontendToolName } from '../contracts.ts'
-import type { BoxScreen } from './proposalBox.ts'
 
 export type { FrontendToolName } from '../contracts.ts'
 
@@ -48,20 +47,8 @@ export interface RendererBridge {
   clearSelection(): number
   invertSelection(): number
   getSelectionSummary(): { count: number; bbox: { min: number[]; max: number[] } | null }
-  /** Robust percentile core box in BACKEND coords + count of centers inside —
-   *  the "good cube" seed for the agent's crop proposal. */
-  getCoreBoundsBox(): { min: number[]; max: number[]; count: number } | null
   showSelectionPreview(shape: 'sphere' | 'box', center: number[], size: number[]): void
   clearSelectionPreview(): void
-  /** Persistent "good cube" crop proposal — SDF dim + wireframe in BACKEND
-   *  coords, visible in the viewport and the agent's captures until cleared. */
-  showProposalBox(min: number[], max: number[]): void
-  clearProposalBox(): void
-  getProposalBox(): { min: number[]; max: number[] } | null
-  /** The operator's editable crop box (cyan gizmo channel, `CropBoxGizmo` via
-   *  `SceneManager.getCropBox()`) — separate from `getProposalBox()`, which
-   *  stays the agent's amber-wireframe preview and must not be repurposed. */
-  getCropBox(): { min: number[]; max: number[] } | null
   setMovementInput(direction: MoveDirection, active: boolean): void
   /** Hold a rotate-pad look input (yaw/pitch) — the agent `turn` tool. */
   setRotationInput(direction: RotateDirection, active: boolean): void
@@ -83,9 +70,6 @@ export interface PerceptTag {
   /** False when the scene core is behind the camera or outside the frustum —
    *  coverage is meaningless then; turn toward the scene before judging zoom. */
   in_view: boolean
-  /** The proposal box's projected footprint — present only when a box preview
-   *  is active. The box as the model's on-screen ruler (see projectBoxToScreen). */
-  box_screen?: BoxScreen
 }
 
 export type ToolResult =

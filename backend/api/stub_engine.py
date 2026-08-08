@@ -216,24 +216,6 @@ class StubScene:
         i = self._ai()
         self._keep(self._opacity(i) >= float(p["min_alpha"]))
 
-    def _op_crop_bbox(self, p: dict, _sel) -> None:
-        i = self._ai()
-        lo = np.asarray(p["min"], dtype=np.float32)
-        hi = np.asarray(p["max"], dtype=np.float32)
-        pts = self.means[i]
-        inside = np.all((pts >= lo) & (pts <= hi), axis=1)
-        self._keep(inside)
-
-    def _op_crop_sphere(self, p: dict, _sel) -> None:
-        i = self._ai()
-        c = np.asarray(p["center"], dtype=np.float32)
-        r = float(p["radius"])
-        d = np.linalg.norm(self.means[i] - c, axis=1)
-        inside = d <= r
-        if p.get("invert"):
-            inside = ~inside
-        self._keep(inside)
-
     def _op_prune_oversized(self, p: dict, _sel) -> None:
         i = self._ai()
         frac = float(p["max_axis_scene_frac"])
