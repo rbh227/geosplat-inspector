@@ -14,6 +14,8 @@ level). The run always reaches the summary.
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -117,6 +119,18 @@ _FEEDBACK_SPEC = {
 }
 
 
+# Run forensics (live-debug 2026-08-07): the uvicorn access log says nothing
+# about where a run stalls, which made every live hang a guessing game. Every
+# dispatch, model ask, and narration logs with timing to the server log.
+log = logging.getLogger("splatagent.cleanup")
+if not log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s [cleanup] %(message)s"))
+    log.addHandler(_handler)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+
+
 class RunInterrupted(Exception):
     pass
 
@@ -181,6 +195,7 @@ class CleanupController:
         await self.channel.emit_event(event)
 
     async def _say(self, text: str) -> None:
+        log.info("say: %s", text)
         await self._emit(ev_narrate(text))
 
     async def _checkpoint(self) -> None:
@@ -197,8 +212,15 @@ class CleanupController:
 
     async def _dispatch(self, name: str, args: dict) -> dict:
         self._step += 1
+        log.info("dispatch %s (step %d)…", name, self._step)
+        t0 = time.monotonic()
         await self._emit(ev_tool_call(name, args, self._step))
         result = await self.dispatcher.dispatch(ToolCall(name, dict(args)))
+        log.info(
+            "dispatch %s -> ok=%s in %.1fs%s",
+            name, result.get("ok"), time.monotonic() - t0,
+            f" error={result.get('error')!r}" if result.get("error") else "",
+        )
         await self._emit(ev_tool_result(
             name, {k: v for k, v in result.items() if k != "frames"}, self._step,
         ))
@@ -207,10 +229,14 @@ class CleanupController:
     async def _ask(self, instruction: str, spec_name: str, image: bytes | None) -> dict | None:
         if self._model_down:
             return None
+        log.info("ask %s (image=%s bytes)…", spec_name, len(image) if image else 0)
+        t0 = time.monotonic()
         args = await ask_forced(
             self.provider, instruction, CONTROLLER_CHOICE_SPECS[spec_name], image,
             timeout_s=self.config.call_timeout_s, retries=self.config.call_retries,
         )
+        log.info("ask %s -> %s in %.1fs", spec_name,
+                 "ok" if args is not None else "FAILED", time.monotonic() - t0)
         if args is None:
             self._ask_failures += 1
             if self._ask_failures >= self.config.model_failure_limit:
@@ -292,6 +318,7 @@ class CleanupController:
 
     # ---- run ------------------------------------------------------------- #
     async def run(self, prompt: str) -> LoopResult:
+        log.info("run START prompt=%r", prompt)
         result = LoopResult(status="answered")
         try:
             await self._phase1_subject()
@@ -326,6 +353,7 @@ class CleanupController:
                 "error", error=str(exc), scene_changed=self._scene_changed(),
             ))
         result.steps = self._step
+        log.info("run END status=%s steps=%d", result.status, result.steps)
         return result
 
     # ---- phase 1: subject lock-on ----------------------------------------- #

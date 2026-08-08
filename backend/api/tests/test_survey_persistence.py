@@ -83,6 +83,8 @@ def test_clean_runs_do_not_touch_the_survey_store(monkeypatch):
     scene = Scene()
     runner = RealAgentRunner()
 
-    asyncio.run(runner.run("clean this up", scene, Channel(), stage="clean"))
+    # a QUALIFIED clean request: bare "clean this up" now routes to the
+    # CleanupController (v0.8.1 intent matching), not the freeform loop
+    asyncio.run(runner.run("clean up the floaters", scene, Channel(), stage="clean"))
     assert scene.survey_store is None
     assert FakeLoop.instances[0].captured_survey is None

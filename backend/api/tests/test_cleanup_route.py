@@ -153,3 +153,15 @@ async def test_real_runner_understand_stage_never_routes_to_controller(patched_e
                                 stage="understand", mode="cleanup")
     assert _FakeController.built == []
     assert len(_FakeLoop.built) == 1
+
+
+def test_is_cleanup_prompt_matches_natural_phrasings():
+    from backend.api.real_engine import _is_cleanup_prompt
+
+    for p in ("cleanup_scene", "clean up the scene", "Clean up the scene",
+              "cleanup", "clean the scene", "clean up", "please clean up the scene"):
+        assert _is_cleanup_prompt(p), p
+    # qualified requests stay with the freeform loop, which can target specifics
+    for p in ("clean up the floaters on the left", "clean the sky junk",
+              "what should I clean?", "delete the selection", ""):
+        assert not _is_cleanup_prompt(p), p

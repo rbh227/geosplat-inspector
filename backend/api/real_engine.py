@@ -194,6 +194,20 @@ class RealBackendExecutor:
         return path
 
 
+def _is_cleanup_prompt(prompt: str) -> bool:
+    """Does a typed prompt mean 'run the cleanup routine'?
+
+    Generous on phrasing ('clean up the scene', 'cleanup', 'clean the
+    scene'), strict on scope: a prompt with QUALIFIERS ('clean up the
+    floaters on the left') stays with the freeform loop, which can target
+    specifics."""
+    words = prompt.lower().replace("_", " ").split()
+    if not words or len(words) > 5:
+        return False
+    core = [w for w in words if w not in ("the", "this", "my", "up", "please", "whole")]
+    return core in (["clean"], ["cleanup"], ["clean", "scene"], ["cleanup", "scene"])
+
+
 class RealAgentRunner:
     """`engine.AgentRunner`: builds Agent 3's loop over a RealScene and runs it.
 
@@ -221,8 +235,10 @@ class RealAgentRunner:
 
         # v0.7 — judgment-tour cleanup: the app-owned controller replaces the
         # freeform loop for cleanup runs (spec 2026-08-04). Routed by explicit
-        # mode OR by the bare routine name typed as a prompt.
-        if resolved == "clean" and (mode == "cleanup" or prompt.strip() == "cleanup_scene"):
+        # mode OR by a typed cleanup request (live-found: the operator typed
+        # 'clean up the scene', missed the exact-literal match, and the
+        # freeform loop answered with the retired crop-box flow).
+        if resolved == "clean" and (mode == "cleanup" or _is_cleanup_prompt(prompt)):
             import numpy as np
 
             from backend.agent.cleanup_controller import CleanupController
