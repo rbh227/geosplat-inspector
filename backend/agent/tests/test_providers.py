@@ -115,6 +115,20 @@ def test_openai_parse_tool_call_json_args():
     assert resp.tool_calls[0].args == {"min_alpha": 0.05}
 
 
+def test_openai_image_mime_sniffed_from_bytes():
+    """Captures are JPEG now (live-found: 6 PNG frames in one WS message blew
+    uvicorn's 16MB receive limit and closed the socket mid-run). The data URL
+    mime must match the actual bytes, sniffed, not hardcoded."""
+    p = OpenAIProvider(api_key="x")
+    jpeg = b"\xff\xd8\xff\xe0" + b"0" * 8
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 8
+    out = p._to_messages([{"role": "user", "content": "look"}], [jpeg, png])
+    parts = out[-1]["content"]
+    urls = [c["image_url"]["url"] for c in parts if c.get("type") == "image_url"]
+    assert urls[0].startswith("data:image/jpeg;base64,")
+    assert urls[1].startswith("data:image/png;base64,")
+
+
 def test_providers_import_without_sdk_and_share_interface():
     # Constructing never touches the SDK (lazy); generate would, but we don't call it.
     for cls in (GeminiProvider, AnthropicProvider, OpenAIProvider):

@@ -142,8 +142,13 @@ export async function capturePNG(
       if (source === canvas) source = copyCanvas(canvas)
       drawGridOverlay(source)
     }
+    // JPEG, not PNG (live-found): a noisy 2M-splat render compresses ~10x
+    // worse as PNG, and the survey packs ~6 frames into ONE WebSocket
+    // message — the PNG version (~12-20MB) blew past uvicorn's 16MB receive
+    // limit, which closed the socket mid-run and froze the panel. JPEG puts
+    // the whole survey at ~1-2MB; the model reads either format.
     const blob = await new Promise<Blob | null>((resolve) =>
-      source.toBlob((b) => resolve(b), 'image/png'),
+      source.toBlob((b) => resolve(b), 'image/jpeg', 0.85),
     )
     if (!blob) throw new Error('capturePNG: canvas.toBlob returned null')
     return await blobToDataURL(blob)

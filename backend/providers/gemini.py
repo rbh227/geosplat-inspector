@@ -93,7 +93,12 @@ class GeminiProvider:
             contents.append(types.Content(role=role, parts=parts))
         if images:
             img_parts = [
-                types.Part.from_bytes(data=img, mime_type="image/png") for img in images
+                # sniffed: captures are JPEG since the WS-size fix
+                types.Part.from_bytes(
+                    data=img,
+                    mime_type="image/jpeg" if img[:2] == b"\xff\xd8" else "image/png",
+                )
+                for img in images
             ]
             if contents and contents[-1].role == "user":
                 contents[-1].parts.extend(img_parts)

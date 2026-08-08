@@ -121,7 +121,9 @@ if listening "$BACKEND_PORT"; then
   warn "  NOTE: a backend started before your last code change is running STALE code."
   warn "  Stop it and re-run this script if you just edited backend/."
 else
-  .venv-api/bin/python -m uvicorn backend.server:app --host 127.0.0.1 --port "$BACKEND_PORT" &
+  # --ws-max-size: a survey reply carries several base64 frames in ONE WS
+  # message; the 16MB default closed the socket mid-run on big scenes.
+  .venv-api/bin/python -m uvicorn backend.server:app --host 127.0.0.1 --port "$BACKEND_PORT" --ws-max-size 67108864 &
   BACKEND_PID=$!
   for _ in $(seq 1 40); do
     curl -s -m 2 -o /dev/null "http://127.0.0.1:${BACKEND_PORT}/health" && break

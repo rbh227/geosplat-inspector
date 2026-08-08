@@ -85,7 +85,8 @@ class AnthropicProvider:
                     "type": "image",
                     "source": {
                         "type": "base64",
-                        "media_type": "image/png",
+                        # sniffed: captures are JPEG since the WS-size fix
+                        "media_type": "image/jpeg" if img[:2] == b"\xff\xd8" else "image/png",
                         "data": base64.b64encode(img).decode("ascii"),
                     },
                 }

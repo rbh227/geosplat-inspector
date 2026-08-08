@@ -110,7 +110,7 @@ class OpenAIProvider:
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": "data:image/png;base64,"
+                        "url": f"data:{_image_mime(img)};base64,"
                         + base64.b64encode(img).decode("ascii")
                     },
                 }
@@ -181,6 +181,12 @@ class OpenAIProvider:
 
         raw = with_retry(_call, max_attempts=self.max_attempts)
         return _parse_response(raw)
+
+
+def _image_mime(img: bytes) -> str:
+    """Captures are JPEG since the WS-size fix; older callers may still send
+    PNG. The data URL must describe the actual bytes."""
+    return "image/jpeg" if img[:2] == b"\xff\xd8" else "image/png"
 
 
 def _parse_response(raw: Any) -> ModelResponse:
