@@ -272,3 +272,33 @@ async def test_detached_or_finished_run_task_is_not_cancelled():
     mgr.detach_run_task("s1", task)
     mgr.handle_message("s1", {"type": "user_interrupt"})   # must not raise
     assert task.result() == "done"
+
+
+@pytest.mark.anyio
+async def test_emit_failure_never_evicts_the_renderer():
+    """Live-found: one raised send on one trace event silently removed the
+    run's renderer from the registry — no log, socket still open — and every
+    later command died with 'no renderer connected'. Emit failures are logged
+    and swallowed; ONLY the receive loop may evict."""
+    mgr = ConnectionManager()
+    ws = MockWS()
+    await mgr.connect("s1", ws)
+
+    async def boom(_msg):
+        raise RuntimeError("transient send failure")
+
+    ws.send_json = boom  # type: ignore[assignment]
+    await mgr.emit_event("s1", "narrate", {"text": "hi"})   # must not raise
+    assert mgr.is_connected("s1")                            # still registered
+
+    # and a later command can still reach the (recovered) socket
+    async def working(message):
+        ws.sent.append(message)
+    ws.send_json = working  # type: ignore[assignment]
+    channel = WSChannel("s1", mgr)
+    task = asyncio.create_task(channel.send_command({"type": "narrate", "payload": {}}))
+    await asyncio.sleep(0)
+    corr = ws.sent[-1]["id"]
+    mgr.handle_message("s1", {"type": "frame", "id": corr, "payload": {"ok": True}})
+    reply = await task
+    assert reply.get("ok") is True

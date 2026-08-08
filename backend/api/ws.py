@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import uuid
 from typing import Any
 
@@ -36,6 +37,16 @@ REPLY_TYPES = {"frame", "user_interrupt", "selection", "tool_result", "agent_pau
 
 DEFAULT_COMMAND_TIMEOUT = 30.0  # seconds to await a frontend reply
 SURVEY_COMMAND_TIMEOUT = 120.0  # survey_capture flies + captures ~6 poses
+
+# Socket-lifecycle forensics (live-debug 2026-08-07): registry changes and
+# failed sends were invisible, which hid a silent renderer eviction for days.
+log = logging.getLogger("splatagent.ws")
+if not log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s [ws] %(message)s"))
+    log.addHandler(_handler)
+    log.setLevel(logging.INFO)
+    log.propagate = False
 
 
 DEFAULT_CLIENT = "default"
@@ -128,6 +139,8 @@ class ConnectionManager:
             return
         if websocket is not None and clients.get(client_id) is not websocket:
             return
+        log.info("disconnect %s/%s (registry now %d client(s))",
+                 scene_id, client_id, max(0, len(clients) - 1))
         clients.pop(client_id, None)
         if not clients:
             self._conns.pop(scene_id, None)
@@ -280,12 +293,22 @@ class ConnectionManager:
     async def emit_event(self, scene_id: str, etype: str, payload: dict | None = None) -> None:
         """Broadcast to EVERY window on the scene, not just the run's owner: a
         run started in one window should be visible in the other, and a
-        scene-changing run must make both resync."""
+        scene-changing run must make both resync.
+
+        A failed emit NEVER evicts the renderer (live-found: one raised send
+        on one trace event silently removed the run's renderer from the
+        registry — no log, socket still open — and every later command died
+        with 'no renderer connected'). Socket lifecycle belongs to the
+        receive loop, which sees real disconnects and cleans up loudly."""
         for client_id, ws in list((self._conns.get(scene_id) or {}).items()):
             try:
                 await ws.send_json({"type": etype, "payload": payload or {}})
-            except Exception:
-                self.disconnect(scene_id, ws, client_id)
+            except Exception as exc:  # noqa: BLE001 — log, keep the socket
+                log.warning(
+                    "emit %s to %s/%s failed (%s: %s) — socket kept, receive "
+                    "loop owns cleanup", etype, scene_id, client_id,
+                    type(exc).__name__, exc,
+                )
 
 
 class WSChannel(FrontendChannel):
