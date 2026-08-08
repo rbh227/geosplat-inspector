@@ -168,6 +168,12 @@ class RealBackendExecutor:
     def keep_selection(self, ids: list[int]) -> dict:
         return self._s.editing.keep_only_ids(ids)
 
+    def keep_only_ids(self, ids: list[int]) -> dict:
+        """v0.8 — the subject card's approved edit (CleanupController's
+        _guarded_edit calls this by name; the mocks had it, the real executor
+        didn't — live-found on the first approved card)."""
+        return self._s.editing.keep_only_ids(ids)
+
     def get_selection_state(self, ids: list[int]) -> dict:
         return self._s.editing.selection_state(ids)
 

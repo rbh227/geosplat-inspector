@@ -165,3 +165,26 @@ def test_is_cleanup_prompt_matches_natural_phrasings():
     for p in ("clean up the floaters on the left", "clean the sky junk",
               "what should I clean?", "delete the selection", ""):
         assert not _is_cleanup_prompt(p), p
+
+
+def test_real_executor_exposes_every_controller_edit():
+    """The CleanupController's _guarded_edit calls executor methods BY NAME
+    (getattr) — a missing one crashes the run at the moment of approval
+    (live-found: keep_only_ids existed on the mocks but not the real
+    executor). Pin the real surface."""
+    from backend.api.real_engine import RealBackendExecutor, RealScene
+    import numpy as np
+    from backend.splat import GaussianSplatModel
+
+    import os
+    messy = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))), "examples", "messy.ply")
+    scene = RealScene(GaussianSplatModel.load(messy))
+    ex = RealBackendExecutor(scene)
+    for name in ("keep_only_ids", "delete_selection", "snapshot", "undo"):
+        assert callable(getattr(ex, name, None)), name
+    # and the subject edit actually executes end to end
+    keep = [int(i) for i in scene.model.alive_indices()[:500]]
+    out = ex.keep_only_ids(keep)
+    assert out["after"] == 500
+    assert ex.undo()["alive"] == out["before"]
