@@ -323,11 +323,16 @@ def create_router(
         task = asyncio.create_task(_drive())
         _runs.add(task)
         _active_runs[req.scene_id] = task
+        # Hard-stop wiring: user_interrupt cancels this task (Stop must work
+        # even mid-await — the cooperative flag alone cannot end a run parked
+        # on a proposal or grinding a dead model's timeout ladder).
+        manager.attach_run_task(req.scene_id, task)
 
         def _cleanup(t: asyncio.Task, sid: str = req.scene_id) -> None:
             _runs.discard(t)
             if _active_runs.get(sid) is t:
                 _active_runs.pop(sid, None)
+            manager.detach_run_task(sid, t)
 
         task.add_done_callback(_cleanup)
         return AgentRunResponse(run_id=uuid.uuid4().hex, status="started")

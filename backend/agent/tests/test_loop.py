@@ -233,3 +233,30 @@ def test_max_steps_stop_condition():
     result = _run(loop.run("loop forever"))
     assert result.status == "max_steps"
     assert result.steps == 4
+
+
+# ── hard stop: ws.py cancels the run task on user_interrupt ─────────────
+def test_hard_cancel_mid_model_call_finishes_interrupted():
+    """Live-found: Stop only set a flag polled between steps, so a run stuck
+    inside a slow/dead model call could not be stopped. The loop must catch
+    the task cancellation and still emit a complete event."""
+    import time
+
+    from backend.contracts import ModelResponse
+
+    class SlowProvider:
+        def generate(self, messages, tools, images=None):
+            time.sleep(1.0)          # a dead tunnel mid-call
+            return ModelResponse(text="too late", tool_calls=[])
+
+    async def scenario():
+        loop, _, channel = _make_loop(SlowProvider())
+        task = asyncio.create_task(loop.run("clean this up"))
+        await asyncio.sleep(0.1)     # let it enter the provider call
+        task.cancel()
+        return await task, channel
+
+    result, channel = _run(scenario())
+    assert result.status == "interrupted"
+    completes = [e for e in channel.events if e.get("type") == "complete"]
+    assert completes and completes[-1]["status"] == "interrupted"

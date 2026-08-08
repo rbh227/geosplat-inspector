@@ -455,6 +455,43 @@ def test_no_candidates_short_circuits_to_clean_answer():
 
 
 # ---------------------------------------------------------------------------
+# Hard stop: ws.py cancels the run task on user_interrupt (live-found: the
+# cooperative flag alone cannot stop a run parked on a proposal, which has NO
+# timeout, or one grinding a dead model's 90s-per-ask ladder)
+# ---------------------------------------------------------------------------
+def test_hard_cancel_mid_parked_proposal_completes_interrupted():
+    class ParkedChannel(TourChannel):
+        parked = False
+
+        async def send_command(self, cmd):
+            if cmd.get("type") == "proposal":
+                self.commands.append(cmd)
+                self.parked = True
+                await asyncio.Event().wait()      # a card nobody ever decides
+            return await super().send_command(cmd)
+
+    async def scenario():
+        channel = ParkedChannel()
+        executor = RecordingExecutor()
+        provider = ChoiceProvider(_good3())
+        c = _controller(provider, channel, executor)
+        task = asyncio.create_task(c.run("cleanup_scene"))
+        for _ in range(500):
+            if channel.parked:
+                break
+            await asyncio.sleep(0.01)
+        assert channel.parked, "run never reached the parked proposal"
+        task.cancel()
+        return await task, channel
+
+    result, channel = _run(scenario())
+    assert result.status == "interrupted"
+    done = _complete(channel)
+    assert done["status"] == "interrupted"
+    assert done["scene_changed"] is False      # nothing was edited before the stop
+
+
+# ---------------------------------------------------------------------------
 # Codex adversarial review: partial-edit reporting on every completion path
 # ---------------------------------------------------------------------------
 def _complete(channel):

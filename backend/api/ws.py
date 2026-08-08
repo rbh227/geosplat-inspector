@@ -64,6 +64,12 @@ class ConnectionManager:
         self._interrupted: set[str] = set()              # scene_ids interrupted
         self._paused: set[str] = set()                   # scene_ids paused (stateful, non-consuming)
         self._resume_events: dict[str, asyncio.Event] = {}  # scene_id -> resume signal
+        # scene_id -> the active run's asyncio Task. Stop must work even while
+        # the run sits inside a long await (model timeout ladder, wedged
+        # frontend command, or a parked proposal — which has NO timeout), so
+        # user_interrupt hard-cancels this task; the cooperative flag above
+        # stays as the soft layer for checkpoint races.
+        self._run_tasks: dict[str, asyncio.Task] = {}
 
     # ---- connection lifecycle -------------------------------------------- #
     async def connect(
@@ -163,6 +169,10 @@ class ConnectionManager:
             ev = self._resume_events.get(scene_id)
             if ev is not None:
                 ev.set()
+            # Hard layer: cancel the run task so Stop works mid-await too.
+            task = self._run_tasks.get(scene_id)
+            if task is not None and not task.done():
+                task.cancel()
             return
         if mtype == "agent_pause":
             self._paused.add(scene_id)
@@ -179,6 +189,14 @@ class ConnectionManager:
             fut = self._pending.get(corr_id)
             if fut and not fut.done():
                 fut.set_result(message.get("payload", {}))
+
+    # ---- run-task attachment (hard stop) ---------------------------------- #
+    def attach_run_task(self, scene_id: str, task: asyncio.Task) -> None:
+        self._run_tasks[scene_id] = task
+
+    def detach_run_task(self, scene_id: str, task: asyncio.Task) -> None:
+        if self._run_tasks.get(scene_id) is task:
+            self._run_tasks.pop(scene_id, None)
 
     def take_interrupt(self, scene_id: str) -> bool:
         """Consume and clear the interrupt flag for a scene."""

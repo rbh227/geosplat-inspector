@@ -167,6 +167,22 @@ class AgentLoop:
         ({"frames", "labels", "revision"}) — reused when the scene revision is
         unchanged so follow-ups answer instantly from the same views.
         """
+        try:
+            return await self._run_inner(prompt, history, ledger, survey)
+        except asyncio.CancelledError:
+            # Hard stop: ws.py cancels the run task on user_interrupt, so Stop
+            # works even mid-await (a slow/dead model call, a wedged frontend
+            # command). Swallowing the cancellation is deliberate — the stop
+            # is consumed by finishing the run.
+            return await self._finish_status("interrupted")
+
+    async def _run_inner(
+        self,
+        prompt: str,
+        history: list[dict] | None = None,
+        ledger: GroundingLedger | None = None,
+        survey: dict | None = None,
+    ) -> LoopResult:
         self._messages = []
         if self.system_prompt:
             self._messages.append({"role": "system", "content": self.system_prompt})

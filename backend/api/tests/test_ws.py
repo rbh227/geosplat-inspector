@@ -232,3 +232,43 @@ def test_reconnecting_one_window_replaces_only_its_own_socket():
         assert sorted(mgr.clients("s1")) == ["analyst", "editor"]
 
     asyncio.run(scenario())
+
+
+@pytest.mark.anyio
+async def test_user_interrupt_hard_cancels_the_attached_run_task():
+    """Live-found: Stop only set a flag polled at phase boundaries, so a run
+    inside a long await (model timeout ladder, wedged frontend command, or a
+    parked proposal — which waits FOREVER) could not be stopped at all. The
+    manager now hard-cancels the attached run task on user_interrupt; the
+    cooperative flag stays as the soft layer."""
+    mgr = ConnectionManager()
+    started = asyncio.Event()
+
+    async def forever() -> None:
+        started.set()
+        await asyncio.Event().wait()          # a parked proposal, in effect
+
+    task = asyncio.create_task(forever())
+    mgr.attach_run_task("s1", task)
+    await started.wait()
+    mgr.handle_message("s1", {"type": "user_interrupt"})
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert task.cancelled()
+    # the cooperative flag is still set for any checkpoint that races the cancel
+    assert mgr.take_interrupt("s1") is True
+
+
+@pytest.mark.anyio
+async def test_detached_or_finished_run_task_is_not_cancelled():
+    mgr = ConnectionManager()
+
+    async def quick() -> str:
+        return "done"
+
+    task = asyncio.create_task(quick())
+    mgr.attach_run_task("s1", task)
+    await task
+    mgr.detach_run_task("s1", task)
+    mgr.handle_message("s1", {"type": "user_interrupt"})   # must not raise
+    assert task.result() == "done"

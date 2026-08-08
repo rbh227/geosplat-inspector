@@ -129,6 +129,9 @@ class CleanupController:
         # the model is out of the loop for the rest of the run.
         self._ask_failures = 0
         self._model_down = False
+        # True while a destructive edit is running in a worker thread — a hard
+        # Stop landing then must still report scene_changed.
+        self._edit_in_flight = False
         # Did any destructive edit actually land? Reported as `scene_changed`
         # on EVERY completion path: an edit that succeeded before an interrupt
         # or a controller bug still leaves the renderer showing a stale scene
@@ -237,6 +240,12 @@ class CleanupController:
     async def _guarded_edit(self, fn_name: str, *args) -> dict:
         """snapshot -> edit -> silhouette check (approved=True: the operator
         reviewed this exact operation) -> undo on catastrophe."""
+        # A hard Stop that lands mid-edit cannot know whether the mutation
+        # finished (the worker thread keeps running); the flag makes the
+        # cancellation path report scene_changed conservatively. Never reset:
+        # every COMPLETED guarded edit increments _edits_applied, which makes
+        # scene_changed true on its own.
+        self._edit_in_flight = True
         before = await asyncio.to_thread(self._guard_metrics)
         await asyncio.to_thread(self.executor.snapshot)
         result = await asyncio.to_thread(getattr(self.executor, fn_name), *args)
@@ -271,6 +280,16 @@ class CleanupController:
         except RunInterrupted:
             result.status = "interrupted"
             await self._emit(ev_complete("interrupted", scene_changed=self._scene_changed()))
+        except asyncio.CancelledError:
+            # Hard stop: ws.py cancels the run task on user_interrupt, so Stop
+            # works even mid-await (model timeout ladder, wedged frontend
+            # command, parked proposal). Swallowing the cancellation here is
+            # deliberate — the stop is consumed by completing the run.
+            result.status = "interrupted"
+            await self._emit(ev_complete(
+                "interrupted",
+                scene_changed=self._scene_changed() or self._edit_in_flight,
+            ))
         except Exception as exc:  # noqa: BLE001 — a controller bug must still end the run
             result.status = "error"
             result.error = str(exc)
