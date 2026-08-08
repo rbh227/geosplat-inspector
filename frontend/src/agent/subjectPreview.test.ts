@@ -3,16 +3,13 @@ import { setSubject, applyLevel, getState, clear } from './subjectPreview.ts'
 import type { RendererBridge } from './types.ts'
 
 /**
- * v0.8 subject lock-on preview, complement form (live-found at 2M splats: the
- * keep-set is ~N ids — 17MB of JSON — while the excluded set is the small
- * one). The controller ships `outsideIds` (excluded at the LOOSEST level) plus
- * per-level deltas; the viewer derives each keep-tint locally as
- * invert-all-then-remove-excluded. These tests pin the suffix-cumulative
- * exclusion math, the clear→invert→remove sequence, clamping, and teardown.
+ * v0.8 subject lock-on preview. The tint marks the DELETE-set (live-found at
+ * 2M splats: tinting the ~N-splat keep-set wedged the main thread for minutes
+ * and washed the scene gold; the excluded set is the small, reviewable one).
+ * These tests pin the suffix-cumulative exclusion math, the one-pass
+ * clear→add re-tint, clamping, and teardown.
  */
 class TintBridge {
-  /** The live-id universe invertSelection() draws from. */
-  universe = [1, 2, 3, 4, 5]
   selection = new Set<number>()
   calls: string[] = []
   updateSelection(ids: Iterable<number>, mode: 'add' | 'remove' = 'add'): number {
@@ -28,19 +25,12 @@ class TintBridge {
     this.calls.push('clear')
     return 0
   }
-  invertSelection(): number {
-    const next = new Set<number>()
-    for (const id of this.universe) if (!this.selection.has(id)) next.add(id)
-    this.selection = next
-    this.calls.push('invert')
-    return this.selection.size
-  }
   selected(): number[] {
     return Array.from(this.selection).sort((a, b) => a - b)
   }
 }
 
-describe('subjectPreview (complement form)', () => {
+describe('subjectPreview (delete-set tint)', () => {
   let b: TintBridge
 
   beforeEach(() => {
@@ -49,24 +39,25 @@ describe('subjectPreview (complement form)', () => {
     b.calls = []
   })
 
-  // Levels over universe [1..5]: K0=[1,2], K1=[1,2,3], K2=[1,2,3,4].
-  // outsideIds = [5] (excluded even at the loosest), deltas = [[3],[4]].
+  // Levels: K0=[1,2], K1=[1,2,3], K2=[1,2,3,4] over universe [1..5].
+  // outsideIds = [5] (junk at every level), deltas = [[3],[4]].
+  // excluded per level: L0=[3,4,5], L1=[4,5], L2=[5].
   const ARGS = { outsideIds: [5], deltas: [[3], [4]], counts: [2, 3, 4], level: 1 }
 
-  it('setSubject at level 1 tints exactly the level-1 keep-set [1,2,3]', () => {
+  it('setSubject at level 1 tints exactly the level-1 DELETE-set [4,5]', () => {
     const count = setSubject(b as unknown as RendererBridge, { ...ARGS })
-    expect(count).toBe(3)
-    expect(b.selected()).toEqual([1, 2, 3])
+    expect(count).toBe(2)
+    expect(b.selected()).toEqual([4, 5])
     expect(getState()).toEqual({ counts: [2, 3, 4], level: 1 })
   })
 
-  it('applyLevel re-tints via clear → invert-all → remove-excluded', () => {
+  it('applyLevel re-tints in ONE pass: clear then a single add', () => {
     setSubject(b as unknown as RendererBridge, { ...ARGS, level: 0 })
     b.calls = []
     const count = applyLevel(b as unknown as RendererBridge, 2)
-    expect(count).toBe(4)
-    expect(b.calls).toEqual(['clear', 'invert', 'update:remove'])
-    expect(b.selected()).toEqual([1, 2, 3, 4])
+    expect(count).toBe(1)
+    expect(b.calls).toEqual(['clear', 'update:add'])
+    expect(b.selected()).toEqual([5])
     expect(getState()).toEqual({ counts: [2, 3, 4], level: 2 })
   })
 
@@ -74,10 +65,10 @@ describe('subjectPreview (complement form)', () => {
     setSubject(b as unknown as RendererBridge, { ...ARGS, level: 0 })
     applyLevel(b as unknown as RendererBridge, 99)
     expect(getState()!.level).toBe(2)
-    expect(b.selected()).toEqual([1, 2, 3, 4])
+    expect(b.selected()).toEqual([5])
     applyLevel(b as unknown as RendererBridge, -7)
     expect(getState()!.level).toBe(0)
-    expect(b.selected()).toEqual([1, 2])
+    expect(b.selected()).toEqual([3, 4, 5])
   })
 
   it('applyLevel with no subject set is a harmless no-op returning 0', () => {

@@ -24,9 +24,9 @@ describe('proposalTitle', () => {
     expect(proposalTitle('delete_clusters')).toBe('Delete the junk clusters the tour flagged?')
   })
 
-  it('maps keep_only_subject to the subject lock-on question (v0.8)', () => {
+  it('maps keep_only_subject to the subject lock-on question (v0.8 — the tint marks the DELETE-set)', () => {
     expect(proposalTitle('keep_only_subject')).toBe(
-      'Keep the highlighted subject — delete everything else?',
+      'Delete the highlighted splats — keep the rest of the scene?',
     )
   })
 

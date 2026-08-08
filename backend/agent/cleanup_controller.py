@@ -51,6 +51,9 @@ class CleanupConfig:
     subject_levels: int = 5
     subject_judge_frames: int = 3
     subject_judge_rounds: int = 2
+    # Views the model outlines in phase 1. Each is a full VL call (~20-45s on
+    # the local 32B); 4 well-spread views carve as well as 6 at half the wait.
+    outline_views: int = 4
     # Consecutive failed asks before the model is dropped for the rest of the
     # run (live-found: a tunnel that dies mid-run otherwise costs the full
     # 45s x 2 timeout ladder on EVERY remaining datum — ~30 min of dead air).
@@ -74,11 +77,11 @@ _OUTLINE_INSTRUCTION = (
 )
 
 _SUBJECT_INSTRUCTION = (
-    "The bright-tinted splats are the region I plan to KEEP; everything dim "
-    "will be DELETED. Call judge_subject: 'good' if the tint covers exactly "
-    "the real structure, 'clipping_structure' if any real scenery is dim "
-    "(keep-region too tight), or 'including_junk' if floating debris or "
-    "disconnected fragments are tinted (too loose)."
+    "The highlighted (tinted) splats are marked for DELETION; everything "
+    "untinted will be KEPT. Call judge_subject: 'good' if only junk is "
+    "highlighted, 'clipping_structure' if any real scenery is highlighted "
+    "(the deletion would clip structure), or 'including_junk' if obvious "
+    "floating debris is NOT highlighted (the deletion is too lenient)."
 )
 
 _JUDGE_INSTRUCTION = (
@@ -365,7 +368,7 @@ class CleanupController:
                     "statistical estimate."
                 )
         level = subject.default_level
-        await self._say("Locking onto the subject — bright is what I plan to keep.")
+        await self._say("Locking on — the highlighted splats are what I plan to DELETE.")
         # Complement form (live-found at 2M splats): ship the small excluded
         # set, never the ~N-id keep-set. The viewer inverts locally.
         outside = np.setdiff1d(ids, subject.level_ids[-1])
@@ -391,8 +394,8 @@ class CleanupController:
         n_keep = subject.counts[level]
         reply = await self._dispatch("propose_decision", {
             "kind": "keep_only_subject",
-            "summary": f"Keep the highlighted subject ({n_keep} splats) and delete "
-                       f"the {n_total - n_keep} splats outside it. Slide "
+            "summary": f"Delete the {n_total - n_keep:,} highlighted splats and "
+                       f"keep the scene ({n_keep:,} splats). Slide "
                        "looser/tighter to adjust before approving.",
         })
         verdict = (reply.get("result") or {}) if reply.get("ok") else {}
@@ -424,13 +427,22 @@ class CleanupController:
         await self._say("Flying a quick survey so the model can outline the real structure.")
         res = await self._dispatch("survey_capture", {})
         payload = res.get("result") or {}
-        frames = list(res.get("frames") or [])[: self.config.max_survey_frames]
+        n_views = min(self.config.max_survey_frames, self.config.outline_views)
+        frames = list(res.get("frames") or [])[:n_views]
         poses: list[dict] = []
         if isinstance(payload, dict):
             poses = list(payload.get("poses") or [])[: len(frames)]
+        if not frames or not poses:
+            await self._say(
+                "The survey didn't come back — keeping the statistical estimate."
+            )
+            return []
         views: list[dict] = []
         for i, (frame, pose) in enumerate(zip(frames, poses)):
             await self._checkpoint()
+            # Narrate BEFORE each ask: one outline is one full VL call
+            # (20-45s on the local model) and silence reads as a hang.
+            await self._say(f"Outlining the scene in view {i + 1}/{len(frames)}…")
             args = await self._ask(_OUTLINE_INSTRUCTION, "outline_scene", frame)
             box = _valid_box(args)
             if box is None:

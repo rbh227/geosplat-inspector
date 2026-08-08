@@ -35,6 +35,7 @@ TRACE_TYPES = {"thought", "tool_call", "tool_result", "complete"}
 REPLY_TYPES = {"frame", "user_interrupt", "selection", "tool_result", "agent_pause", "agent_resume"}
 
 DEFAULT_COMMAND_TIMEOUT = 30.0  # seconds to await a frontend reply
+SURVEY_COMMAND_TIMEOUT = 120.0  # survey_capture flies + captures ~6 poses
 
 
 DEFAULT_CLIENT = "default"
@@ -319,8 +320,16 @@ class WSChannel(FrontendChannel):
             raise ValueError(f"unknown command type: {ctype!r}")
         payload = cmd.get("payload", {k: v for k, v in cmd.items() if k != "type"})
         # A proposal parks on the operator's decision — no timeout (asyncio's
-        # wait_for(timeout=None) already waits forever).
-        timeout = None if ctype == "proposal" else DEFAULT_COMMAND_TIMEOUT
+        # wait_for(timeout=None) already waits forever). A survey legitimately
+        # flies ~6 poses and captures each — on a 2M-splat scene that can
+        # exceed the default window, and a timeout there silently guts the
+        # outline phase, so it gets a generous one.
+        if ctype == "proposal":
+            timeout: float | None = None
+        elif isinstance(payload, dict) and payload.get("tool") == "survey_capture":
+            timeout = SURVEY_COMMAND_TIMEOUT
+        else:
+            timeout = DEFAULT_COMMAND_TIMEOUT
         return await self._mgr.send_command(
             self._scene_id, ctype, payload, timeout, self._client_id,
         )

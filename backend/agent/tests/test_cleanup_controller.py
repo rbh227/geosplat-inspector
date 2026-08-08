@@ -337,8 +337,8 @@ def test_phase2_one_mark_call_per_frame_with_gridded_survey():
 def test_phase2_respects_max_survey_frames():
     channel = TourChannel(n_frames=9, verdicts=[{"verdict": "approved"}])
     executor = RecordingExecutor()
-    # phase-1 outlines are capped at max_survey_frames too: 6 asks, not 9
-    provider = ChoiceProvider([_ol()] * 6 + _good3() + [_mark([])] * 9)
+    # phase-1 outlines are capped at outline_views (4), not n_frames
+    provider = ChoiceProvider([_ol()] * 4 + _good3() + [_mark([])] * 9)
     c = _controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
     mark_calls = [k for k in provider.calls if k["tools"] == ["mark_noise"]]

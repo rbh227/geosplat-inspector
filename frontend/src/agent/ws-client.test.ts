@@ -441,7 +441,6 @@ describe('ws-client proposal overlay lifecycle', () => {
  * crop box: a DECIDED preview never outlives its card.
  */
 class SubjectBridge {
-  universe = [1, 2, 3, 4, 5]
   selection = new Set<number>()
   cleared = 0
   updateSelection(ids: Iterable<number>, mode: 'add' | 'remove' = 'add'): number {
@@ -452,12 +451,6 @@ class SubjectBridge {
     return this.selection.size
   }
   clearSelection(): number { this.cleared++; this.selection.clear(); return 0 }
-  invertSelection(): number {
-    const next = new Set<number>()
-    for (const id of this.universe) if (!this.selection.has(id)) next.add(id)
-    this.selection = next
-    return this.selection.size
-  }
   selected(): number[] { return Array.from(this.selection).sort((a, b) => a - b) }
   getSelectionSummary() { return { count: 0, bbox: null } }
   getCropBox() { return null }
@@ -480,22 +473,23 @@ describe('ws-client keep_only_subject proposal (slider level plumbing)', () => {
       {} as unknown as Overlay,
       panels,
     )
-    // Controller ships the complement + deltas, tinting level 1.
-    // Levels over universe [1..5]: K0=[1,2], K1=[1,2,3], K2=[1,2,3,4,5].
+    // Controller ships the complement + deltas, tinting level 1's DELETE-set.
+    // Levels: K0=[1,2], K1=[1,2,3], K2=[1,2,3,4,5]; outside [6] (junk always).
+    // Excluded per level: L0=[3,4,5,6], L1=[4,5,6], L2=[6].
     await transport.handler!({
       type: 'selection_tool', id: 's1',
       payload: {
         tool: 'show_subject_preview',
-        args: { outside_ids: [], deltas: [[3], [4, 5]], counts: [2, 3, 5], level: 1 },
+        args: { outside_ids: [6], deltas: [[3], [4, 5]], counts: [2, 3, 5], level: 1 },
       },
     })
   })
 
-  it('show_subject_preview tints the requested level and replies with its count', () => {
+  it('show_subject_preview tints the requested level DELETE-set and replies with its count', () => {
     expect(transport.sent.at(-1)).toMatchObject({
       type: 'tool_result', id: 's1', payload: { ok: true, count: 3 },
     })
-    expect(bridge.selected()).toEqual([1, 2, 3])
+    expect(bridge.selected()).toEqual([4, 5, 6])
   })
 
   it('parks the card with slider state, and approve carries the current level then clears', async () => {
@@ -506,9 +500,9 @@ describe('ws-client keep_only_subject proposal (slider level plumbing)', () => {
     const state = panels.proposal.get()
     expect(state!.subject).toMatchObject({ counts: [2, 3, 5], level: 1 })
 
-    // Operator slides looser: re-tint is local (no round trip while parked).
+    // Operator slides looser (keep more): the delete tint shrinks, locally.
     state!.subject!.onLevel(2)
-    expect(bridge.selected()).toEqual([1, 2, 3, 4, 5])
+    expect(bridge.selected()).toEqual([6])
 
     state!.resolve('approved')
     const reply = transport.sent.at(-1) as { id: string; payload: Record<string, unknown> }

@@ -13,7 +13,7 @@ export function proposalTitle(kind: string): string {
     case 'delete_clusters':
       return 'Delete the junk clusters the tour flagged?'
     case 'keep_only_subject':
-      return 'Keep the highlighted subject — delete everything else?'
+      return 'Delete the highlighted splats — keep the rest of the scene?'
     default:
       return 'Apply this edit?'
   }

@@ -2,16 +2,17 @@
  *  keep-levels ONCE; the card's slider re-tints locally with zero round trips
  *  (the run is blocked on the parked proposal, so no dispatch could serve it).
  *
- *  COMPLEMENT form (live-found at 2M splats): the keep-set is ~N ids — 17MB
- *  of JSON — while the excluded set is the small one. The controller ships
- *  `outsideIds` (excluded even at the LOOSEST level) plus per-level deltas;
- *  each keep-tint is derived locally as invert-all-then-remove-excluded. */
+ *  The tint marks the DELETE-set (live-found at 2M splats, twice over): the
+ *  keep-set is ~N splats, so tinting it wedges the main thread for minutes in
+ *  the per-splat recolor path AND washes the whole scene gold; the excluded
+ *  set is small, cheap to tint, and is what the operator actually needs to
+ *  review before approving. `excluded[k]` = outsideIds ∪ deltas[k..]. */
 import type { RendererBridge } from './types.ts'
 
 interface SubjectState {
-  /** excluded[k] = ids NOT kept at level k (suffix-cumulative:
-   *  outsideIds ∪ deltas[k] ∪ … ∪ deltas[last]). */
+  /** excluded[k] = ids NOT kept at level k (suffix-cumulative). */
   excluded: number[][]
+  /** KEEP counts per level (for the slider label). */
   counts: number[]
   level: number
 }
@@ -33,8 +34,7 @@ export function applyLevel(bridge: RendererBridge, level: number): number {
   if (!state) return 0
   state.level = Math.max(0, Math.min(state.excluded.length - 1, level))
   bridge.clearSelection()
-  bridge.invertSelection()  // select every live splat…
-  return bridge.updateSelection(state.excluded[state.level], 'remove')  // …minus the excluded
+  return bridge.updateSelection(state.excluded[state.level], 'add')
 }
 
 export function getState(): { counts: number[]; level: number } | null {
