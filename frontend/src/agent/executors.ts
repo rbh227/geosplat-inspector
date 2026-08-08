@@ -406,7 +406,10 @@ export class FrontendExecutors {
 
     const core = this.bridge.getSceneCore()
     if (core && core.radius > 0) {
-      for (const pose of surveyPoses(this.bridge.getCamera(), core)) {
+      // Anchored to the operator's pose at takeover — the frame-1 capture
+      // above ran before any flight, so this IS their framing.
+      const anchor = this.bridge.getCameraPose()
+      for (const pose of surveyPoses(this.bridge.getCamera(), core, anchor)) {
         const png = await withTimeout(async () => {
           await animateTo(this.bridge, pose.position, pose.target, 600)
           await sleep(250) // let Spark's async depth-sort settle at the new pose

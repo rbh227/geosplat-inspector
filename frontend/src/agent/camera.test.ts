@@ -255,6 +255,47 @@ describe('surveyPoses', () => {
   })
 })
 
+describe('surveyPoses — operator anchoring (v0.8.2)', () => {
+  const camera = new THREE.PerspectiveCamera(60, 16 / 9)
+  // A junk-inflated core: data framing would fly ~hundreds of units out.
+  const core = { center: [0, 0, 0] as [number, number, number], radius: 160 }
+
+  it('never flies farther out than the operator', () => {
+    const anchor = {
+      position: new THREE.Vector3(0, 20, 55),   // operator zoomed into the scene
+      target: new THREE.Vector3(0, 0, 0),
+    }
+    const far = surveyPoses(camera, core)[0].position.length()
+    for (const p of surveyPoses(camera, core, anchor)) {
+      const d = p.position.distanceTo(p.target)
+      expect(d).toBeLessThanOrEqual(anchor.position.length() + 1e-6)
+      expect(d).toBeLessThan(far)               // strictly closer than data framing
+    }
+  })
+
+  it('adopts the operator look-target when it plausibly sits on the scene', () => {
+    const anchor = {
+      position: new THREE.Vector3(30, 20, 30),
+      target: new THREE.Vector3(12, 0, -8),     // inside 1.5x core radius
+    }
+    for (const p of surveyPoses(camera, core, anchor)) {
+      expect(p.target.toArray()).toEqual([12, 0, -8])
+    }
+  })
+
+  it('ignores an off-scene target and clamps an extreme close-up to the floor', () => {
+    const anchor = {
+      position: new THREE.Vector3(0, 0, 1),     // nose against one car
+      target: new THREE.Vector3(9999, 0, 0),    // aimed off into the void
+    }
+    for (const p of surveyPoses(camera, core, anchor)) {
+      expect(p.target.toArray()).toEqual([0, 0, 0])                 // core center kept
+      const d = p.position.distanceTo(p.target)
+      expect(d).toBeGreaterThanOrEqual(core.radius * 0.1 - 1e-6)    // the floor holds
+    }
+  })
+})
+
 describe('occluded-window resilience (nextStep)', () => {
   it('animateTo completes even when requestAnimationFrame never fires', async () => {
     // macOS throttles rAF to ZERO in occluded/backgrounded windows — this

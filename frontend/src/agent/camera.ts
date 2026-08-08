@@ -215,9 +215,23 @@ function framingDistance(camera: THREE.PerspectiveCamera, radius: number): numbe
 export function surveyPoses(
   camera: THREE.PerspectiveCamera,
   core: { center: [number, number, number]; radius: number },
+  anchor?: { position: THREE.Vector3; target: THREE.Vector3 },
 ): { label: string; position: THREE.Vector3; target: THREE.Vector3 }[] {
-  const c = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
-  const dist = framingDistance(camera, core.radius)
+  let c = new THREE.Vector3(core.center[0], core.center[1], core.center[2])
+  let dist = framingDistance(camera, core.radius)
+  if (anchor) {
+    // Anchor to the OPERATOR (live-found on a 2M drone scene, and the
+    // project's navigation philosophy): the data core's radius is inflated
+    // by scattered junk, so framing it flies way out and the scene the
+    // operator carefully zoomed into shrinks to a speck. Their pose IS the
+    // information "the scene is HERE, at THIS scale":
+    //  - adopt their look-target when it plausibly sits on the scene;
+    //  - never fly farther out than they are, with a small floor (10% of
+    //    the core radius) so an extreme close-up can't blind the survey.
+    if (anchor.target.distanceTo(c) <= core.radius * 1.5) c = anchor.target.clone()
+    const operatorDist = anchor.position.distanceTo(c)
+    dist = Math.min(dist, Math.max(operatorDist, core.radius * 0.1))
+  }
   const DEG = Math.PI / 180
   const pose = (label: string, elevationDeg: number, azimuthDeg: number) => {
     const el = elevationDeg * DEG
