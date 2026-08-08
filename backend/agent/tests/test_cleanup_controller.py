@@ -6,7 +6,7 @@ stream.
 v0.8: phase 1 is the subject lock-on — every run starts with up to
 `subject_judge_rounds` voting rounds of forced `judge_subject` calls (3 frames
 each) before the keep_only_subject card. Scripts therefore open with
-`_good3()` (three 'good' votes → one round, one script item per ask) unless
+`_o3() + _good3()` (three 'good' votes → one round, one script item per ask) unless
 the subject phase cannot reach the model at all (failed framing / empty
 captures)."""
 from __future__ import annotations
@@ -102,6 +102,19 @@ def _good3():
     return [_js("good")] * 3
 
 
+def _ol(x0=0.0, y0=0.0, x1=1.0, y1=1.0):
+    return ModelResponse(text=None, tool_calls=[
+        ToolCall("outline_scene", {"x0": x0, "y0": y0, "x1": x1, "y1": y1})])
+
+
+def _o3():
+    """v0.8.1 scene-hull: phase 1 opens with one outline_scene ask per survey
+    frame (TourChannel serves 3). Full-frame boxes against TourChannel's
+    off-axis pose carve nothing, so the statistical subject stands — existing
+    assertions are unaffected."""
+    return [_ol()] * 3
+
+
 def _controller(provider, channel, executor, arrays=None, **cfg):
     dispatcher = ToolDispatcher(executor, channel)
     config = CleanupConfig(call_timeout_s=5.0, **cfg)
@@ -116,7 +129,7 @@ def test_subject_votes_loosen_then_card():
     ONE keep_only_subject card."""
     channel = TourChannel(verdicts=[{"verdict": "rejected"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider([_js("clipping_structure")] * 3)
+    provider = ChoiceProvider(_o3() + [_js("clipping_structure")] * 3)
     c = _controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
     previews = [cmd for cmd in channel.commands if cmd.get("tool") == "show_subject_preview"]
@@ -158,7 +171,7 @@ def test_subject_approve_executes_keep_only_with_reply_level():
     arrays = _scene_arrays()
     channel = SceneChannel(verdicts=[{"verdict": "approved", "level": 4}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3())
+    provider = ChoiceProvider(_o3() + _good3())
     c = _controller(provider, channel, executor, arrays=lambda: arrays)
     result = _run(c.run("cleanup_scene"))
     expected = find_subject(
@@ -176,7 +189,7 @@ def test_subject_approve_executes_keep_only_with_reply_level():
 def test_subject_reject_skips_edit():
     channel = TourChannel(verdicts=[{"verdict": "rejected"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([]), _mark([]), _mark([])])
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([]), _mark([]), _mark([])])
     c = _controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
     assert "keep_only_ids" not in executor.edit_calls
@@ -211,8 +224,9 @@ def test_model_breaker_resets_on_success():
     channel = TourChannel(verdicts=[{"verdict": "rejected"}])
     executor = RecordingExecutor()
     provider = ChoiceProvider(
-        [RuntimeError("blip"), RuntimeError("blip"),   # ask 1 fails (try+retry)
-         _js("good"), _js("good")] +                   # asks 2-3 succeed: reset
+        [RuntimeError("blip"), RuntimeError("blip"),   # outline 1 fails (try+retry)
+         _ol(), _ol()] +                               # outlines 2-3 succeed: reset
+        _good3() +                                     # subject votes
         [_mark(["B3"]), _mark([]), _mark([])]          # marks still consulted
     )
     c = _controller(provider, channel, executor)
@@ -233,13 +247,55 @@ def test_giant_scale_splats_land_in_outside_ids():
     arrays["scale"] = scales
     channel = TourChannel(verdicts=[{"verdict": "rejected"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3())
+    provider = ChoiceProvider(_o3() + _good3())
     c = _controller(provider, channel, executor, arrays=lambda: arrays)
     _run(c.run("cleanup_scene"))
     preview = next(cmd for cmd in channel.commands
                    if cmd.get("tool") == "show_subject_preview")
     outside = set(preview["args"]["outside_ids"])
     assert set(range(10)) <= outside
+
+
+def test_outlined_views_carve_the_keep_set():
+    """v0.8.1 scene-hull: the model's outlines are the PRIMARY keep decision.
+    With a camera that actually frames the building and outlines covering only
+    the LEFT half of every view, the right half of the building must land in
+    the excluded set at the default level — reasoning carved it, not stats."""
+    class HullChannel(TourChannel):
+        async def send_command(self, cmd):
+            if cmd.get("type") == "capture_request" and cmd.get("tool") == "survey_capture":
+                self.commands.append(cmd)
+                self._sends += 1
+                return {
+                    "frames": [self.frame] * 3,
+                    "labels": ["a", "b", "c"],
+                    # render-space camera at z=8 looking at the origin: the
+                    # building (backend +-0.5) is centered in frame
+                    "poses": [{"position": [0, 0, 8], "target": [0, 0, 0],
+                               "fov": 60.0, "aspect": 1.0}] * 3,
+                    "revision": 1,
+                }
+            return await super().send_command(cmd)
+
+    arrays = _scene_arrays()
+    means = np.asarray(arrays["means"])
+    channel = HullChannel(verdicts=[{"verdict": "rejected"}])
+    executor = RecordingExecutor()
+    provider = ChoiceProvider([_ol(0.0, 0.0, 0.5, 1.0)] * 3 + _good3())
+    c = _controller(provider, channel, executor, arrays=lambda: arrays)
+    result = _run(c.run("cleanup_scene"))
+    assert result.status == "answered"
+    preview = next(cmd for cmd in channel.commands
+                   if cmd.get("tool") == "show_subject_preview")
+    args = preview["args"]
+    # excluded at the DEFAULT level = outside ∪ deltas[default:]
+    excl = set(args["outside_ids"])
+    for d in args["deltas"][2:]:
+        excl |= set(d)
+    right = set(int(i) for i in np.where(means[:, 0] > 0.05)[0] if i < 2000)
+    left = set(int(i) for i in np.where(means[:, 0] < -0.05)[0] if i < 2000)
+    assert right <= excl                       # reasoning carved the right half
+    assert len(left & excl) <= len(left) * 0.1  # ...and kept the left
 
 
 def test_no_subject_found_skips_phase():
@@ -266,19 +322,23 @@ def test_no_subject_found_skips_phase():
 def test_phase2_one_mark_call_per_frame_with_gridded_survey():
     channel = TourChannel(n_frames=3, verdicts=[{"verdict": "approved"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark(["B3"]), _mark([]), _mark([])])
+    provider = ChoiceProvider(_o3() + _good3() + [_mark(["B3"]), _mark([]), _mark([])])
     c = _controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
     mark_calls = [k for k in provider.calls if k["tools"] == ["mark_noise"]]
     assert len(mark_calls) == 3
-    survey_cmd = next(cmd for cmd in channel.commands if cmd.get("tool") == "survey_capture")
-    assert survey_cmd["args"].get("grid") is True
+    # the MARKS survey is gridded; phase 1's outline survey (first) is not
+    surveys = [cmd for cmd in channel.commands if cmd.get("tool") == "survey_capture"]
+    assert len(surveys) == 2
+    assert surveys[0]["args"].get("grid") is not True
+    assert surveys[-1]["args"].get("grid") is True
 
 
 def test_phase2_respects_max_survey_frames():
     channel = TourChannel(n_frames=9, verdicts=[{"verdict": "approved"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 9)
+    # phase-1 outlines are capped at max_survey_frames too: 6 asks, not 9
+    provider = ChoiceProvider([_ol()] * 6 + _good3() + [_mark([])] * 9)
     c = _controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
     mark_calls = [k for k in provider.calls if k["tools"] == ["mark_noise"]]
@@ -302,7 +362,7 @@ def test_interrupt_aborts_run_with_interrupted_status():
     channel = TourChannel(verdicts=[{"verdict": "approved"}])
     channel.interrupt_after = 1
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3)
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3)
     c = _controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
     assert result.status == "interrupted"
@@ -353,7 +413,7 @@ def test_tour_judges_each_candidate_and_deletes_only_junk():
                                     {"verdict": "approved"}])  # batch
     executor = DeletingExecutor()
     provider = ChoiceProvider(
-        _good3() +                                 # subject voting round
+        _o3() + _good3() +                                 # subject voting round
         [_mark([]), _mark([]), _mark([])] +        # 3 survey frames
         [_judge("junk"), _judge("structure")]      # 2 candidates, size order
     )
@@ -374,7 +434,7 @@ def test_look_closer_gets_one_extra_view_then_must_commit():
     channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
     executor = DeletingExecutor()
     provider = ChoiceProvider(
-        _good3() +
+        _o3() + _good3() +
         [_mark([]), _mark([]), _mark([])] +
         [_judge("look_closer"), _judge("junk"),          # candidate A: 2 calls
          _judge("look_closer"), _judge("look_closer")]   # candidate B: coerced
@@ -393,7 +453,7 @@ def test_look_closer_gets_one_extra_view_then_must_commit():
 def test_model_failure_during_tour_is_unsure_kept():
     channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                RuntimeError("x"), RuntimeError("x"),   # A: retry then None
                                _judge("junk")])                        # B
@@ -408,7 +468,7 @@ def test_model_failure_during_tour_is_unsure_kept():
 def test_batch_card_carries_cluster_rows_and_binds_ids():
     channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor)
@@ -425,7 +485,7 @@ def test_batch_rejected_deletes_nothing_and_still_summarizes():
     channel = TourChannel(verdicts=[{"verdict": "approved"},   # subject card
                                     {"verdict": "rejected"}])  # batch
     executor = DeletingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor)
@@ -444,7 +504,7 @@ def test_adjust_flips_verdict_then_reproposes():
     executor = DeletingExecutor()
     flip = ModelResponse(text=None, tool_calls=[ToolCall(
         "apply_feedback", {"flips": [{"label": "A", "to": "keep"}]})])
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk"),
                                flip])
@@ -464,7 +524,7 @@ def test_no_candidates_short_circuits_to_clean_answer():
     }
     channel = TourChannel(verdicts=[{"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([]), _mark([]), _mark([])])
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([]), _mark([]), _mark([])])
     c = _tour_controller(provider, channel, executor, arrays=lambda: arrays)
     result = _run(c.run("cleanup_scene"))
     assert result.status == "answered"
@@ -493,7 +553,7 @@ def test_hard_cancel_mid_parked_proposal_completes_interrupted():
     async def scenario():
         channel = ParkedChannel()
         executor = RecordingExecutor()
-        provider = ChoiceProvider(_good3())
+        provider = ChoiceProvider(_o3() + _good3())
         c = _controller(provider, channel, executor)
         task = asyncio.create_task(c.run("cleanup_scene"))
         for _ in range(500):
@@ -525,7 +585,7 @@ def test_interrupt_after_keep_only_still_reports_scene_changed():
     channel = TourChannel(verdicts=[{"verdict": "approved"}])
     channel.interrupt_after = 2          # keep-only applied, then interrupt
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3)
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3)
     c = _controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
     assert result.status == "interrupted"
@@ -537,7 +597,7 @@ def test_run_without_any_edit_reports_scene_changed_false():
     """Nothing was destroyed — a reload would be pure churn."""
     channel = TourChannel(verdicts=[{"verdict": "rejected"}])   # subject rejected
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3 + [_judge("structure")])
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3 + [_judge("structure")])
     c = _controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
     assert result.status == "answered"
@@ -548,7 +608,7 @@ def test_run_without_any_edit_reports_scene_changed_false():
 def test_error_path_reports_scene_changed_after_an_edit():
     channel = TourChannel(verdicts=[{"verdict": "approved"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3)
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3)
     c = _controller(provider, channel, executor)
     # blow up after phase 1 has already applied the keep-only edit
     async def boom() -> None:
@@ -588,7 +648,8 @@ class FlakyChannel(TourChannel):
 def test_capture_without_a_frame_forces_unsure_and_never_asks_the_model():
     channel = FlakyChannel("", empty_capture=True, verdicts=[{"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+    provider = ChoiceProvider(_o3() +
+                              [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
@@ -602,7 +663,7 @@ def test_capture_without_a_frame_forces_unsure_and_never_asks_the_model():
 def test_failed_tint_forces_unsure():
     channel = FlakyChannel("select_by_ids", verdicts=[{"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor)
@@ -618,7 +679,8 @@ def test_failed_subject_preview_fails_closed_and_skips_the_card():
     unframed tour candidate."""
     channel = FlakyChannel("show_subject_preview", verdicts=[{"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+    provider = ChoiceProvider(_o3() +
+                              [_mark([]), _mark([]), _mark([]),
                                _judge("structure"), _judge("structure")])
     c = _tour_controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
@@ -635,7 +697,8 @@ def test_failed_subject_preview_fails_closed_and_skips_the_card():
 def test_failed_framing_forces_unsure():
     channel = FlakyChannel("frame_object", verdicts=[{"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider([_mark([]), _mark([]), _mark([]),
+    provider = ChoiceProvider(_o3() +
+                              [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
@@ -678,7 +741,7 @@ def _live_arrays():
 def test_guard_never_calls_full_metrics():
     channel = TourChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
     executor = MetricsCountingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor, arrays=_live_arrays())
@@ -719,7 +782,7 @@ def test_guard_still_reverts_an_edit_that_wipes_the_core():
     channel = TourChannel(verdicts=[{"verdict": "rejected"},   # skip the keep-only
                                     {"verdict": "approved"}])
     executor = WipingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]), _judge("junk")])
     dispatcher = ToolDispatcher(executor, channel)
     c = CleanupController(provider, dispatcher, channel, executor, lambda: state,
@@ -748,7 +811,7 @@ def test_applied_keep_only_resyncs_the_renderer_before_the_survey():
     marks junk that no longer exists."""
     channel = SceneChannel(verdicts=[{"verdict": "approved"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3)
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3)
     c = _controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
 
@@ -757,16 +820,18 @@ def test_applied_keep_only_resyncs_the_renderer_before_the_survey():
     payload = reloads[0]["payload"]
     assert payload["url"] == "/scene/scene-1.ply"
     assert payload["scene_id"] == "scene-1"
-    # ...and it happened BEFORE the survey capture
+    # ...and it happened BEFORE the marks survey (the LAST survey_capture —
+    # v0.8.1 flies an earlier outline survey in phase 1, before any edit)
     order = [cmd.get("type") if cmd.get("type") == "reload_scene" else cmd.get("tool")
              for cmd in channel.commands]
-    assert order.index("reload_scene") < order.index("survey_capture")
+    last_survey = len(order) - 1 - order[::-1].index("survey_capture")
+    assert order.index("reload_scene") < last_survey
 
 
 def test_rejected_subject_does_not_reload():
     channel = SceneChannel(verdicts=[{"verdict": "rejected"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3)
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3)
     c = _controller(provider, channel, executor)
     _run(c.run("cleanup_scene"))
     assert _reloads(channel) == []
@@ -775,7 +840,7 @@ def test_rejected_subject_does_not_reload():
 def test_batch_deletions_resync_once_when_finished():
     channel = SceneChannel(verdicts=[{"verdict": "approved"}, {"verdict": "approved"}])
     executor = DeletingExecutor()
-    provider = ChoiceProvider(_good3() +
+    provider = ChoiceProvider(_o3() + _good3() +
                               [_mark([]), _mark([]), _mark([]),
                                _judge("junk"), _judge("junk")])
     c = _tour_controller(provider, channel, executor)
@@ -789,7 +854,7 @@ def test_channel_without_a_scene_id_degrades_quietly():
     still complete rather than crash on the resync."""
     channel = TourChannel(verdicts=[{"verdict": "approved"}])
     executor = RecordingExecutor()
-    provider = ChoiceProvider(_good3() + [_mark([])] * 3)
+    provider = ChoiceProvider(_o3() + _good3() + [_mark([])] * 3)
     c = _controller(provider, channel, executor)
     result = _run(c.run("cleanup_scene"))
     assert result.status == "answered"

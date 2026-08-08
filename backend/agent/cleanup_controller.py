@@ -25,6 +25,7 @@ from backend.analysis.clusters import (
     find_clusters,
     resolve_marks,
 )
+from backend.analysis.scene_hull import apply_hull
 from backend.analysis.subject import SubjectLevels, find_subject
 from backend.contracts import FrontendChannel, ModelProvider, ToolCall
 from backend.contracts.constants import VISIBILITY_ALPHA
@@ -61,6 +62,15 @@ _MARK_INSTRUCTION = (
     "(columns A-D left to right, rows 1-4 top to bottom). Call mark_noise with "
     "the cells that contain floating junk, debris mist, or fragments "
     "disconnected from the main structure. Use [] if this view looks clean."
+)
+
+_OUTLINE_INSTRUCTION = (
+    "This is one view of a 3D-scanned scene. Call outline_scene with the "
+    "tightest box (normalized 0-1 image coordinates: x0,y0 = top-left corner, "
+    "x1,y1 = bottom-right corner) containing the ACTUAL scene — the coherent "
+    "reconstructed structure. Exclude floating junk, debris mist, streaks, "
+    "and disconnected fragments. Use the full box if the real scene fills "
+    "the view."
 )
 
 _SUBJECT_INSTRUCTION = (
@@ -106,6 +116,22 @@ _FEEDBACK_SPEC = {
 
 class RunInterrupted(Exception):
     pass
+
+
+def _valid_box(args: dict | None) -> tuple[float, float, float, float] | None:
+    """Sanitize an outline_scene reply into a normalized (x0,y0,x1,y1) box.
+    Degenerate boxes (inverted or < 5% of the frame per axis) are unusable."""
+    if not isinstance(args, dict):
+        return None
+    try:
+        x0, y0, x1, y1 = (float(args[k]) for k in ("x0", "y0", "x1", "y1"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    x0, x1 = max(0.0, min(1.0, x0)), max(0.0, min(1.0, x1))
+    y0, y1 = max(0.0, min(1.0, y0)), max(0.0, min(1.0, y1))
+    if x1 - x0 < 0.05 or y1 - y0 < 0.05:
+        return None
+    return (x0, y0, x1, y1)
 
 
 class CleanupController:
@@ -319,6 +345,25 @@ class CleanupController:
         if subject is None:
             await self._say("Could not isolate a subject — skipping the keep-only pass.")
             return
+
+        # Scene-hull carve (v0.8.1): reasoning leads. The model outlines the
+        # ACTUAL scene in each survey view; reprojection carves the keep-set
+        # from the outlines. The statistical subject above is the safety
+        # floor — unusable outlines leave it standing.
+        views = await self._outline_views()
+        if views:
+            carved = await asyncio.to_thread(apply_hull, subject, means, ids, views)
+            if carved is not subject:
+                subject = carved
+                await self._say(
+                    f"Carved the keep-region from {len(views)} outlined "
+                    f"view{'s' if len(views) != 1 else ''}."
+                )
+            else:
+                await self._say(
+                    "The outlines didn't isolate a usable region — keeping the "
+                    "statistical estimate."
+                )
         level = subject.default_level
         await self._say("Locking onto the subject — bright is what I plan to keep.")
         # Complement form (live-found at 2M splats): ship the small excluded
@@ -371,6 +416,29 @@ class CleanupController:
         else:
             await self._say("Keep-only skipped — moving on to the noise survey.")
         await self._dispatch("clear_selection", {})
+
+    async def _outline_views(self) -> list[dict]:
+        """Fly the survey and ask the model to outline the ACTUAL scene in
+        each view (figure/ground — the easy question). Every model failure
+        just drops that view; no views means the statistical floor stands."""
+        await self._say("Flying a quick survey so the model can outline the real structure.")
+        res = await self._dispatch("survey_capture", {})
+        payload = res.get("result") or {}
+        frames = list(res.get("frames") or [])[: self.config.max_survey_frames]
+        poses: list[dict] = []
+        if isinstance(payload, dict):
+            poses = list(payload.get("poses") or [])[: len(frames)]
+        views: list[dict] = []
+        for i, (frame, pose) in enumerate(zip(frames, poses)):
+            await self._checkpoint()
+            args = await self._ask(_OUTLINE_INSTRUCTION, "outline_scene", frame)
+            box = _valid_box(args)
+            if box is None:
+                if args is not None:
+                    await self._say(f"View {i + 1}: unusable outline — skipped.")
+                continue
+            views.append({"pose": pose, "box": box})
+        return views
 
     async def _judge_subject_rounds(self, subject: SubjectLevels, level: int) -> int:
         """Up to subject_judge_rounds voting rounds; each frames the subject,

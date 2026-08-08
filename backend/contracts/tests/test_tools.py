@@ -113,6 +113,15 @@ def test_v08_show_subject_preview_registered():
     assert set(entry.params["required"]) == {"level"}
 
 
+def test_v081_outline_scene_choice_spec():
+    from backend.contracts.tools import CONTROLLER_CHOICE_SPECS
+
+    spec = CONTROLLER_CHOICE_SPECS["outline_scene"]
+    props = spec["parameters"]["properties"]
+    assert set(spec["parameters"]["required"]) == {"x0", "y0", "x1", "y1"}
+    assert all(props[k]["type"] == "number" for k in ("x0", "y0", "x1", "y1"))
+
+
 def test_v08_keep_only_subject_kind_and_level_field():
     from backend.contracts.tools import PROPOSAL_DECISION_FIELDS
 

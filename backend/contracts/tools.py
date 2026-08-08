@@ -470,6 +470,27 @@ CONTROLLER_CHOICE_SPECS: dict[str, dict] = {
             "required": ["verdict", "reason"],
         },
     },
+    # v0.8.1 — scene-hull lock-on: the model OUTLINES the actual scene per
+    # survey view (figure/ground — the easy question); code carves the 3D
+    # keep-set from the outlines by reprojection. Reasoning leads, the
+    # density/scale statistics are the safety floor.
+    "outline_scene": {
+        "name": "outline_scene",
+        "description": "Outline the tightest box containing the ACTUAL scene "
+                       "— the coherent reconstructed structure. Exclude "
+                       "floating junk, debris mist, streaks, and disconnected "
+                       "fragments. Full box if the scene fills the view.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x0": {"type": "number", "description": "left edge, 0..1"},
+                "y0": {"type": "number", "description": "top edge, 0..1"},
+                "x1": {"type": "number", "description": "right edge, 0..1"},
+                "y1": {"type": "number", "description": "bottom edge, 0..1"},
+            },
+            "required": ["x0", "y0", "x1", "y1"],
+        },
+    },
     # v0.8 — subject-first cleanup: per-view vote on the tinted keep-region.
     "judge_subject": {
         "name": "judge_subject",

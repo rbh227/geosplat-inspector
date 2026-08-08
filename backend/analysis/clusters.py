@@ -151,13 +151,15 @@ def cell_index(label: str, grid: int = 4) -> int:
     return row * grid + col
 
 
-def project_to_cells(means: np.ndarray, pose: dict, grid: int = 4) -> np.ndarray:
+def project_uv(means: np.ndarray, pose: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Project backend-space means through a render-space camera pose into
-    grid-cell indices (-1 = behind camera / off screen).
+    normalized image coords: (u, v, in_front) with u,v in [0,1] on screen.
 
     Backend coords are COLMAP Y-down; the viewer applies mesh.rotation.x = pi,
     so render = (x, -y, -z). The pose (position/target/fov/aspect) arrives in
     render space exactly as the frontend's survey_capture reports it.
+    `in_front` is z>0 only — callers bound u/v themselves (the hull carve
+    tests padded boxes that may extend past the frame edge).
     """
     pts = np.asarray(means, dtype=np.float64) * np.array([1.0, -1.0, -1.0])
     pos = np.asarray(pose["position"], dtype=np.float64)
@@ -165,7 +167,8 @@ def project_to_cells(means: np.ndarray, pose: dict, grid: int = 4) -> np.ndarray
     fwd = tgt - pos
     n = np.linalg.norm(fwd)
     if n < 1e-9:
-        return np.full(len(pts), -1, dtype=np.int64)
+        z = np.zeros(len(pts))
+        return z, z, np.zeros(len(pts), dtype=bool)
     fwd /= n
     up = np.array([0.0, 1.0, 0.0])
     if abs(float(fwd @ up)) > 0.99:          # top-down pose: pick a stable up
@@ -180,12 +183,19 @@ def project_to_cells(means: np.ndarray, pose: dict, grid: int = 4) -> np.ndarray
     z_c = d @ fwd
     t = np.tan(np.radians(float(pose["fov"])) / 2.0)
     aspect = float(pose.get("aspect", 1.0)) or 1.0
-    out = np.full(len(pts), -1, dtype=np.int64)
-    vis = z_c > 1e-6
+    in_front = z_c > 1e-6
     with np.errstate(divide="ignore", invalid="ignore"):
         u = (x_c / (z_c * t * aspect) + 1.0) / 2.0
         v = (1.0 - y_c / (z_c * t)) / 2.0
-    on = vis & (u >= 0) & (u < 1) & (v >= 0) & (v < 1)
+    return u, v, in_front
+
+
+def project_to_cells(means: np.ndarray, pose: dict, grid: int = 4) -> np.ndarray:
+    """Project backend-space means through a render-space camera pose into
+    grid-cell indices (-1 = behind camera / off screen)."""
+    u, v, in_front = project_uv(means, pose)
+    out = np.full(len(u), -1, dtype=np.int64)
+    on = in_front & (u >= 0) & (u < 1) & (v >= 0) & (v < 1)
     col = np.clip((u[on] * grid).astype(np.int64), 0, grid - 1)
     row = np.clip((v[on] * grid).astype(np.int64), 0, grid - 1)
     out[on] = row * grid + col
