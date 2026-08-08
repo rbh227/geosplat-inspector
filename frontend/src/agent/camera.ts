@@ -55,7 +55,30 @@ export function resolveAimPoint(
 }
 
 /** Animate camera from its current pose to (toPos, toTarget). Resolves when done. */
-export function animateTo(
+/** One animation step: the next animation frame, or a short timeout fallback.
+ *
+ *  macOS throttles requestAnimationFrame to ZERO when the window is occluded
+ *  or backgrounded — live-found THREE runs in a row: every agent flight and
+ *  capture froze mid-loop the moment the operator switched windows, and the
+ *  whole run read as hung. Racing a timer keeps agent motion and captures
+ *  progressing headlessly; renders are explicit (renderOnce), so nothing
+ *  here depends on the compositor actually painting. */
+export function nextStep(maxWaitMs = 120): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        resolve()
+      }
+    }
+    const timer = setTimeout(finish, maxWaitMs)
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(finish)
+  })
+}
+
+export async function animateTo(
   bridge: RendererBridge,
   toPos: THREE.Vector3,
   toTarget: THREE.Vector3,
@@ -66,22 +89,16 @@ export function animateTo(
   const tmpPos = new THREE.Vector3()
   const tmpTarget = new THREE.Vector3()
 
-  return new Promise<void>((resolve) => {
-    function tick() {
-      const raw = Math.min((performance.now() - start) / durationMs, 1)
-      const t = easeOutCubic(raw)
-      tmpPos.lerpVectors(fromPos, toPos, t)
-      tmpTarget.lerpVectors(fromTarget, toTarget, t)
-      bridge.setCameraPose(tmpPos.clone(), tmpTarget.clone(), false)
-      if (raw < 1) {
-        requestAnimationFrame(tick)
-      } else {
-        bridge.setCameraPose(toPos.clone(), toTarget.clone(), false)
-        resolve()
-      }
-    }
-    requestAnimationFrame(tick)
-  })
+  for (;;) {
+    const raw = Math.min((performance.now() - start) / durationMs, 1)
+    const t = easeOutCubic(raw)
+    tmpPos.lerpVectors(fromPos, toPos, t)
+    tmpTarget.lerpVectors(fromTarget, toTarget, t)
+    bridge.setCameraPose(tmpPos.clone(), tmpTarget.clone(), false)
+    if (raw >= 1) break
+    await nextStep()
+  }
+  bridge.setCameraPose(toPos.clone(), toTarget.clone(), false)
 }
 
 export function sleep(ms: number): Promise<void> {
@@ -95,7 +112,7 @@ export function sleep(ms: number): Promise<void> {
  * instead of lerping to the identical endpoint (= no motion), and partial
  * angles trace the arc instead of cutting a chord through the scene.
  */
-export function animateOrbit(
+export async function animateOrbit(
   bridge: RendererBridge,
   center: THREE.Vector3,
   axis: 'x' | 'y' | 'z',
@@ -105,20 +122,14 @@ export function animateOrbit(
   const startPos = bridge.getCameraPose().position.clone()
   const start = performance.now()
 
-  return new Promise<void>((resolve) => {
-    function tick() {
-      const raw = Math.min((performance.now() - start) / durationMs, 1)
-      const t = easeOutCubic(raw)
-      const pos = rotateAround(startPos, center, axis, deg * t)
-      bridge.setCameraPose(pos, center.clone(), false)
-      if (raw < 1) {
-        requestAnimationFrame(tick)
-      } else {
-        resolve()
-      }
-    }
-    requestAnimationFrame(tick)
-  })
+  for (;;) {
+    const raw = Math.min((performance.now() - start) / durationMs, 1)
+    const t = easeOutCubic(raw)
+    const pos = rotateAround(startPos, center, axis, deg * t)
+    bridge.setCameraPose(pos, center.clone(), false)
+    if (raw >= 1) break
+    await nextStep()
+  }
 }
 
 /**

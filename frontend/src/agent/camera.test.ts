@@ -254,3 +254,44 @@ describe('surveyPoses', () => {
     expect(h(ne.position).dot(h(sw.position))).toBeLessThan(-0.99)
   })
 })
+
+describe('occluded-window resilience (nextStep)', () => {
+  it('animateTo completes even when requestAnimationFrame never fires', async () => {
+    // macOS throttles rAF to ZERO in occluded/backgrounded windows — this
+    // froze every agent flight mid-survey (live-found, three runs in a row).
+    const { animateTo } = await import('./camera.ts')
+    const original = globalThis.requestAnimationFrame
+    // @ts-expect-error simulate a fully throttled window
+    globalThis.requestAnimationFrame = undefined
+    try {
+      const poses: THREE.Vector3[] = []
+      const bridge = {
+        getCameraPose: () => ({ position: new THREE.Vector3(0, 0, 0), target: new THREE.Vector3(0, 0, -1) }),
+        setCameraPose: (p: THREE.Vector3) => { poses.push(p.clone()) },
+      }
+      await animateTo(bridge as unknown as RendererBridge, new THREE.Vector3(2, 0, 0), new THREE.Vector3(0, 0, 0), 60)
+      expect(poses.length).toBeGreaterThan(0)
+      expect(poses.at(-1)!.x).toBe(2)     // landed on the target pose
+    } finally {
+      globalThis.requestAnimationFrame = original
+    }
+  }, 10000)
+
+  it('animateOrbit completes without requestAnimationFrame too', async () => {
+    const { animateOrbit } = await import('./camera.ts')
+    const original = globalThis.requestAnimationFrame
+    // @ts-expect-error simulate a fully throttled window
+    globalThis.requestAnimationFrame = undefined
+    try {
+      let last: THREE.Vector3 | null = null
+      const bridge = {
+        getCameraPose: () => ({ position: new THREE.Vector3(1, 0, 0), target: new THREE.Vector3(0, 0, 0) }),
+        setCameraPose: (p: THREE.Vector3) => { last = p.clone() },
+      }
+      await animateOrbit(bridge as unknown as RendererBridge, new THREE.Vector3(0, 0, 0), 'y', 180, 60)
+      expect(last).not.toBeNull()
+    } finally {
+      globalThis.requestAnimationFrame = original
+    }
+  }, 10000)
+})

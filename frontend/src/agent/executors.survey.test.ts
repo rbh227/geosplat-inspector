@@ -79,4 +79,27 @@ describe('survey_capture', () => {
     expect(result.frames_base64).toHaveLength(1)
     expect(result.labels).toEqual(["operator's view"])
   })
+
+  it('skips a hung pose instead of hanging the whole survey (watchdog)', async () => {
+    vi.useFakeTimers()
+    try {
+      // first survey pose's flight never settles — the exact live failure
+      ;(animateTo as unknown as ReturnType<typeof vi.fn>)
+        .mockImplementationOnce(() => new Promise<void>(() => {}))
+      const ex = new FrontendExecutors(makeBridge() as never, overlay as never)
+      const pending = ex.survey_capture({})
+      await vi.advanceTimersByTimeAsync(16000)    // trip the 15s pose watchdog
+      const result = (await pending) as { frames_base64: string[]; labels: string[]; poses: unknown[] }
+      // operator view + the two poses that worked; the hung one is absent
+      expect(result.labels).toEqual([
+        "operator's view",
+        'oblique view from the north-east',
+        'oblique view from the south-west',
+      ])
+      expect(result.frames_base64).toHaveLength(3)
+      expect(result.poses).toHaveLength(3)        // arrays stay index-aligned
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -25,6 +25,10 @@ import {
 
 const MOVE_DIRECTIONS = new Set<MoveDirection>(['forward', 'back', 'left', 'right', 'up', 'down'])
 const MAX_MOVE_MS = 8000
+/** Longest a single survey pose (flight + settle + capture) may take before
+ *  it is skipped — the watchdog that keeps one wedged pose from hanging the
+ *  whole run. */
+const POSE_TIMEOUT_MS = 15000
 
 export class FrontendExecutors {
   constructor(private bridge: RendererBridge, private overlay: Overlay) {}
@@ -414,17 +418,42 @@ export class FrontendExecutors {
       })
     }
 
+    // Per-pose watchdog (live-found, three runs): a flight or capture that
+    // wedges — occluded-window rAF throttling, GPU stalls at 2M splats —
+    // must cost ONE pose, never the whole run. A raw setTimeout (never the
+    // mockable sleep()) so the bound is real even when timers are stubbed.
+    const bounded = async <T,>(work: () => Promise<T>): Promise<T | null> => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        return await Promise.race([
+          work(),
+          new Promise<null>((r) => { timer = setTimeout(() => r(null), POSE_TIMEOUT_MS) }),
+        ])
+      } catch {
+        return null                       // a failed pose is a skipped pose
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
     // Frame 1 — the operator's current view ("the angle I just put in").
-    frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge, { grid })))
-    labels.push("operator's view")
-    snapPose()
+    const first = await bounded(() => capturePNG(this.bridge, { grid }))
+    if (first !== null) {
+      frames_base64.push(dataUrlToBase64(first))
+      labels.push("operator's view")
+      snapPose()
+    }
 
     const core = this.bridge.getSceneCore()
     if (core && core.radius > 0) {
       for (const pose of surveyPoses(this.bridge.getCamera(), core)) {
-        await animateTo(this.bridge, pose.position, pose.target, 600)
-        await sleep(250) // let Spark's async depth-sort settle at the new pose
-        frames_base64.push(dataUrlToBase64(await capturePNG(this.bridge, { grid })))
+        const png = await bounded(async () => {
+          await animateTo(this.bridge, pose.position, pose.target, 600)
+          await sleep(250) // let Spark's async depth-sort settle at the new pose
+          return capturePNG(this.bridge, { grid })
+        })
+        if (png === null) continue        // skip — frames/labels/poses stay aligned
+        frames_base64.push(dataUrlToBase64(png))
         labels.push(pose.label)
         snapPose()
       }

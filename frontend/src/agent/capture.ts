@@ -10,6 +10,7 @@
  *    render once more, THEN read the pixels.
  */
 import * as THREE from 'three'
+import { nextStep } from './camera.ts'
 import type { RendererBridge } from './types.ts'
 
 const CLEAR_COLOR = 0x0b0d16
@@ -43,10 +44,6 @@ export function captureSize(
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
   }
-}
-
-function nextFrame(): Promise<void> {
-  return new Promise((r) => requestAnimationFrame(() => r()))
 }
 
 /** Strip the `data:image/png;base64,` prefix, leaving bare base64 for the wire. */
@@ -132,7 +129,9 @@ export async function capturePNG(
   renderer.setClearColor(CLEAR_COLOR, 1)
   try {
     bridge.renderOnce()
-    for (let i = 0; i < SETTLE_FRAMES; i++) await nextFrame()
+    // nextStep (not raw rAF): rAF is throttled to zero in occluded windows,
+    // which froze every capture the moment the operator switched away.
+    for (let i = 0; i < SETTLE_FRAMES; i++) await nextStep(150)
     bridge.renderOnce()
 
     const canvas = renderer.domElement
