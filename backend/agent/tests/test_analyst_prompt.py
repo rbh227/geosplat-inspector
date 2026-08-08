@@ -139,6 +139,24 @@ def test_prompt_makes_no_damage_a_valid_answer():
     assert "nothing is wrong here" in p
 
 
+def test_prompt_focuses_on_content_over_quality():
+    """Live feedback (2026-08-08): the analyst opened answers with 'the scene
+    is blurry / low quality' instead of describing what is in it."""
+    p = _understand()
+    assert "content over quality" in p
+    assert "dwell" in p
+
+
+def test_prompt_keeps_background_noise_out_of_counts():
+    """Live feedback (2026-08-08): counts ran high — background blobs and
+    artifact fragments were folded into totals. Counts anchor on major,
+    individually locatable structures."""
+    p = _understand()
+    assert "major, distinct" in p
+    assert "leave them out of the total" in p
+    assert "never count them as objects" in p
+
+
 def test_prompt_carries_no_domain_priors():
     """The prompt teaches HOW to look, never what these scenes contain."""
     p = _understand()
