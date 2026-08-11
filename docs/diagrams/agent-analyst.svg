@@ -1,108 +1,45 @@
-<svg width="1000" height="656" viewBox="0 0 1000 656" xmlns="http://www.w3.org/2000/svg">
+<svg width="1000" height="672" viewBox="0 0 1000 672" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
-        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+        <marker id="arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#7e7e7e"/></marker>
+        <marker id="arrow-accent" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#5b87c7"/></marker>
       </defs>
 
-      <rect width="100%" height="100%" fill="#faf9f7"/>
+      <rect width="100%" height="100%" fill="#151515"/>
 
-      <!-- Lifelines -->
-      <line x1="112" y1="128" x2="112" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-      <line x1="368" y1="128" x2="368" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-      <line x1="624" y1="128" x2="624" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-      <line x1="880" y1="128" x2="880" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
-
-      <!-- Activation bars -->
-      <rect x="364" y="176" width="8" height="304" fill="rgba(30,30,30,0.06)" stroke="#5d5d5d" stroke-width="0.8"/>
-      <rect x="620" y="280" width="8" height="40" fill="rgba(30,30,30,0.06)" stroke="#5d5d5d" stroke-width="0.8"/>
-      <rect x="876" y="400" width="8" height="40" fill="rgba(30,30,30,0.06)" stroke="#5d5d5d" stroke-width="0.8"/>
-
-      <!-- LOOP fragment -->
-      <rect x="336" y="216" width="344" height="136" rx="4" fill="rgba(30,30,30,0.02)" stroke="rgba(30,30,30,0.22)" stroke-width="1"/>
-      <rect x="336" y="216" width="48" height="16" rx="2" fill="#faf9f7" stroke="rgba(30,30,30,0.22)" stroke-width="1"/>
-      <text x="360" y="228" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">LOOP</text>
-      <text x="392" y="252" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[each pose on the framed orbit]</text>
-
-      <!-- Messages -->
-      <line x1="112" y1="176" x2="360" y2="176" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="372" y1="280" x2="616" y2="280" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="616" y1="320" x2="376" y2="320" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-      <line x1="372" y1="400" x2="872" y2="400" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="872" y1="440" x2="376" y2="440" stroke="#5b87c7" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
-      <line x1="360" y1="480" x2="120" y2="480" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-
-      <!-- Message labels -->
-      <rect x="160" y="156" width="152" height="12" rx="2" fill="#faf9f7"/>
-      <text x="236" y="165" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HOW MANY TRAILERS?</text>
-
-      <rect x="416" y="260" width="156" height="12" rx="2" fill="#faf9f7"/>
-      <text x="494" y="269" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MOVE CAMERA · CAPTURE</text>
-
-      <rect x="440" y="300" width="108" height="12" rx="2" fill="#faf9f7"/>
-      <text x="494" y="309" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FRAME · PNG</text>
-
-      <rect x="464" y="380" width="152" height="12" rx="2" fill="#faf9f7"/>
-      <text x="540" y="389" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">QUESTION + FRAMES</text>
-
-      <rect x="644" y="420" width="152" height="12" rx="2" fill="#faf9f7"/>
-      <text x="720" y="429" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">COUNT · WHAT IT SAW</text>
-
-      <rect x="164" y="460" width="152" height="12" rx="2" fill="#faf9f7"/>
-      <text x="240" y="469" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ANSWER + THE VIEWS</text>
-
-      <!-- Actors -->
-      <rect x="24" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="24" y="64" width="176" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <rect x="32" y="72" width="40" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
-      <text x="52" y="81" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HUMAN</text>
-      <text x="112" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">You</text>
-      <text x="112" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">chat panel</text>
-
-      <rect x="280" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="280" y="64" width="176" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <rect x="288" y="72" width="44" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
-      <text x="310" y="81" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DRIVER</text>
-      <text x="368" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">App survey</text>
-      <text x="368" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">poses from your view</text>
-
-      <rect x="536" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="536" y="64" width="176" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="544" y="72" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="562" y="81" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VIEW</text>
-      <text x="624" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Renderer</text>
-      <text x="624" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">sparkjs canvas</text>
-
-      <rect x="792" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="792" y="64" width="176" height="64" rx="6" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
-      <rect x="800" y="72" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.22)" stroke-width="0.8"/>
-      <text x="814" y="81" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VLM</text>
-      <text x="880" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Vision model</text>
-      <text x="880" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">look-only tools</text>
-
-      <!-- Editorial callout -->
-      <text x="960" y="556" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">In this stage the edit tools are not in the model's spec at all — it could not cut a splat if it tried</text>
-      <path d="M 828 540 Q 856 528 876 504" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
-      <circle cx="880" cy="500" r="2" fill="#1e1e1e"/>
-
-      <!-- Legend -->
-      <line x1="40" y1="584" x2="960" y2="584" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
-      <text x="40" y="600" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
-
-      <rect x="40" y="616" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <text x="60" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Actor</text>
-
-      <rect x="128" y="616" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <text x="148" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · the app owns the camera</text>
-
-      <rect x="380" y="616" width="14" height="10" rx="2" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
-      <text x="400" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">External model</text>
-
-      <line x1="536" y1="622" x2="564" y2="622" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <text x="572" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Call</text>
-
-      <line x1="648" y1="622" x2="676" y2="622" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
-      <text x="684" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Return</text>
-
-      <line x1="776" y1="622" x2="804" y2="622" stroke="#5b87c7" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
-      <text x="812" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Grounded answer</text>
+      <line x1="140" y1="128" x2="140" y2="488" stroke="rgba(214,214,214,0.18)" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <line x1="500" y1="128" x2="500" y2="488" stroke="rgba(214,214,214,0.18)" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <line x1="860" y1="128" x2="860" y2="488" stroke="rgba(214,214,214,0.18)" stroke-width="1.5" stroke-dasharray="4,4"/>
+      <line x1="140" y1="192" x2="484" y2="192" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <rect x="404" y="240" width="192" height="72" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="500" y="270" fill="#d6d6d6" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">the app flies</text>
+      <text x="500" y="292" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">8 framed views</text>
+      <line x1="500" y1="360" x2="844" y2="360" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="844" y1="416" x2="516" y2="416" stroke="#5b87c7" stroke-width="2" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+      <line x1="484" y1="472" x2="156" y2="472" stroke="#7e7e7e" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <rect x="240" y="168" width="160" height="16" rx="2" fill="#151515"/>
+      <text x="320" y="180" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">HOW MANY TRAILERS?</text>
+      <rect x="568" y="336" width="208" height="16" rx="2" fill="#151515"/>
+      <text x="672" y="348" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">THE VIEWS + THE QUESTION</text>
+      <rect x="564" y="392" width="216" height="16" rx="2" fill="#151515"/>
+      <text x="672" y="404" fill="#5b87c7" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">A COUNT, FROM THOSE VIEWS</text>
+      <rect x="208" y="448" width="224" height="16" rx="2" fill="#151515"/>
+      <text x="320" y="460" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">ANSWER + THE VIEWS IT USED</text>
+      <rect x="40" y="48" width="200" height="80" rx="4" fill="#272727" stroke="#2d2d2d" stroke-width="1.5"/>
+      <text x="140" y="84" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">You</text>
+      <text x="140" y="108" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">the chat panel</text>
+      <rect x="400" y="48" width="200" height="80" rx="4" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="500" y="84" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">The app</text>
+      <text x="500" y="108" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">holds the camera</text>
+      <rect x="760" y="48" width="200" height="80" rx="4" fill="#272727" stroke="#2d2d2d" stroke-width="1.5"/>
+      <text x="860" y="84" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Vision model</text>
+      <text x="860" y="108" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">look-only</text>
+      <text x="40" y="536" fill="#a9a9a9" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">The model never drives the camera, and it cannot edit —</text>
+      <text x="40" y="560" fill="#a9a9a9" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">the edit tools are not in its spec at all.</text>
+      <line x1="40" y1="584" x2="960" y2="584" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <rect x="40" y="612" width="16" height="12" rx="2" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="68" y="622" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">Drives the survey</text>
+      <rect x="220" y="612" width="16" height="12" rx="2" fill="#272727" stroke="#2d2d2d" stroke-width="1.5"/>
+      <text x="248" y="622" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">Only looks</text>
+      <line x1="354" y1="618" x2="386" y2="618" stroke="#5b87c7" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="402" y="622" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">Grounded answer</text>
     </svg>

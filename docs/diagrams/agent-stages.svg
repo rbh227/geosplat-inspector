@@ -1,46 +1,31 @@
-<svg width="1000" height="544" viewBox="0 0 1000 544" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="#faf9f7"/>
+<svg width="960" height="544" viewBox="0 0 960 544" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#7e7e7e"/></marker>
+        <marker id="arrow-accent" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#5b87c7"/></marker>
+      </defs>
 
-      <!-- Ring 1 · registry -->
-      <rect x="120" y="64" width="760" height="336" rx="8"
-            fill="rgba(30,30,30,0.015)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
-      <rect x="160" y="58" width="120" height="12" rx="2" fill="#faf9f7"/>
-      <text x="220" y="67" fill="rgba(30,30,30,0.45)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TOOL REGISTRY · V0.2</text>
-      <text x="152" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">40 tools · one list, mirrored in python and typescript</text>
+      <rect width="100%" height="100%" fill="#151515"/>
 
-      <!-- Ring 2 · Clean -->
-      <rect x="160" y="108" width="680" height="248" rx="8"
-            fill="rgba(30,30,30,0.025)" stroke="#5d5d5d" stroke-width="1"/>
-      <rect x="176" y="102" width="144" height="12" rx="2" fill="#faf9f7"/>
-      <text x="248" y="111" fill="#5d5d5d" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CLEAN STAGE · THE EDITOR</text>
-      <text x="192" y="336" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">brush · lasso · polygon · sphere · box · delete · keep · undo · propose</text>
-
-      <!-- Ring 3 · Understand (focal) -->
-      <rect x="200" y="152" width="600" height="160" rx="8"
-            fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <rect x="216" y="146" width="176" height="12" rx="2" fill="#faf9f7"/>
-      <text x="304" y="155" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">UNDERSTAND STAGE · THE ANALYST</text>
-
-      <text x="500" y="204" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">EVERYTHING THE ANALYST GETS</text>
-      <text x="500" y="236" fill="#1e1e1e" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Navigate · capture · answer</text>
-      <text x="500" y="260" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">move_camera · capture_view · answer_question</text>
-      <text x="500" y="288" fill="#5b87c7" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">edits: not in the spec — and refused again at dispatch</text>
-
-      <!-- Editorial callout -->
-      <text x="960" y="444" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Same registry both sides — if the two copies drift, a test fails</text>
-      <path d="M 780 428 Q 740 420 706 404" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
-      <circle cx="704" cy="402" r="2" fill="#1e1e1e"/>
-
-      <!-- Legend -->
-      <line x1="40" y1="472" x2="960" y2="472" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
-      <text x="40" y="488" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
-
-      <rect x="40" y="504" width="14" height="10" rx="2" fill="rgba(30,30,30,0.015)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
-      <text x="60" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Everything the app can do</text>
-
-      <rect x="264" y="504" width="14" height="10" rx="2" fill="rgba(30,30,30,0.025)" stroke="#5d5d5d" stroke-width="1"/>
-      <text x="284" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What the Cleaner may call</text>
-
-      <rect x="488" y="504" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <text x="508" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · what the Analyst may call — a strict subset</text>
+      <rect x="48" y="48" width="864" height="320" rx="4" fill="rgba(214,214,214,0.02)" stroke="#383838" stroke-width="1.5"/>
+      <rect x="96" y="42" width="212" height="16" rx="2" fill="#151515"/>
+      <text x="104" y="54" fill="#7e7e7e" font-size="12" font-family="'Geist Mono', monospace" letter-spacing="0.12em">EVERY TOOL THE APP HAS</text>
+      <text x="104" y="344" fill="#7e7e7e" font-size="12" font-family="'Geist Mono', monospace">40 tools · one registry, mirrored in python and typescript</text>
+      <rect x="96" y="96" width="768" height="224" rx="4" fill="#1e1e1e" stroke="#474747" stroke-width="1.5"/>
+      <rect x="144" y="90" width="168" height="16" rx="2" fill="#151515"/>
+      <text x="152" y="102" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" letter-spacing="0.12em">CLEAN — THE EDITOR</text>
+      <text x="152" y="296" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace">brush · lasso · volumes · delete · keep · undo · propose</text>
+      <rect x="144" y="144" width="672" height="128" rx="4" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <rect x="192" y="138" width="232" height="16" rx="2" fill="#151515"/>
+      <text x="200" y="150" fill="#5b87c7" font-size="12" font-family="'Geist Mono', monospace" letter-spacing="0.12em">UNDERSTAND — THE ANALYST</text>
+      <text x="480" y="196" fill="#d6d6d6" font-size="20" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Navigate · capture · answer</text>
+      <text x="480" y="224" fill="#a9a9a9" font-size="13" font-family="'Geist Mono', monospace" text-anchor="middle">move_camera · capture_view · answer_question</text>
+      <text x="480" y="250" fill="#5b87c7" font-size="13" font-family="'Geist Mono', monospace" text-anchor="middle">no edit tools — not in the spec, refused at dispatch</text>
+      <text x="48" y="424" fill="#a9a9a9" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">The switch is not a mode flag. It is containment.</text>
+      <line x1="48" y1="448" x2="912" y2="448" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <rect x="48" y="476" width="16" height="12" rx="2" fill="#272727" stroke="#2d2d2d" stroke-width="1.5"/>
+      <text x="76" y="486" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">Everything the app can do</text>
+      <rect x="281" y="476" width="16" height="12" rx="2" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="309" y="486" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">What the Cleaner may call</text>
+      <rect x="514" y="476" width="16" height="12" rx="2" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="542" y="486" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">What the Analyst may call</text>
     </svg>

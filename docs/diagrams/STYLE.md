@@ -11,28 +11,26 @@ node docs/diagrams/build.mjs
 
 ## Tokens
 
-The skin is SplatAgent's own: the app's editor palette (`src/index.css`) rebased
-onto light paper so the figures read on GitHub in both light and dark theme.
+The skin **is** the app's editor palette from `src/index.css` — the diagrams are
+meant to look like the tool they document.
 
-| Role | Value | Where it comes from |
+| Role | Value | App token |
 |---|---|---|
-| `paper` | `#faf9f7` | warm-neutral light paper |
-| `paper-2` | `#f0eeea` | container / secondary fill |
-| `ink` | `#1e1e1e` | app `--color-bg-surface` |
-| `muted` | `#5d5d5d` | app `--color-text-muted` |
-| `soft` | `#7e7e7e` | app `--color-text-dim` |
-| `rule` | `rgba(30,30,30,0.12)` | derived from `ink` |
-| `accent` | `#5b87c7` | app `--color-accent-cyan` — **1–2 focal elements per diagram** |
-| `link` | `#8a6d14` | app `--color-accent-amber`, darkened to hit AA on light paper |
+| paper | `#151515` | `--color-bg-deep` (viewport backdrop) |
+| panel | `#1e1e1e` | `--color-bg-surface` (docked panels) |
+| elevated | `#272727` | `--color-bg-elevated` |
+| ink | `#d6d6d6` | `--color-text-primary` |
+| muted | `#a9a9a9` | `--color-text-secondary` |
+| dim | `#7e7e7e` | `--color-text-dim` |
+| border | `#383838` / `#2d2d2d` | `--color-border-mid` / `-subtle` |
+| accent | `#5b87c7` | `--color-accent-cyan` — **1–2 focal elements per diagram** |
+| accent tint | `rgba(91,135,199,0.15)` | `--color-accent-cyan-dim` |
 
-Type: Instrument Serif (titles + italic callouts), Geist (node names), Geist Mono
-(technical sublabels). Never mono for human-readable names.
+Node radius 4 and 1.5px borders echo the app's near-square, flat chrome.
 
-The same table lives in the skill's `references/style-guide.md` under
-*Custom tokens — SplatAgent*, so new diagrams inherit it. The skill ships a
-skin linter (`scripts/lint-skin.py`); it validates against the skill's *default*
-palette, so it flags every colour here by design — its structural checks (no
-`<script>`, no external assets, font families) are the useful part.
+Type: Instrument Serif (titles + italic asides), Geist (node names, 16px),
+Geist Mono (technical sublabels, 12px). The scale is deliberately large — every
+figure is meant to survive being projected.
 
 ## House rules worth keeping
 

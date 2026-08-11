@@ -3,139 +3,73 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SplatAgent · Screen-space selection</title>
+  <title>SplatAgent · Three gestures, one selection</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --color-paper:  #faf9f7;
-      --color-ink:    #1e1e1e;
-      --color-muted:  #5d5d5d;
-      --color-accent: #5b87c7;
-      --font-sans:    'Geist', system-ui, sans-serif;
-      --font-serif:   'Instrument Serif', serif;
-      --font-mono:    'Geist Mono', ui-monospace, monospace;
+      --paper: #151515; --panel: #1e1e1e; --ink: #d6d6d6;
+      --muted: #a9a9a9; --dim: #7e7e7e; --accent: #5b87c7;
+      --font-sans:  'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', serif;
+      --font-mono:  'Geist Mono', ui-monospace, monospace;
     }
     body {
-      font-family: var(--font-sans);
-      background: var(--color-paper);
-      color: var(--color-ink);
-      min-height: 100vh;
-      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-sans); background: var(--paper); color: var(--ink);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
       padding: 3rem 2rem;
     }
-    .frame { max-width: 1200px; width: 100%; }
+    .frame { max-width: 1100px; width: 100%; }
     .eyebrow {
-      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
-      letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--color-muted); margin-bottom: 0.5rem;
+      font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim);
+      margin-bottom: 0.5rem;
     }
     h1 {
-      font-family: var(--font-serif);
-      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
-      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
-      color: var(--color-ink); margin-bottom: 1.5rem;
+      font-family: var(--font-serif); font-size: clamp(1.6rem, 2.4vw + 0.8rem, 2.2rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 1.75rem;
     }
-    svg { width: 100%; min-width: 900px; display: block; }
+    svg { width: 100%; min-width: 760px; display: block; }
   </style>
 </head>
 <body>
   <div class="frame">
-    <p class="eyebrow">Architecture · SplatAgent editor</p>
-    <h1>Three gestures, one selection set</h1>
+    <p class="eyebrow">Selection</p>
+    <h1>Three gestures, one selection</h1>
 
-    <svg viewBox="0 0 1000 528" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 960 552" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+        <marker id="arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#7e7e7e"/></marker>
+        <marker id="arrow-accent" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#5b87c7"/></marker>
       </defs>
 
-      <rect width="100%" height="100%" fill="#faf9f7"/>
+      <rect width="100%" height="100%" fill="#151515"/>
 
-      <!-- Arrows first -->
-      <path d="M 240,136 H 288 Q 296,136 296,144 V 208 Q 296,216 304,216 H 320"
-            fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="240" y1="232" x2="320" y2="232" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 240,328 H 288 Q 296,328 296,320 V 256 Q 296,248 304,248 H 320"
-            fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="520" y1="232" x2="584" y2="232" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="768" y1="232" x2="808" y2="232" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-
-      <!-- Arrow labels -->
-      <rect x="524" y="204" width="56" height="12" rx="2" fill="#faf9f7"/>
-      <text x="552" y="213" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">INSIDE?</text>
-
-      <!-- Node: Brush -->
-      <rect x="48" y="104" width="192" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="48" y="104" width="192" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <rect x="56" y="112" width="40" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
-      <text x="76" y="121" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DRAG</text>
-      <text x="144" y="140" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Brush</text>
-      <text x="144" y="156" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ring cursor · [ ] resize</text>
-
-      <!-- Node: Lasso -->
-      <rect x="48" y="200" width="192" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="48" y="200" width="192" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <rect x="56" y="208" width="40" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
-      <text x="76" y="217" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DRAG</text>
-      <text x="144" y="236" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Lasso</text>
-      <text x="144" y="252" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">freeform loop</text>
-
-      <!-- Node: Polygon -->
-      <rect x="48" y="296" width="192" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="48" y="296" width="192" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <rect x="56" y="304" width="40" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
-      <text x="76" y="313" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLICK</text>
-      <text x="144" y="332" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Polygon</text>
-      <text x="144" y="348" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">≥3 verts · snap to close</text>
-
-      <!-- Node: Project + hit test -->
-      <rect x="320" y="200" width="200" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="320" y="200" width="200" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="328" y="208" width="40" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="348" y="217" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TEST</text>
-      <text x="420" y="236" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Project + hit test</text>
-      <text x="420" y="252" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">centers → screen px</text>
-
-      <!-- Node: Selection set (focal) -->
-      <rect x="584" y="200" width="184" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="584" y="200" width="184" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <rect x="592" y="208" width="32" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
-      <text x="608" y="217" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SET</text>
-      <text x="676" y="236" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Selection set</text>
-      <text x="676" y="252" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">stable splat ids</text>
-
-      <!-- Node: Commit -->
-      <rect x="808" y="200" width="152" height="64" rx="6" fill="#faf9f7"/>
-      <rect x="808" y="200" width="152" height="64" rx="6" fill="rgba(30,30,30,0.05)" stroke="#5d5d5d" stroke-width="1"/>
-      <rect x="816" y="208" width="40" height="12" rx="2" fill="transparent" stroke="rgba(93,93,93,0.50)" stroke-width="0.8"/>
-      <text x="836" y="217" fill="#5d5d5d" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDIT</text>
-      <text x="884" y="236" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Commit</text>
-      <text x="884" y="252" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">delete · keep · invert</text>
-
-      <!-- Editorial callouts -->
-      <text x="952" y="72" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Alt subtracts instead of adding</text>
-      <path d="M 800 80 Q 736 108 680 194" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
-      <circle cx="680" cy="198" r="2" fill="#1e1e1e"/>
-
-      <text x="48" y="424" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">Escape cancels mid-gesture</text>
-      <path d="M 128 408 Q 132 384 144 366" fill="none" stroke="rgba(30,30,30,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
-      <circle cx="144" cy="362" r="2" fill="#5d5d5d"/>
-
-      <!-- Legend -->
-      <line x1="40" y1="456" x2="960" y2="456" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
-      <text x="40" y="472" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
-
-      <rect x="40" y="488" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <text x="60" y="496" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Pointer gesture</text>
-
-      <rect x="200" y="488" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <text x="220" y="496" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Viewer computation</text>
-
-      <rect x="376" y="488" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <text x="396" y="496" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · the shared selection</text>
-
-      <rect x="608" y="488" width="14" height="10" rx="2" fill="rgba(30,30,30,0.05)" stroke="#5d5d5d" stroke-width="1"/>
-      <text x="628" y="496" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Destructive edit · goes to backend history</text>
+      <path d="M 248,120 H 320 Q 328,120 328,128 V 192 Q 328,200 336,200 H 392" fill="none" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="248" y1="232" x2="392" y2="232" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <path d="M 248,344 H 320 Q 328,344 328,336 V 272 Q 328,264 336,264 H 392" fill="none" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="632" y1="232" x2="712" y2="232" stroke="#5b87c7" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <rect x="48" y="88" width="200" height="64" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="148" y="116" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Brush</text>
+      <text x="148" y="140" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">paint it</text>
+      <rect x="48" y="200" width="200" height="64" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="148" y="228" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Lasso</text>
+      <text x="148" y="252" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">draw around it</text>
+      <rect x="48" y="312" width="200" height="64" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="148" y="340" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Polygon</text>
+      <text x="148" y="364" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">click the corners</text>
+      <rect x="392" y="184" width="240" height="96" rx="4" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="512" y="228" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Selection set</text>
+      <text x="512" y="252" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">stable splat ids</text>
+      <rect x="712" y="184" width="200" height="96" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="812" y="228" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Delete · keep</text>
+      <text x="812" y="252" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">or invert it</text>
+      <text x="48" y="424" fill="#7e7e7e" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">Alt subtracts. Escape cancels. The agent uses the same three.</text>
+      <line x1="48" y1="456" x2="912" y2="456" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <rect x="48" y="484" width="16" height="12" rx="2" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="76" y="494" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">Pointer gesture</text>
+      <rect x="215" y="484" width="16" height="12" rx="2" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="243" y="494" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">One shared selection</text>
     </svg>
   </div>
 </body>

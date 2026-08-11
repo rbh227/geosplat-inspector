@@ -3,180 +3,82 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SplatAgent · The judgment tour</title>
+  <title>SplatAgent · Statistics propose, the model judges, you approve</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --color-paper:  #faf9f7;
-      --color-ink:    #1e1e1e;
-      --color-muted:  #5d5d5d;
-      --color-accent: #5b87c7;
-      --font-sans:    'Geist', system-ui, sans-serif;
-      --font-serif:   'Instrument Serif', serif;
-      --font-mono:    'Geist Mono', ui-monospace, monospace;
+      --paper: #151515; --panel: #1e1e1e; --ink: #d6d6d6;
+      --muted: #a9a9a9; --dim: #7e7e7e; --accent: #5b87c7;
+      --font-sans:  'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', serif;
+      --font-mono:  'Geist Mono', ui-monospace, monospace;
     }
     body {
-      font-family: var(--font-sans);
-      background: var(--color-paper);
-      color: var(--color-ink);
-      min-height: 100vh;
-      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-sans); background: var(--paper); color: var(--ink);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
       padding: 3rem 2rem;
     }
-    .frame { max-width: 1200px; width: 100%; }
+    .frame { max-width: 1100px; width: 100%; }
     .eyebrow {
-      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
-      letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--color-muted); margin-bottom: 0.5rem;
+      font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim);
+      margin-bottom: 0.5rem;
     }
     h1 {
-      font-family: var(--font-serif);
-      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
-      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
-      color: var(--color-ink); margin-bottom: 1.5rem;
+      font-family: var(--font-serif); font-size: clamp(1.6rem, 2.4vw + 0.8rem, 2.2rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 1.75rem;
     }
-    svg { width: 100%; min-width: 900px; display: block; }
+    svg { width: 100%; min-width: 760px; display: block; }
   </style>
 </head>
 <body>
   <div class="frame">
-    <p class="eyebrow">Swimlane · Clean stage</p>
+    <p class="eyebrow">Clean stage</p>
     <h1>Statistics propose, the model judges, you approve</h1>
 
-    <svg viewBox="0 0 1000 576" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 1000 704" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
-        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+        <marker id="arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#7e7e7e"/></marker>
+        <marker id="arrow-accent" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#5b87c7"/></marker>
       </defs>
 
-      <rect width="100%" height="100%" fill="#faf9f7"/>
+      <rect width="100%" height="100%" fill="#151515"/>
 
-      <!-- Lane tint (model lane) -->
-      <rect x="120" y="208" width="856" height="120" fill="rgba(30,30,30,0.018)"/>
-
-      <!-- Lane dividers -->
-      <line x1="24" y1="88" x2="976" y2="88" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
-      <line x1="24" y1="208" x2="976" y2="208" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
-      <line x1="24" y1="328" x2="976" y2="328" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
-      <line x1="24" y1="448" x2="976" y2="448" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
-      <line x1="120" y1="88" x2="120" y2="448" stroke="rgba(30,30,30,0.20)" stroke-width="1"/>
-
-      <!-- Lane labels -->
-      <text x="72" y="152" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP · STATS</text>
-      <text x="72" y="272" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MODEL</text>
-      <text x="72" y="392" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">YOU</text>
-
-      <!-- Step chips -->
-      <rect x="176" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
-      <text x="184" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">1</text>
-      <rect x="296" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
-      <text x="304" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">2</text>
-      <rect x="416" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
-      <text x="424" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">3</text>
-      <rect x="536" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
-      <text x="544" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">4</text>
-      <rect x="656" y="56" width="16" height="16" rx="8" fill="rgba(91,135,199,0.20)"/>
-      <text x="664" y="67" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">5</text>
-      <rect x="776" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
-      <text x="784" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">6</text>
-      <rect x="896" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
-      <text x="904" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">7</text>
-
-      <!-- Arrows (before nodes) -->
-      <path d="M 240,148 H 296 Q 304,148 304,156 V 232" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 360,268 H 416 Q 424,268 424,260 V 184" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 480,148 H 536 Q 544,148 544,156 V 352" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 600,388 H 656 Q 664,388 664,380 V 304" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 720,268 H 776 Q 784,268 784,276 V 352" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 840,388 H 896 Q 904,388 904,380 V 184" fill="none" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
-
-      <!-- Arrow label: the only gate that matters -->
-      <rect x="824" y="280" width="72" height="12" rx="2" fill="#faf9f7"/>
-      <text x="860" y="289" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APPROVED</text>
-
-      <!-- Node 1 · app -->
-      <rect x="128" y="112" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="128" y="112" width="112" height="72" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="136" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="152" y="129" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STAT</text>
-      <text x="184" y="152" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Subject floor</text>
-      <text x="184" y="168" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">robust voxel density</text>
-
-      <!-- Node 2 · model -->
-      <rect x="248" y="232" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="248" y="232" width="112" height="72" rx="6" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
-      <rect x="256" y="240" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.22)" stroke-width="0.8"/>
-      <text x="272" y="249" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LOOK</text>
-      <text x="304" y="272" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Outline scene</text>
-      <text x="304" y="288" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">boxes the real thing</text>
-
-      <!-- Node 3 · app -->
-      <rect x="368" y="112" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="368" y="112" width="112" height="72" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="376" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="392" y="129" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GEOM</text>
-      <text x="424" y="152" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Carve keep-set</text>
-      <text x="424" y="168" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">reproject · tint</text>
-
-      <!-- Node 4 · you -->
-      <rect x="488" y="352" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="488" y="352" width="112" height="72" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <rect x="496" y="360" width="32" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
-      <text x="512" y="369" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CARD</text>
-      <text x="544" y="392" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Approve subject</text>
-      <text x="544" y="408" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">looser · tighter</text>
-
-      <!-- Node 5 · model (focal) -->
-      <rect x="608" y="232" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="608" y="232" width="112" height="72" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <rect x="616" y="240" width="36" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
-      <text x="634" y="249" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JUDGE</text>
-      <text x="664" y="272" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mark + judge</text>
-      <text x="664" y="288" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">junk? structure?</text>
-
-      <!-- Node 6 · you -->
-      <rect x="728" y="352" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="728" y="352" width="112" height="72" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <rect x="736" y="360" width="32" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
-      <text x="752" y="369" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CARD</text>
-      <text x="784" y="392" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Review the batch</text>
-      <text x="784" y="408" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">adjust in words</text>
-
-      <!-- Node 7 · app -->
-      <rect x="848" y="112" width="112" height="72" rx="6" fill="#faf9f7"/>
-      <rect x="848" y="112" width="112" height="72" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="856" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="872" y="129" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDIT</text>
-      <text x="904" y="152" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Execute + verify</text>
-      <text x="904" y="168" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">per cluster · check</text>
-
-      <!-- Editorial callout -->
-      <text x="960" y="24" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">A failed model call keeps the cluster —</text>
-      <text x="960" y="44" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">the safe default is leave it alone</text>
-      <path d="M 880 56 Q 800 132 702 224" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
-      <circle cx="700" cy="228" r="2" fill="#1e1e1e"/>
-
-      <text x="40" y="484" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">Nothing is deleted before step 6 — and Stop ends the run at any point.</text>
-
-      <!-- Legend -->
-      <line x1="40" y1="504" x2="960" y2="504" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
-      <text x="40" y="520" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
-
-      <rect x="40" y="536" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <text x="60" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">App · deterministic step</text>
-
-      <rect x="232" y="536" width="14" height="10" rx="2" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
-      <text x="252" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Model · one forced question</text>
-
-      <rect x="440" y="536" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
-      <text x="460" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">You · review card</text>
-
-      <rect x="592" y="536" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <text x="612" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · where judgment happens</text>
-
-      <line x1="824" y1="542" x2="852" y2="542" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
-      <text x="860" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Only path that deletes</text>
+      <line x1="32" y1="64" x2="968" y2="64" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <line x1="32" y1="224" x2="968" y2="224" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <line x1="32" y1="384" x2="968" y2="384" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <line x1="32" y1="544" x2="968" y2="544" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <rect x="128" y="224" width="840" height="160" fill="rgba(214,214,214,0.02)"/>
+      <line x1="128" y1="64" x2="128" y2="544" stroke="rgba(214,214,214,0.18)" stroke-width="1"/>
+      <text x="80" y="150" fill="#7e7e7e" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP</text>
+      <text x="80" y="310" fill="#7e7e7e" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MODEL</text>
+      <text x="80" y="470" fill="#7e7e7e" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">YOU</text>
+      <path d="M 328,144 H 440 Q 448,144 448,152 V 256" fill="none" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <path d="M 544,304 H 656 Q 664,304 664,312 V 416" fill="none" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <path d="M 760,464 H 872 Q 880,464 880,456 V 192" fill="none" stroke="#5b87c7" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <rect x="736" y="320" width="136" height="16" rx="2" fill="#151515"/>
+      <text x="804" y="332" fill="#5b87c7" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">YOU APPROVED IT</text>
+      <rect x="152" y="96" width="176" height="96" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="240" y="140" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Find candidates</text>
+      <text x="240" y="164" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">density · clusters</text>
+      <rect x="368" y="256" width="176" height="96" rx="4" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="456" y="300" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Judge each one</text>
+      <text x="456" y="324" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">junk? structure?</text>
+      <rect x="584" y="416" width="176" height="96" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="672" y="460" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Review the batch</text>
+      <text x="672" y="484" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">one card, all rows</text>
+      <rect x="800" y="96" width="176" height="96" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="888" y="140" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Delete + verify</text>
+      <text x="888" y="164" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">only what you ok’d</text>
+      <text x="32" y="592" fill="#a9a9a9" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">Statistics propose. The model judges. You sign. A failed model call keeps the cluster.</text>
+      <line x1="32" y1="616" x2="968" y2="616" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <rect x="32" y="644" width="16" height="12" rx="2" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="60" y="654" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">The app computes it</text>
+      <rect x="225" y="644" width="16" height="12" rx="2" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="253" y="654" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">The one question the model answers</text>
+      <line x1="517" y1="650" x2="549" y2="650" stroke="#5b87c7" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="565" y="654" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">The only path that deletes</text>
     </svg>
   </div>
 </body>

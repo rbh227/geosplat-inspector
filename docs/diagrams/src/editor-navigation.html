@@ -3,136 +3,78 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SplatAgent · Navigation states</title>
+  <title>SplatAgent · One camera, three ways to drive it</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --color-paper:  #faf9f7;
-      --color-ink:    #1e1e1e;
-      --color-muted:  #5d5d5d;
-      --color-accent: #5b87c7;
-      --font-sans:    'Geist', system-ui, sans-serif;
-      --font-serif:   'Instrument Serif', serif;
-      --font-mono:    'Geist Mono', ui-monospace, monospace;
+      --paper: #151515; --panel: #1e1e1e; --ink: #d6d6d6;
+      --muted: #a9a9a9; --dim: #7e7e7e; --accent: #5b87c7;
+      --font-sans:  'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', serif;
+      --font-mono:  'Geist Mono', ui-monospace, monospace;
     }
     body {
-      font-family: var(--font-sans);
-      background: var(--color-paper);
-      color: var(--color-ink);
-      min-height: 100vh;
-      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-sans); background: var(--paper); color: var(--ink);
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
       padding: 3rem 2rem;
     }
-    .frame { max-width: 1200px; width: 100%; }
+    .frame { max-width: 1100px; width: 100%; }
     .eyebrow {
-      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
-      letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--color-muted); margin-bottom: 0.5rem;
+      font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim);
+      margin-bottom: 0.5rem;
     }
     h1 {
-      font-family: var(--font-serif);
-      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
-      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
-      color: var(--color-ink); margin-bottom: 1.5rem;
+      font-family: var(--font-serif); font-size: clamp(1.6rem, 2.4vw + 0.8rem, 2.2rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 1.75rem;
     }
-    svg { width: 100%; min-width: 900px; display: block; }
+    svg { width: 100%; min-width: 760px; display: block; }
   </style>
 </head>
 <body>
   <div class="frame">
-    <p class="eyebrow">State machine · SplatAgent editor</p>
+    <p class="eyebrow">Navigation</p>
     <h1>One camera, three ways to drive it</h1>
 
-    <svg viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 960 480" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
-        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+        <marker id="arrow" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#7e7e7e"/></marker>
+        <marker id="arrow-accent" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0, 9 3.5, 0 7" fill="#5b87c7"/></marker>
       </defs>
 
-      <rect width="100%" height="100%" fill="#faf9f7"/>
+      <rect width="100%" height="100%" fill="#151515"/>
 
-      <!-- Transitions first -->
-      <line x1="88" y1="236" x2="128" y2="236" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-
-      <line x1="304" y1="216" x2="412" y2="216" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="412" y1="256" x2="304" y2="256" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-
-      <line x1="588" y1="216" x2="696" y2="216" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <line x1="696" y1="256" x2="588" y2="256" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
-
-      <!-- Self-loops -->
-      <path d="M 172,200 C 172,156 252,156 252,196" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <path d="M 456,200 C 456,156 536,156 536,196" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
-
-      <!-- Transition labels -->
-      <rect x="316" y="196" width="84" height="12" rx="2" fill="#faf9f7"/>
-      <text x="358" y="205" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TOGGLE · FLY</text>
-
-      <rect x="308" y="264" width="100" height="12" rx="2" fill="#faf9f7"/>
-      <text x="358" y="273" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TOGGLE · ORBIT</text>
-
-      <rect x="600" y="196" width="84" height="12" rx="2" fill="#faf9f7"/>
-      <text x="642" y="205" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AGENT RUN</text>
-
-      <rect x="592" y="264" width="100" height="12" rx="2" fill="#faf9f7"/>
-      <text x="642" y="273" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">YOU TOUCH IT</text>
-
-      <rect x="156" y="132" width="112" height="12" rx="2" fill="#faf9f7"/>
-      <text x="212" y="141" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DRAG · ORBIT TARGET</text>
-
-      <rect x="436" y="132" width="120" height="12" rx="2" fill="#faf9f7"/>
-      <text x="496" y="141" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">WASD · QE · LOOK</text>
-
-      <!-- Start marker -->
-      <circle cx="80" cy="236" r="6" fill="#1e1e1e"/>
-
-      <!-- State: Orbit -->
-      <rect x="128" y="200" width="176" height="72" rx="8" fill="#faf9f7"/>
-      <rect x="128" y="200" width="176" height="72" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="136" y="208" width="44" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="158" y="217" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DEFAULT</text>
-      <text x="216" y="240" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Orbit</text>
-      <text x="216" y="256" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">circle the scene</text>
-
-      <!-- State: Fly -->
-      <rect x="412" y="200" width="176" height="72" rx="8" fill="#faf9f7"/>
-      <rect x="412" y="200" width="176" height="72" rx="8" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <rect x="420" y="208" width="40" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
-      <text x="440" y="217" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MANUAL</text>
-      <text x="500" y="240" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fly</text>
-      <text x="500" y="256" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">get inside the scene</text>
-
-      <!-- State: Agent-driven (focal) -->
-      <rect x="696" y="200" width="176" height="72" rx="8" fill="#faf9f7"/>
-      <rect x="696" y="200" width="176" height="72" rx="8" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <rect x="704" y="208" width="40" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
-      <text x="724" y="217" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AGENT</text>
-      <text x="784" y="240" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent-driven</text>
-      <text x="784" y="256" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">move_camera · paced</text>
-
-      <!-- Editorial callout -->
-      <text x="40" y="344" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">The movement pad lights up for</text>
-      <text x="40" y="364" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">any input source — that is how</text>
-      <text x="40" y="384" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">you watch the agent fly</text>
-      <path d="M 292 356 Q 500 340 700 278" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
-      <circle cx="702" cy="274" r="2" fill="#1e1e1e"/>
-
-      <!-- Legend -->
-      <line x1="40" y1="408" x2="960" y2="408" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
-      <text x="40" y="424" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
-
-      <circle cx="47" cy="445" r="5" fill="#1e1e1e"/>
-      <text x="60" y="448" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Start</text>
-
-      <rect x="140" y="440" width="14" height="10" rx="4" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
-      <text x="160" y="448" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Human-driven state</text>
-
-      <rect x="320" y="440" width="14" height="10" rx="4" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
-      <text x="340" y="448" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · agent holds the camera</text>
-
-      <line x1="576" y1="446" x2="604" y2="446" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
-      <text x="612" y="448" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Manual input pauses the run at the next tool boundary</text>
+      <line x1="256" y1="144" x2="368" y2="144" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="368" y1="192" x2="256" y2="192" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="592" y1="144" x2="704" y2="144" stroke="#7e7e7e" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="704" y1="192" x2="592" y2="192" stroke="#5b87c7" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <rect x="280" y="120" width="64" height="16" rx="2" fill="#151515"/>
+      <text x="312" y="132" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">TOGGLE</text>
+      <rect x="280" y="200" width="64" height="16" rx="2" fill="#151515"/>
+      <text x="312" y="212" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">TOGGLE</text>
+      <rect x="604" y="120" width="88" height="16" rx="2" fill="#151515"/>
+      <text x="648" y="132" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">AGENT RUN</text>
+      <rect x="608" y="200" width="80" height="16" rx="2" fill="#151515"/>
+      <text x="648" y="212" fill="#5b87c7" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">YOU MOVE</text>
+      <rect x="32" y="120" width="224" height="96" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="144" y="164" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Orbit</text>
+      <text x="144" y="188" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">drag to circle it</text>
+      <rect x="368" y="120" width="224" height="96" rx="4" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="480" y="164" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fly</text>
+      <text x="480" y="188" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">wasd · qe · look</text>
+      <rect x="704" y="120" width="224" height="96" rx="4" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="816" y="164" fill="#d6d6d6" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent-driven</text>
+      <text x="816" y="188" fill="#a9a9a9" font-size="12" font-family="'Geist Mono', monospace" text-anchor="middle">move_camera</text>
+      <text x="32" y="296" fill="#a9a9a9" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">The movement pad lights up for any of the three —</text>
+      <text x="32" y="320" fill="#a9a9a9" font-size="17" font-style="italic" font-family="'Instrument Serif', serif">that is how you watch the agent fly.</text>
+      <line x1="32" y1="384" x2="928" y2="384" stroke="rgba(214,214,214,0.12)" stroke-width="1"/>
+      <rect x="32" y="412" width="16" height="12" rx="2" fill="#1e1e1e" stroke="#383838" stroke-width="1.5"/>
+      <text x="60" y="422" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">You are driving</text>
+      <rect x="199" y="412" width="16" height="12" rx="2" fill="rgba(91,135,199,0.15)" stroke="#5b87c7" stroke-width="1.5"/>
+      <text x="227" y="422" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">The agent is driving</text>
+      <line x1="399" y1="418" x2="431" y2="418" stroke="#5b87c7" stroke-width="2" marker-end="url(#arrow-accent)"/>
+      <text x="447" y="422" fill="#a9a9a9" font-size="12" font-family="'Geist', sans-serif">Touching the camera pauses the run</text>
     </svg>
   </div>
 </body>

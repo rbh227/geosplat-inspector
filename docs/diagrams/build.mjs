@@ -113,9 +113,11 @@ const deck = `<!DOCTYPE html>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --color-paper:  #faf9f7;
-      --color-ink:    #1e1e1e;
-      --color-muted:  #5d5d5d;
+      --color-paper:  #151515;
+      --color-panel:  #1e1e1e;
+      --color-ink:    #d6d6d6;
+      --color-muted:  #a9a9a9;
+      --color-dim:    #7e7e7e;
       --color-accent: #5b87c7;
       --font-sans:    'Geist', system-ui, sans-serif;
       --font-serif:   'Instrument Serif', serif;
@@ -131,23 +133,23 @@ const deck = `<!DOCTYPE html>
     input[name="tab"] { position: absolute; opacity: 0; pointer-events: none; }
     nav {
       display: flex; flex-wrap: wrap; gap: 0.5rem;
-      border-bottom: 1px solid rgba(30,30,30,0.12);
+      border-bottom: 1px solid rgba(214,214,214,0.12);
       padding-bottom: 0.75rem; margin-bottom: 2rem;
     }
     nav label {
       font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
       letter-spacing: 0.14em; text-transform: uppercase;
-      color: var(--color-muted); cursor: pointer;
-      padding: 0.35rem 0.7rem; border: 1px solid rgba(30,30,30,0.12);
-      border-radius: 6px; background: #ffffff;
+      color: var(--color-dim); cursor: pointer;
+      padding: 0.4rem 0.8rem; border: 1px solid #383838;
+      border-radius: 4px; background: var(--color-panel);
     }
-    nav label span { color: rgba(30,30,30,0.35); margin-right: 0.4rem; }
-    nav label:hover { border-color: rgba(30,30,30,0.30); }
+    nav label span { color: #5d5d5d; margin-right: 0.4rem; }
+    nav label:hover { border-color: #474747; color: var(--color-muted); }
     section { display: none; }
     .eyebrow {
-      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500;
       letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--color-muted); margin-bottom: 0.5rem;
+      color: var(--color-dim); margin-bottom: 0.5rem;
     }
     h1 {
       font-family: var(--font-serif);
@@ -161,7 +163,7 @@ ${tabs
   .map(
     (t) => `    #t${t.i}:checked ~ nav label[for="t${t.i}"] {
       color: var(--color-accent); border-color: var(--color-accent);
-      background: rgba(91,135,199,0.10);
+      background: rgba(91,135,199,0.15);
     }
     #t${t.i}:checked ~ main #p${t.i} { display: block; }`
   )
