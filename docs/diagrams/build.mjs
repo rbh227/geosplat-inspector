@@ -51,14 +51,37 @@ function read(name) {
   }
 }
 
-// Standalone .svg: same markup, plus a webfont @import so it types correctly
-// wherever remote fonts are allowed.
+// Standalone .svg for the README.
+//
+// Deliberately NO webfont @import. A standalone SVG is parsed as XML, and the
+// Google Fonts URL carries raw `&` between its family params — unescaped, that
+// is a fatal XML parse error and GitHub rejects the file with "Invalid image
+// source". Escaping it would be legal but pointless: GitHub blocks external
+// resources in SVG anyway, so the fonts would never load. The font-family
+// attributes keep their generic fallbacks (system sans / mono / serif); open
+// the HTML source or the deck to see the real typography.
+//
+// Explicit width/height are added alongside viewBox so consumers that ignore
+// viewBox still size the image correctly.
 function standalone(svg) {
-  const style = `<defs><style>${FONTS}</style></defs>`
-  const withFonts = svg.includes('<defs>')
-    ? svg.replace('<defs>', `<defs><style>${FONTS}</style>`)
-    : svg.replace(/(<svg[^>]*>)/, `$1\n        ${style}`)
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${withFonts}\n`
+  const box = svg.match(/viewBox="0 0 (\d+) (\d+)"/)
+  if (!box) throw new Error('svg has no "0 0 W H" viewBox')
+  return `${svg.replace(/^<svg /, `<svg width="${box[1]}" height="${box[2]}" `)}\n`
+}
+
+// Guard the class of bug that shipped once: an artifact that renders in a
+// browser (as HTML) but is not well-formed XML, so every strict SVG consumer —
+// GitHub included — refuses it. Node has no XML parser; an unescaped `&` is the
+// failure mode that actually bites, so check for it directly.
+function assertXmlSafe(name, svg) {
+  const bad = svg.match(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/)
+  if (bad) {
+    const at = svg.slice(bad.index, bad.index + 40).replace(/\n/g, ' ')
+    throw new Error(`${name}.svg: unescaped "&" makes this invalid XML — near: ${at}`)
+  }
+  if (!svg.startsWith('<svg ') || !svg.trimEnd().endsWith('</svg>')) {
+    throw new Error(`${name}.svg: does not start with <svg and end with </svg>`)
+  }
 }
 
 const names = readdirSync(SRC)
@@ -69,7 +92,9 @@ const names = readdirSync(SRC)
 const pages = new Map(names.map((n) => [n, read(n)]))
 
 for (const [name, page] of pages) {
-  writeFileSync(join(HERE, `${name}.svg`), standalone(page.svg))
+  const svg = standalone(page.svg)
+  assertXmlSafe(name, svg)
+  writeFileSync(join(HERE, `${name}.svg`), svg)
 }
 
 const tabs = DECK.map(([name, label], i) => {

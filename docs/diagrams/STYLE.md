@@ -47,6 +47,27 @@ palette, so it flags every colour here by design — its structural checks (no
 
 ## Exported SVG
 
-GitHub renders the `.svg` files inline but will not fetch the webfonts, so the
-README figures fall back to system sans / mono / serif. Open the HTML in `src/`
-(or the deck) for the real typography.
+The exported `.svg` files carry **no webfont `@import`**, on purpose. Two
+reasons, and the first one is load-bearing:
+
+1. A standalone SVG is parsed as **XML**, and the Google Fonts URL separates its
+   family params with raw `&`. Unescaped, that is a fatal XML parse error —
+   GitHub rejects the file with *"Error rendering embedded code · Invalid image
+   source"*. Browsers tolerate the same markup inside an HTML page, so the bug is
+   invisible if you only ever look at the sources in `src/`. It shipped once
+   exactly that way; `build.mjs` now refuses to write an SVG containing an
+   unescaped `&`.
+2. GitHub blocks external resources in SVG regardless, so the fonts would not
+   load even if the file parsed.
+
+So the README figures render in system sans / mono / serif via the fallbacks in
+each `font-family`. The layouts are built to hold at those widths. Open the HTML
+in `src/` (or the deck) for the real typography.
+
+**When changing the export, validate the artifact, not the source:**
+
+```bash
+node docs/diagrams/build.mjs
+python3 -c "import xml.etree.ElementTree as ET,glob;[ET.parse(f) for f in glob.glob('docs/diagrams/*.svg')]"
+open docs/diagrams/system-overview.svg   # the file GitHub serves, not the HTML
+```
