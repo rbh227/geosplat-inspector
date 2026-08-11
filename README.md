@@ -1,5 +1,14 @@
 # SplatAgent (GeoSplat Inspector)
 
+<p align="center">
+  <img src="docs/images/editor-clean-stage.png" width="960" alt="The SplatAgent editor: tool rail on the left, a 1.3M-splat drone reconstruction of a hurricane-damaged trailer park in the viewport, Clean/Understand stage switch in the top bar, agent chat on the right">
+</p>
+
+<p align="center">
+  <sub>The Clean stage on a raw Iona Point reconstruction — 1.3M splats at 60 fps, 702,836 already cut.<br>
+  The gold haze over the roofs is smeared background gaussians: exactly what the cleanup agent proposes removing.</sub>
+</p>
+
 A local 3D Gaussian Splatting editor where an **AI agent works the same visible
 tools a human does** — it flies the camera, selects splats, proposes edits, and
 answers questions about the scene, all in front of you.
