@@ -5,7 +5,7 @@ tools a human does** — it flies the camera, selects splats, proposes edits, an
 answers questions about the scene, all in front of you.
 
 <p align="center">
-  <img src="docs/diagrams/system-overview.svg" width="860" alt="System overview: browser renderer + Python backend + model provider">
+  <img src="docs/diagrams/system-overview.svg" width="920" alt="System overview: the browser renders and captures frames, a CPU-only Python backend runs the agent loop and owns the splat data, the vision model is called out of process">
 </p>
 
 - The **browser is both the renderer and the agent's eyes**: SparkJS draws the
@@ -30,7 +30,7 @@ splats. The frames have no GPS, so every reconstruction is scale-free — pure
 geometry from pixels.
 
 <p align="center">
-  <img src="docs/diagrams/pipeline.svg" width="980" alt="Pipeline: drone frames → thin → COLMAP SfM → pick target → train → prune → package → SplatAgent">
+  <img src="docs/diagrams/pipeline.svg" width="980" alt="Pipeline: drone video → thin by sharpness → COLMAP SfM → pick one building → train with gsplat → prune → verify and package, with a dashed VGGT bypass around COLMAP">
 </p>
 
 Stage by stage:
@@ -129,7 +129,7 @@ same selection grammar (SuperSplat-style), same history.
 ### Screen-space selection — brush, lasso, polygon
 
 <p align="center">
-  <img src="docs/diagrams/editor-screenspace.svg" width="860" alt="Brush, lasso and polygon selection">
+  <img src="docs/diagrams/editor-screenspace.svg" width="920" alt="Brush, lasso and polygon gestures feed one hit test, one selection set, one commit">
 </p>
 
 Paint with the brush (`[` / `]` resize the ring), draw a freeform lasso, or
@@ -140,7 +140,7 @@ invert, or clear.
 ### Volume selection — sphere & box, previewed live
 
 <p align="center">
-  <img src="docs/diagrams/editor-volumes.svg" width="860" alt="Sphere and box volume selection with SDF dim preview">
+  <img src="docs/diagrams/editor-volumes.svg" width="620" alt="Volume selection flow: place a sphere or box, signed distance per splat, everything outside dims live, adjust or commit">
 </p>
 
 Place a sphere or box in 3D and everything outside dims immediately (a live
@@ -151,7 +151,7 @@ selections flash visibly before any edit lands.
 ### Navigation — orbit & fly
 
 <p align="center">
-  <img src="docs/diagrams/editor-navigation.svg" width="860" alt="Orbit versus fly navigation">
+  <img src="docs/diagrams/editor-navigation.svg" width="920" alt="Camera state machine: orbit and fly are human-driven, agent-driven is a third state, and manual input pauses the run">
 </p>
 
 Orbit for a first look; fly (WASD/QE + drag-to-look) to get inside the scene.
@@ -161,7 +161,7 @@ you watch the agent fly.
 ### One edit history — human and agent share it
 
 <p align="center">
-  <img src="docs/diagrams/editor-history.svg" width="860" alt="Shared edit history through the backend">
+  <img src="docs/diagrams/editor-history.svg" width="920" alt="Sequence: your edit and the agent's approved edit both go through /edit into one authoritative History">
 </p>
 
 Every destructive edit — yours or the agent's — goes through the backend
@@ -180,10 +180,14 @@ spec and dispatch level. Capabilities are packaged as **skills**
 (`survey_scene`, `cleanup_scene`, `count_objects`, …): one vocabulary the
 agent composes autonomously and you can click as pills in the chat panel.
 
+<p align="center">
+  <img src="docs/diagrams/agent-stages.svg" width="920" alt="Nested containment: the Understand tool surface is a strict subset of the Clean surface, which is a subset of the v0.2 registry">
+</p>
+
 ### The Analyst (Understand stage)
 
 <p align="center">
-  <img src="docs/diagrams/agent-analyst.svg" width="860" alt="Analyst agent: survey flight, captures, grounded answer">
+  <img src="docs/diagrams/agent-analyst.svg" width="920" alt="Sequence: the app flies the survey and captures frames, the model only looks and answers">
 </p>
 
 Ask a scene question — *"how many damaged buildings?"* — and the **app** flies
@@ -195,7 +199,7 @@ touch the scene, by construction.
 ### The Cleaner (Clean stage)
 
 <p align="center">
-  <img src="docs/diagrams/agent-cleanup.svg" width="860" alt="Cleaner agent: propose, review, gated edit loop">
+  <img src="docs/diagrams/agent-cleanup.svg" width="920" alt="Swimlane: statistics propose candidates, the model judges each one, you approve the batch before anything is deleted">
 </p>
 
 The cleanup agent works **proposed-and-reviewed**, structured as a *judgment
@@ -273,4 +277,7 @@ Setting up Path 3 (a self-hosted model on your own GPU)? See
 - Test scenes live in `examples/` (`clean.ply`, `messy.ply` — a sphere with
   seeded floaters/outliers/needles for exercising the cleanup tools)
 - Backend tests: `pytest` · frontend: `npm run lint && npx tsc -b`
-- The diagrams above are generated — `node docs/diagrams/generate.mjs`
+- Diagrams: sources in `docs/diagrams/src/*.html`, rebuilt with
+  `node docs/diagrams/build.mjs` (exports the SVGs above and the talk deck at
+  [`docs/demo/diagrams/index.html`](docs/demo/diagrams/index.html)) —
+  conventions in [docs/diagrams/STYLE.md](docs/diagrams/STYLE.md)

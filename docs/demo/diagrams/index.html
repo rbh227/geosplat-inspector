@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SplatAgent — talk diagrams</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #faf9f7;
+      --color-ink:    #1e1e1e;
+      --color-muted:  #5d5d5d;
+      --color-accent: #5b87c7;
+      --font-sans:    'Geist', system-ui, sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      padding: 2.5rem 2rem 4rem;
+    }
+    .frame { max-width: 1200px; margin: 0 auto; }
+    input[name="tab"] { position: absolute; opacity: 0; pointer-events: none; }
+    nav {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      border-bottom: 1px solid rgba(30,30,30,0.12);
+      padding-bottom: 0.75rem; margin-bottom: 2rem;
+    }
+    nav label {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--color-muted); cursor: pointer;
+      padding: 0.35rem 0.7rem; border: 1px solid rgba(30,30,30,0.12);
+      border-radius: 6px; background: #ffffff;
+    }
+    nav label span { color: rgba(30,30,30,0.35); margin-right: 0.4rem; }
+    nav label:hover { border-color: rgba(30,30,30,0.30); }
+    section { display: none; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--color-muted); margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
+      margin-bottom: 1.5rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    #t0:checked ~ nav label[for="t0"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t0:checked ~ main #p0 { display: block; }
+    #t1:checked ~ nav label[for="t1"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t1:checked ~ main #p1 { display: block; }
+    #t2:checked ~ nav label[for="t2"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t2:checked ~ main #p2 { display: block; }
+    #t3:checked ~ nav label[for="t3"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t3:checked ~ main #p3 { display: block; }
+    #t4:checked ~ nav label[for="t4"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t4:checked ~ main #p4 { display: block; }
+    #t5:checked ~ nav label[for="t5"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t5:checked ~ main #p5 { display: block; }
+    #t6:checked ~ nav label[for="t6"] {
+      color: var(--color-accent); border-color: var(--color-accent);
+      background: rgba(91,135,199,0.10);
+    }
+    #t6:checked ~ main #p6 { display: block; }
+    @media print {
+      nav { display: none; }
+      section { display: block !important; page-break-after: always; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <input type="radio" name="tab" id="t0" checked>
+    <input type="radio" name="tab" id="t1">
+    <input type="radio" name="tab" id="t2">
+    <input type="radio" name="tab" id="t3">
+    <input type="radio" name="tab" id="t4">
+    <input type="radio" name="tab" id="t5">
+    <input type="radio" name="tab" id="t6">
+
+    <nav>
+      <label for="t0"><span>01</span>Splats</label>
+      <label for="t1"><span>02</span>COLMAP</label>
+      <label for="t2"><span>03</span>Pipeline</label>
+      <label for="t3"><span>04</span>The app</label>
+      <label for="t4"><span>05</span>Two agents</label>
+      <label for="t5"><span>06</span>Analyst</label>
+      <label for="t6"><span>07</span>Cleaner</label>
+    </nav>
+
+    <main>
+      <section id="p0">
+        <p class="eyebrow">Explainer · 3D Gaussian Splatting</p>
+        <h1>A scene made of soft coloured blobs</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 560" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+                <radialGradient id="blob" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#5b87c7" stop-opacity="0.55"/>
+                  <stop offset="60%" stop-color="#5b87c7" stop-opacity="0.22"/>
+                  <stop offset="100%" stop-color="#5b87c7" stop-opacity="0"/>
+                </radialGradient>
+              </defs>
+        
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Arrows -->
+              <line x1="232" y1="128" x2="280" y2="128" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="472" y1="128" x2="520" y2="128" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="712" y1="128" x2="760" y2="128" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="616" y1="160" x2="616" y2="240" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        
+              <!-- Arrow labels -->
+              <rect x="624" y="188" width="96" height="12" rx="2" fill="#faf9f7"/>
+              <text x="632" y="197" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">ONE OF THEM</text>
+        
+              <!-- Node: photos -->
+              <rect x="40" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="40" y="96" width="192" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="48" y="104" width="28" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="62" y="113" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IN</text>
+              <text x="136" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Photos or video</text>
+              <text x="136" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">no lidar · no depth</text>
+        
+              <!-- Node: optimize -->
+              <rect x="280" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="280" y="96" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="288" y="104" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="306" y="113" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FIT</text>
+              <text x="376" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fit blobs to the photos</text>
+              <text x="376" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">nudge · split · delete</text>
+        
+              <!-- Node: the cloud (focal) -->
+              <rect x="520" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="520" y="96" width="192" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="528" y="104" width="40" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+              <text x="548" y="113" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SCENE</text>
+              <text x="616" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">A cloud of gaussians</text>
+              <text x="616" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">12k … 1m of them</text>
+        
+              <!-- Node: view -->
+              <rect x="760" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="760" y="96" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="768" y="104" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="786" y="113" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OUT</text>
+              <text x="856" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Any new viewpoint</text>
+              <text x="856" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">real time · in a browser</text>
+        
+              <!-- Anatomy panel -->
+              <rect x="360" y="240" width="440" height="192" rx="8" fill="#faf9f7"/>
+              <rect x="360" y="240" width="440" height="192" rx="8" fill="rgba(30,30,30,0.02)" stroke="rgba(30,30,30,0.20)" stroke-width="1"/>
+              <rect x="384" y="234" width="112" height="12" rx="2" fill="#faf9f7"/>
+              <text x="440" y="243" fill="rgba(30,30,30,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ONE GAUSSIAN</text>
+        
+              <!-- The blob -->
+              <ellipse cx="452" cy="336" rx="64" ry="40" transform="rotate(-18 452 336)" fill="url(#blob)"/>
+              <ellipse cx="452" cy="336" rx="64" ry="40" transform="rotate(-18 452 336)" fill="none" stroke="#5b87c7" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="452" cy="336" r="2.5" fill="#5b87c7"/>
+        
+              <!-- Parameters -->
+              <text x="556" y="284" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">IT CARRIES</text>
+        
+              <text x="556" y="308" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Position</text>
+              <text x="664" y="308" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">x · y · z</text>
+        
+              <text x="556" y="332" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Size</text>
+              <text x="664" y="332" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">3 scales + rotation</text>
+        
+              <text x="556" y="356" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Opacity</text>
+              <text x="664" y="356" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">see-through → solid</text>
+        
+              <text x="556" y="380" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Colour</text>
+              <text x="664" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">changes with angle</text>
+        
+              <text x="556" y="408" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">≈ 59 numbers · that is the whole model</text>
+        
+              <!-- Editorial callouts -->
+              <text x="40" y="292" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">One blob is nothing.</text>
+              <text x="40" y="312" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">A million of them, fitted</text>
+              <text x="40" y="332" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">together, are a place.</text>
+              <path d="M 224 316 Q 296 320 356 332" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="358" cy="332" r="2" fill="#1e1e1e"/>
+        
+              <text x="960" y="292" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Drawing them is just</text>
+              <text x="960" y="312" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">sorting and painting —</text>
+              <text x="960" y="332" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">that is why it is fast.</text>
+              <path d="M 856 276 Q 872 216 864 168" fill="none" stroke="rgba(30,30,30,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="864" cy="164" r="2" fill="#5d5d5d"/>
+        
+              <!-- Legend -->
+              <line x1="40" y1="472" x2="960" y2="472" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="488" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="504" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <text x="60" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What you feed it</text>
+        
+              <rect x="200" y="504" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <text x="220" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What the computer does</text>
+        
+              <rect x="424" y="504" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="444" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · the scene itself, and one blob from it</text>
+            </svg>
+        </div>
+      </section>
+      <section id="p1">
+        <p class="eyebrow">Explainer · COLMAP structure from motion</p>
+        <h1>Where was every photo taken from?</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 496" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+                <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+              </defs>
+        
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Arrows -->
+              <line x1="232" y1="168" x2="280" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="472" y1="168" x2="520" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="712" y1="168" x2="760" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+        
+              <!-- Incremental loop, above the row -->
+              <path d="M 856,136 V 104 Q 856,96 848,96 H 384 Q 376,96 376,104 V 136"
+                    fill="none" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        
+              <!-- Result -->
+              <path d="M 856,200 V 296 Q 856,304 848,304 H 808"
+                    fill="none" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        
+              <!-- Arrow labels -->
+              <rect x="536" y="76" width="152" height="12" rx="2" fill="#faf9f7"/>
+              <text x="612" y="85" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">THEN THE NEXT PHOTO</text>
+        
+              <rect x="864" y="240" width="88" height="12" rx="2" fill="#faf9f7"/>
+              <text x="872" y="249" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">WHEN DONE</text>
+        
+              <!-- Node 1: features -->
+              <rect x="40" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="40" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="48" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="62" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">01</text>
+              <text x="136" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Find landmarks</text>
+              <text x="136" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">40k corners per frame</text>
+        
+              <!-- Node 2: match -->
+              <rect x="280" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="280" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="288" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="302" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">02</text>
+              <text x="376" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Match them across frames</text>
+              <text x="376" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">same corner, new angle</text>
+        
+              <!-- Node 3: triangulate -->
+              <rect x="520" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="520" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="528" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="542" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">03</text>
+              <text x="616" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Triangulate</text>
+              <text x="616" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">two angles → depth</text>
+        
+              <!-- Node 4: bundle adjust -->
+              <rect x="760" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="760" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="768" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="782" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">04</text>
+              <text x="856" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Re-solve everything</text>
+              <text x="856" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">bundle adjustment</text>
+        
+              <!-- Result node (focal) -->
+              <rect x="528" y="272" width="280" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="528" y="272" width="280" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="536" y="280" width="44" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+              <text x="558" y="289" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OUTPUT</text>
+              <text x="668" y="308" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">A pose for every photo + sparse points</text>
+              <text x="668" y="324" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">705 / 705 frames registered · 604k points</text>
+        
+              <!-- Editorial callouts -->
+              <text x="40" y="296" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">The same corner, seen</text>
+              <text x="40" y="316" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">from two places, gives</text>
+              <text x="40" y="336" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">depth — like two eyes.</text>
+              <path d="M 224 288 Q 400 264 604 208" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="606" cy="206" r="2" fill="#1e1e1e"/>
+        
+              <text x="40" y="392" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">If these poses are wrong, nothing downstream can fix it.</text>
+        
+              <!-- Legend -->
+              <line x1="40" y1="416" x2="960" y2="416" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="432" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="448" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <text x="60" y="456" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Step</text>
+        
+              <rect x="152" y="448" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="172" y="456" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · the skeleton everything else hangs on</text>
+        
+              <line x1="484" y1="454" x2="512" y2="454" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+              <text x="520" y="456" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Incremental — one photo at a time</text>
+            </svg>
+        </div>
+      </section>
+      <section id="p2">
+        <p class="eyebrow">Process · SplatAgent</p>
+        <h1>Drone video to a 2.9 MB building splat</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 512" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+                <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+              </defs>
+        
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Arrows first (behind boxes) -->
+              <line x1="248" y1="168" x2="288" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="480" y1="168" x2="520" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="712" y1="168" x2="752" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+        
+              <!-- Wrap: end of row 1 → start of row 2 -->
+              <path d="M 848,200 V 256 Q 848,264 840,264 H 160 Q 152,264 152,272 V 328"
+                    fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+        
+              <!-- Experimental bypass: skip COLMAP with VGGT -->
+              <path d="M 384,136 V 104 Q 384,96 392,96 H 840 Q 848,96 848,104 V 136"
+                    fill="none" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        
+              <line x1="248" y1="360" x2="288" y2="360" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="480" y1="360" x2="520" y2="360" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="712" y1="360" x2="752" y2="360" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        
+              <!-- Arrow labels -->
+              <rect x="536" y="76" width="152" height="12" rx="2" fill="#faf9f7"/>
+              <text x="612" y="85" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VGGT-1B · ONE 3.5 S PASS</text>
+        
+              <rect x="464" y="244" width="72" height="12" rx="2" fill="#faf9f7"/>
+              <text x="500" y="253" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PER TARGET</text>
+        
+              <!-- Row 1 -->
+              <!-- Node: Drone video -->
+              <rect x="56" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="56" y="136" width="192" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="64" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="78" y="153" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IN</text>
+              <text x="152" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Drone video</text>
+              <text x="152" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">3,525 4k frames · no gps</text>
+        
+              <!-- Node: Thin -->
+              <rect x="288" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="288" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="296" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="310" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">01</text>
+              <text x="384" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Thin by sharpness</text>
+              <text x="384" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">705 frames kept</text>
+        
+              <!-- Node: COLMAP -->
+              <rect x="520" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="520" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="528" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="542" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">02</text>
+              <text x="616" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">COLMAP SfM</text>
+              <text x="616" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">705 poses · 604k points</text>
+        
+              <!-- Node: Pick target -->
+              <rect x="752" y="136" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="752" y="136" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="760" y="144" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="774" y="153" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">03</text>
+              <text x="848" y="172" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Pick one building</text>
+              <text x="848" y="188" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">crops + 3d box</text>
+        
+              <!-- Row 2 -->
+              <!-- Node: Train (focal) -->
+              <rect x="56" y="328" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="56" y="328" width="192" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="64" y="336" width="28" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+              <text x="78" y="345" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">04</text>
+              <text x="152" y="364" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Train with gsplat</text>
+              <text x="152" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">box-aware mcmc</text>
+        
+              <!-- Node: Prune -->
+              <rect x="288" y="328" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="288" y="328" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="296" y="336" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="310" y="345" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">05</text>
+              <text x="384" y="364" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Prune artifacts</text>
+              <text x="384" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">needles · floaters</text>
+        
+              <!-- Node: Package -->
+              <rect x="520" y="328" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="520" y="328" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="528" y="336" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="542" y="345" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">06</text>
+              <text x="616" y="364" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Verify + package</text>
+              <text x="616" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">psnr on held-out views</text>
+        
+              <!-- Node: SplatAgent -->
+              <rect x="752" y="328" width="192" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="752" y="328" width="192" height="64" rx="6" fill="rgba(30,30,30,0.05)" stroke="#5d5d5d" stroke-width="1"/>
+              <rect x="760" y="336" width="32" height="12" rx="2" fill="transparent" stroke="rgba(93,93,93,0.50)" stroke-width="0.8"/>
+              <text x="776" y="345" fill="#5d5d5d" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OUT</text>
+              <text x="848" y="364" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">SplatAgent scene</text>
+              <text x="848" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">12,375 splats · 2.9 mb</text>
+        
+              <!-- Legend -->
+              <line x1="40" y1="440" x2="960" y2="440" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="456" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="472" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="60" y="480" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · where the box-aware work lives</text>
+        
+              <rect x="336" y="472" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <text x="356" y="480" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Pipeline stage</text>
+        
+              <rect x="480" y="472" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <text x="500" y="480" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Raw input</text>
+        
+              <line x1="608" y1="478" x2="636" y2="478" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+              <text x="644" y="480" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Experimental bypass</text>
+        
+              <line x1="816" y1="478" x2="844" y2="478" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+              <text x="852" y="480" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Deliverable</text>
+            </svg>
+        </div>
+      </section>
+      <section id="p3">
+        <p class="eyebrow">Architecture · SplatAgent</p>
+        <h1>The browser renders the scene — and is the agent's eyes</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 560" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+                <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+                <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#8a6d14"/></marker>
+              </defs>
+        
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Zones (before arrows and nodes) -->
+              <rect x="40" y="88" width="232" height="248" rx="8" fill="rgba(30,30,30,0.02)" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <rect x="64" y="92" width="68" height="12" rx="2" fill="#faf9f7"/>
+              <text x="98" y="101" fill="rgba(30,30,30,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">BROWSER</text>
+        
+              <rect x="368" y="88" width="248" height="376" rx="8" fill="rgba(30,30,30,0.02)" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <rect x="392" y="92" width="132" height="12" rx="2" fill="#faf9f7"/>
+              <text x="458" y="101" fill="rgba(30,30,30,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">PYTHON BACKEND · CPU</text>
+        
+              <!-- Arrows first (behind boxes) -->
+              <line x1="392" y1="136" x2="248" y2="136" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="248" y1="168" x2="392" y2="168" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="248" y1="280" x2="392" y2="280" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+              <line x1="592" y1="272" x2="736" y2="272" stroke="#8a6d14" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+              <line x1="736" y1="296" x2="592" y2="296" stroke="#8a6d14" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-link)"/>
+              <line x1="468" y1="184" x2="468" y2="248" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="516" y1="312" x2="516" y2="376" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+        
+              <!-- Arrow labels (masked, 8px gap) -->
+              <rect x="284" y="116" width="72" height="12" rx="2" fill="#faf9f7"/>
+              <text x="320" y="125" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SCENE · WS</text>
+        
+              <rect x="280" y="148" width="80" height="12" rx="2" fill="#faf9f7"/>
+              <text x="320" y="157" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDIT · POSE</text>
+        
+              <rect x="288" y="260" width="64" height="12" rx="2" fill="#faf9f7"/>
+              <text x="320" y="269" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FRAMES</text>
+        
+              <rect x="644" y="252" width="40" height="12" rx="2" fill="#faf9f7"/>
+              <text x="664" y="261" fill="#8a6d14" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ASK</text>
+        
+              <rect x="632" y="304" width="64" height="12" rx="2" fill="#faf9f7"/>
+              <text x="664" y="313" fill="#8a6d14" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VERDICT</text>
+        
+              <rect x="476" y="210" width="64" height="12" rx="2" fill="#faf9f7"/>
+              <text x="508" y="219" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DISPATCH</text>
+        
+              <rect x="524" y="338" width="72" height="12" rx="2" fill="#faf9f7"/>
+              <text x="560" y="347" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APPLY IDS</text>
+        
+              <!-- Node: Viewport -->
+              <rect x="64" y="120" width="184" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="64" y="120" width="184" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="72" y="128" width="32" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="88" y="137" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VIEW</text>
+              <text x="156" y="156" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Viewport</text>
+              <text x="156" y="172" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SparkJS · WebGL</text>
+        
+              <!-- Node: Frame capture -->
+              <rect x="64" y="248" width="184" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="64" y="248" width="184" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="72" y="256" width="32" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="88" y="265" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EYES</text>
+              <text x="156" y="284" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Frame capture</text>
+              <text x="156" y="300" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">canvas → png</text>
+        
+              <!-- Node: API -->
+              <rect x="392" y="120" width="200" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="392" y="120" width="200" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="400" y="128" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="414" y="137" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+              <text x="492" y="156" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">FastAPI server</text>
+              <text x="492" y="172" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">rest + websocket</text>
+        
+              <!-- Node: Agent loop (focal) -->
+              <rect x="392" y="248" width="200" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="392" y="248" width="200" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="400" y="256" width="32" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+              <text x="416" y="265" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LOOP</text>
+              <text x="492" y="284" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent loop</text>
+              <text x="492" y="300" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">perceive → act → verify</text>
+        
+              <!-- Node: Splat store -->
+              <rect x="392" y="376" width="200" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="392" y="376" width="200" height="64" rx="6" fill="rgba(30,30,30,0.05)" stroke="#5d5d5d" stroke-width="1"/>
+              <rect x="400" y="384" width="32" height="12" rx="2" fill="transparent" stroke="rgba(93,93,93,0.50)" stroke-width="0.8"/>
+              <text x="416" y="393" fill="#5d5d5d" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DATA</text>
+              <text x="492" y="412" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Splat store</text>
+              <text x="492" y="428" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">numpy · ids · history</text>
+        
+              <!-- Node: Vision model -->
+              <rect x="736" y="248" width="200" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="736" y="248" width="200" height="64" rx="6" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <rect x="744" y="256" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.22)" stroke-width="0.8"/>
+              <text x="758" y="265" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VLM</text>
+              <text x="836" y="284" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Vision model</text>
+              <text x="836" y="300" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">gemini · vllm · api</text>
+        
+              <!-- Legend -->
+              <line x1="40" y1="488" x2="960" y2="488" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="504" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="520" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="60" y="528" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · agent loop</text>
+        
+              <rect x="196" y="520" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <text x="216" y="528" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Backend service</text>
+        
+              <rect x="344" y="520" width="14" height="10" rx="2" fill="rgba(30,30,30,0.05)" stroke="#5d5d5d" stroke-width="1"/>
+              <text x="364" y="528" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Data + history</text>
+        
+              <rect x="488" y="520" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <text x="508" y="528" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Browser surface</text>
+        
+              <line x1="636" y1="526" x2="664" y2="526" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+              <text x="672" y="528" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What the model sees</text>
+        
+              <line x1="828" y1="526" x2="856" y2="526" stroke="#8a6d14" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-link)"/>
+              <text x="864" y="528" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Model reply</text>
+            </svg>
+        </div>
+      </section>
+      <section id="p4">
+        <p class="eyebrow">Nested containment · One switch, two agents</p>
+        <h1>The stage decides which tools exist</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 544" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Ring 1 · registry -->
+              <rect x="120" y="64" width="760" height="336" rx="8"
+                    fill="rgba(30,30,30,0.015)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <rect x="160" y="58" width="120" height="12" rx="2" fill="#faf9f7"/>
+              <text x="220" y="67" fill="rgba(30,30,30,0.45)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TOOL REGISTRY · V0.2</text>
+              <text x="152" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">40 tools · one list, mirrored in python and typescript</text>
+        
+              <!-- Ring 2 · Clean -->
+              <rect x="160" y="108" width="680" height="248" rx="8"
+                    fill="rgba(30,30,30,0.025)" stroke="#5d5d5d" stroke-width="1"/>
+              <rect x="176" y="102" width="144" height="12" rx="2" fill="#faf9f7"/>
+              <text x="248" y="111" fill="#5d5d5d" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">CLEAN STAGE · THE EDITOR</text>
+              <text x="192" y="336" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">brush · lasso · polygon · sphere · box · delete · keep · undo · propose</text>
+        
+              <!-- Ring 3 · Understand (focal) -->
+              <rect x="200" y="152" width="600" height="160" rx="8"
+                    fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="216" y="146" width="176" height="12" rx="2" fill="#faf9f7"/>
+              <text x="304" y="155" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">UNDERSTAND STAGE · THE ANALYST</text>
+        
+              <text x="500" y="204" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">EVERYTHING THE ANALYST GETS</text>
+              <text x="500" y="236" fill="#1e1e1e" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Navigate · capture · answer</text>
+              <text x="500" y="260" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">move_camera · capture_view · answer_question</text>
+              <text x="500" y="288" fill="#5b87c7" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">edits: not in the spec — and refused again at dispatch</text>
+        
+              <!-- Editorial callout -->
+              <text x="960" y="444" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Same registry both sides — if the two copies drift, a test fails</text>
+              <path d="M 780 428 Q 740 420 706 404" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="704" cy="402" r="2" fill="#1e1e1e"/>
+        
+              <!-- Legend -->
+              <line x1="40" y1="472" x2="960" y2="472" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="488" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="504" width="14" height="10" rx="2" fill="rgba(30,30,30,0.015)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <text x="60" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Everything the app can do</text>
+        
+              <rect x="264" y="504" width="14" height="10" rx="2" fill="rgba(30,30,30,0.025)" stroke="#5d5d5d" stroke-width="1"/>
+              <text x="284" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What the Cleaner may call</text>
+        
+              <rect x="488" y="504" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="508" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · what the Analyst may call — a strict subset</text>
+            </svg>
+        </div>
+      </section>
+      <section id="p5">
+        <p class="eyebrow">Sequence · Understand stage</p>
+        <h1>The app flies the survey — the model only looks</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 656" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+                <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+              </defs>
+        
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Lifelines -->
+              <line x1="112" y1="128" x2="112" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+              <line x1="368" y1="128" x2="368" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+              <line x1="624" y1="128" x2="624" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+              <line x1="880" y1="128" x2="880" y2="528" stroke="rgba(30,30,30,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        
+              <!-- Activation bars -->
+              <rect x="364" y="176" width="8" height="304" fill="rgba(30,30,30,0.06)" stroke="#5d5d5d" stroke-width="0.8"/>
+              <rect x="620" y="280" width="8" height="40" fill="rgba(30,30,30,0.06)" stroke="#5d5d5d" stroke-width="0.8"/>
+              <rect x="876" y="400" width="8" height="40" fill="rgba(30,30,30,0.06)" stroke="#5d5d5d" stroke-width="0.8"/>
+        
+              <!-- LOOP fragment -->
+              <rect x="336" y="216" width="344" height="136" rx="4" fill="rgba(30,30,30,0.02)" stroke="rgba(30,30,30,0.22)" stroke-width="1"/>
+              <rect x="336" y="216" width="48" height="16" rx="2" fill="#faf9f7" stroke="rgba(30,30,30,0.22)" stroke-width="1"/>
+              <text x="360" y="228" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">LOOP</text>
+              <text x="392" y="252" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[each pose on the framed orbit]</text>
+        
+              <!-- Messages -->
+              <line x1="112" y1="176" x2="360" y2="176" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="372" y1="280" x2="616" y2="280" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="616" y1="320" x2="376" y2="320" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+              <line x1="372" y1="400" x2="872" y2="400" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <line x1="872" y1="440" x2="376" y2="440" stroke="#5b87c7" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+              <line x1="360" y1="480" x2="120" y2="480" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        
+              <!-- Message labels -->
+              <rect x="160" y="156" width="152" height="12" rx="2" fill="#faf9f7"/>
+              <text x="236" y="165" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HOW MANY TRAILERS?</text>
+        
+              <rect x="416" y="260" width="156" height="12" rx="2" fill="#faf9f7"/>
+              <text x="494" y="269" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MOVE CAMERA · CAPTURE</text>
+        
+              <rect x="440" y="300" width="108" height="12" rx="2" fill="#faf9f7"/>
+              <text x="494" y="309" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FRAME · PNG</text>
+        
+              <rect x="464" y="380" width="152" height="12" rx="2" fill="#faf9f7"/>
+              <text x="540" y="389" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">QUESTION + FRAMES</text>
+        
+              <rect x="644" y="420" width="152" height="12" rx="2" fill="#faf9f7"/>
+              <text x="720" y="429" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">COUNT · WHAT IT SAW</text>
+        
+              <rect x="164" y="460" width="152" height="12" rx="2" fill="#faf9f7"/>
+              <text x="240" y="469" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ANSWER + THE VIEWS</text>
+        
+              <!-- Actors -->
+              <rect x="24" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="24" y="64" width="176" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="32" y="72" width="40" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="52" y="81" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HUMAN</text>
+              <text x="112" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">You</text>
+              <text x="112" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">chat panel</text>
+        
+              <rect x="280" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="280" y="64" width="176" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="288" y="72" width="44" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+              <text x="310" y="81" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DRIVER</text>
+              <text x="368" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">App survey</text>
+              <text x="368" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">poses from your view</text>
+        
+              <rect x="536" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="536" y="64" width="176" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="544" y="72" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="562" y="81" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VIEW</text>
+              <text x="624" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Renderer</text>
+              <text x="624" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">sparkjs canvas</text>
+        
+              <rect x="792" y="64" width="176" height="64" rx="6" fill="#faf9f7"/>
+              <rect x="792" y="64" width="176" height="64" rx="6" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <rect x="800" y="72" width="28" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.22)" stroke-width="0.8"/>
+              <text x="814" y="81" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">VLM</text>
+              <text x="880" y="100" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Vision model</text>
+              <text x="880" y="116" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">look-only tools</text>
+        
+              <!-- Editorial callout -->
+              <text x="960" y="556" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">In this stage the edit tools are not in the model's spec at all — it could not cut a splat if it tried</text>
+              <path d="M 828 540 Q 856 528 876 504" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="880" cy="500" r="2" fill="#1e1e1e"/>
+        
+              <!-- Legend -->
+              <line x1="40" y1="584" x2="960" y2="584" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="600" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="616" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <text x="60" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Actor</text>
+        
+              <rect x="128" y="616" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="148" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · the app owns the camera</text>
+        
+              <rect x="380" y="616" width="14" height="10" rx="2" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <text x="400" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">External model</text>
+        
+              <line x1="536" y1="622" x2="564" y2="622" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <text x="572" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Call</text>
+        
+              <line x1="648" y1="622" x2="676" y2="622" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+              <text x="684" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Return</text>
+        
+              <line x1="776" y1="622" x2="804" y2="622" stroke="#5b87c7" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#arrow-accent)"/>
+              <text x="812" y="624" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Grounded answer</text>
+            </svg>
+        </div>
+      </section>
+      <section id="p6">
+        <p class="eyebrow">Swimlane · Clean stage</p>
+        <h1>Statistics propose, the model judges, you approve</h1>
+        <div class="scroll">
+        <svg viewBox="0 0 1000 576" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+                <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5b87c7"/></marker>
+              </defs>
+        
+              <rect width="100%" height="100%" fill="#faf9f7"/>
+        
+              <!-- Lane tint (model lane) -->
+              <rect x="120" y="208" width="856" height="120" fill="rgba(30,30,30,0.018)"/>
+        
+              <!-- Lane dividers -->
+              <line x1="24" y1="88" x2="976" y2="88" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
+              <line x1="24" y1="208" x2="976" y2="208" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
+              <line x1="24" y1="328" x2="976" y2="328" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
+              <line x1="24" y1="448" x2="976" y2="448" stroke="rgba(30,30,30,0.12)" stroke-width="0.8"/>
+              <line x1="120" y1="88" x2="120" y2="448" stroke="rgba(30,30,30,0.20)" stroke-width="1"/>
+        
+              <!-- Lane labels -->
+              <text x="72" y="152" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APP · STATS</text>
+              <text x="72" y="272" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MODEL</text>
+              <text x="72" y="392" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">YOU</text>
+        
+              <!-- Step chips -->
+              <rect x="176" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
+              <text x="184" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">1</text>
+              <rect x="296" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
+              <text x="304" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">2</text>
+              <rect x="416" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
+              <text x="424" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">3</text>
+              <rect x="536" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
+              <text x="544" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">4</text>
+              <rect x="656" y="56" width="16" height="16" rx="8" fill="rgba(91,135,199,0.20)"/>
+              <text x="664" y="67" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">5</text>
+              <rect x="776" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
+              <text x="784" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">6</text>
+              <rect x="896" y="56" width="16" height="16" rx="8" fill="rgba(30,30,30,0.12)"/>
+              <text x="904" y="67" fill="#1e1e1e" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">7</text>
+        
+              <!-- Arrows (before nodes) -->
+              <path d="M 240,148 H 296 Q 304,148 304,156 V 232" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <path d="M 360,268 H 416 Q 424,268 424,260 V 184" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <path d="M 480,148 H 536 Q 544,148 544,156 V 352" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <path d="M 600,388 H 656 Q 664,388 664,380 V 304" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <path d="M 720,268 H 776 Q 784,268 784,276 V 352" fill="none" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+              <path d="M 840,388 H 896 Q 904,388 904,380 V 184" fill="none" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        
+              <!-- Arrow label: the only gate that matters -->
+              <rect x="824" y="280" width="72" height="12" rx="2" fill="#faf9f7"/>
+              <text x="860" y="289" fill="#5b87c7" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APPROVED</text>
+        
+              <!-- Node 1 · app -->
+              <rect x="128" y="112" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="128" y="112" width="112" height="72" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="136" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="152" y="129" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STAT</text>
+              <text x="184" y="152" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Subject floor</text>
+              <text x="184" y="168" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">robust voxel density</text>
+        
+              <!-- Node 2 · model -->
+              <rect x="248" y="232" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="248" y="232" width="112" height="72" rx="6" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <rect x="256" y="240" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.22)" stroke-width="0.8"/>
+              <text x="272" y="249" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LOOK</text>
+              <text x="304" y="272" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Outline scene</text>
+              <text x="304" y="288" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">boxes the real thing</text>
+        
+              <!-- Node 3 · app -->
+              <rect x="368" y="112" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="368" y="112" width="112" height="72" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="376" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="392" y="129" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GEOM</text>
+              <text x="424" y="152" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Carve keep-set</text>
+              <text x="424" y="168" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">reproject · tint</text>
+        
+              <!-- Node 4 · you -->
+              <rect x="488" y="352" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="488" y="352" width="112" height="72" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="496" y="360" width="32" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="512" y="369" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CARD</text>
+              <text x="544" y="392" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Approve subject</text>
+              <text x="544" y="408" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">looser · tighter</text>
+        
+              <!-- Node 5 · model (focal) -->
+              <rect x="608" y="232" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="608" y="232" width="112" height="72" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <rect x="616" y="240" width="36" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+              <text x="634" y="249" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JUDGE</text>
+              <text x="664" y="272" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mark + judge</text>
+              <text x="664" y="288" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">junk? structure?</text>
+        
+              <!-- Node 6 · you -->
+              <rect x="728" y="352" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="728" y="352" width="112" height="72" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <rect x="736" y="360" width="32" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+              <text x="752" y="369" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CARD</text>
+              <text x="784" y="392" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Review the batch</text>
+              <text x="784" y="408" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">adjust in words</text>
+        
+              <!-- Node 7 · app -->
+              <rect x="848" y="112" width="112" height="72" rx="6" fill="#faf9f7"/>
+              <rect x="848" y="112" width="112" height="72" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <rect x="856" y="120" width="32" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+              <text x="872" y="129" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDIT</text>
+              <text x="904" y="152" fill="#1e1e1e" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Execute + verify</text>
+              <text x="904" y="168" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">per cluster · check</text>
+        
+              <!-- Editorial callout -->
+              <text x="960" y="24" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">A failed model call keeps the cluster —</text>
+              <text x="960" y="44" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">the safe default is leave it alone</text>
+              <path d="M 880 56 Q 800 132 702 224" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+              <circle cx="700" cy="228" r="2" fill="#1e1e1e"/>
+        
+              <text x="40" y="484" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">Nothing is deleted before step 6 — and Stop ends the run at any point.</text>
+        
+              <!-- Legend -->
+              <line x1="40" y1="504" x2="960" y2="504" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+              <text x="40" y="520" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+        
+              <rect x="40" y="536" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+              <text x="60" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">App · deterministic step</text>
+        
+              <rect x="232" y="536" width="14" height="10" rx="2" fill="rgba(30,30,30,0.03)" stroke="rgba(30,30,30,0.30)" stroke-width="1"/>
+              <text x="252" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Model · one forced question</text>
+        
+              <rect x="440" y="536" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+              <text x="460" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">You · review card</text>
+        
+              <rect x="592" y="536" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+              <text x="612" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · where judgment happens</text>
+        
+              <line x1="824" y1="542" x2="852" y2="542" stroke="#5b87c7" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+              <text x="860" y="544" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Only path that deletes</text>
+            </svg>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

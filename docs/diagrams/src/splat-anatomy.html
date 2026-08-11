@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SplatAgent · What a Gaussian splat is</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #faf9f7;
+      --color-ink:    #1e1e1e;
+      --color-muted:  #5d5d5d;
+      --color-accent: #5b87c7;
+      --font-sans:    'Geist', system-ui, sans-serif;
+      --font-serif:   'Instrument Serif', serif;
+      --font-mono:    'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--color-muted); margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
+      color: var(--color-ink); margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Explainer · 3D Gaussian Splatting</p>
+    <h1>A scene made of soft coloured blobs</h1>
+
+    <svg viewBox="0 0 1000 560" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5d5d5d"/></marker>
+        <radialGradient id="blob" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#5b87c7" stop-opacity="0.55"/>
+          <stop offset="60%" stop-color="#5b87c7" stop-opacity="0.22"/>
+          <stop offset="100%" stop-color="#5b87c7" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#faf9f7"/>
+
+      <!-- Arrows -->
+      <line x1="232" y1="128" x2="280" y2="128" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="472" y1="128" x2="520" y2="128" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="712" y1="128" x2="760" y2="128" stroke="#5d5d5d" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <line x1="616" y1="160" x2="616" y2="240" stroke="#5d5d5d" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+      <!-- Arrow labels -->
+      <rect x="624" y="188" width="96" height="12" rx="2" fill="#faf9f7"/>
+      <text x="632" y="197" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.08em">ONE OF THEM</text>
+
+      <!-- Node: photos -->
+      <rect x="40" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="40" y="96" width="192" height="64" rx="6" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+      <rect x="48" y="104" width="28" height="12" rx="2" fill="transparent" stroke="rgba(126,126,126,0.40)" stroke-width="0.8"/>
+      <text x="62" y="113" fill="#7e7e7e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IN</text>
+      <text x="136" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Photos or video</text>
+      <text x="136" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">no lidar · no depth</text>
+
+      <!-- Node: optimize -->
+      <rect x="280" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="280" y="96" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+      <rect x="288" y="104" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+      <text x="306" y="113" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">FIT</text>
+      <text x="376" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fit blobs to the photos</text>
+      <text x="376" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">nudge · split · delete</text>
+
+      <!-- Node: the cloud (focal) -->
+      <rect x="520" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="520" y="96" width="192" height="64" rx="6" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+      <rect x="528" y="104" width="40" height="12" rx="2" fill="transparent" stroke="rgba(91,135,199,0.50)" stroke-width="0.8"/>
+      <text x="548" y="113" fill="#5b87c7" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SCENE</text>
+      <text x="616" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">A cloud of gaussians</text>
+      <text x="616" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">12k … 1m of them</text>
+
+      <!-- Node: view -->
+      <rect x="760" y="96" width="192" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="760" y="96" width="192" height="64" rx="6" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+      <rect x="768" y="104" width="36" height="12" rx="2" fill="transparent" stroke="rgba(30,30,30,0.40)" stroke-width="0.8"/>
+      <text x="786" y="113" fill="#1e1e1e" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OUT</text>
+      <text x="856" y="132" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Any new viewpoint</text>
+      <text x="856" y="148" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">real time · in a browser</text>
+
+      <!-- Anatomy panel -->
+      <rect x="360" y="240" width="440" height="192" rx="8" fill="#faf9f7"/>
+      <rect x="360" y="240" width="440" height="192" rx="8" fill="rgba(30,30,30,0.02)" stroke="rgba(30,30,30,0.20)" stroke-width="1"/>
+      <rect x="384" y="234" width="112" height="12" rx="2" fill="#faf9f7"/>
+      <text x="440" y="243" fill="rgba(30,30,30,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ONE GAUSSIAN</text>
+
+      <!-- The blob -->
+      <ellipse cx="452" cy="336" rx="64" ry="40" transform="rotate(-18 452 336)" fill="url(#blob)"/>
+      <ellipse cx="452" cy="336" rx="64" ry="40" transform="rotate(-18 452 336)" fill="none" stroke="#5b87c7" stroke-width="1" stroke-dasharray="4,3"/>
+      <circle cx="452" cy="336" r="2.5" fill="#5b87c7"/>
+
+      <!-- Parameters -->
+      <text x="556" y="284" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">IT CARRIES</text>
+
+      <text x="556" y="308" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Position</text>
+      <text x="664" y="308" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">x · y · z</text>
+
+      <text x="556" y="332" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Size</text>
+      <text x="664" y="332" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">3 scales + rotation</text>
+
+      <text x="556" y="356" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Opacity</text>
+      <text x="664" y="356" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">see-through → solid</text>
+
+      <text x="556" y="380" fill="#1e1e1e" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Colour</text>
+      <text x="664" y="380" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">changes with angle</text>
+
+      <text x="556" y="408" fill="#5d5d5d" font-size="9" font-family="'Geist Mono', monospace">≈ 59 numbers · that is the whole model</text>
+
+      <!-- Editorial callouts -->
+      <text x="40" y="292" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">One blob is nothing.</text>
+      <text x="40" y="312" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">A million of them, fitted</text>
+      <text x="40" y="332" fill="#1e1e1e" font-size="14" font-style="italic" font-family="'Instrument Serif', serif">together, are a place.</text>
+      <path d="M 224 316 Q 296 320 356 332" fill="none" stroke="rgba(30,30,30,0.40)" stroke-width="1" stroke-dasharray="4,3"/>
+      <circle cx="358" cy="332" r="2" fill="#1e1e1e"/>
+
+      <text x="960" y="292" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">Drawing them is just</text>
+      <text x="960" y="312" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">sorting and painting —</text>
+      <text x="960" y="332" fill="#5d5d5d" font-size="14" font-style="italic" font-family="'Instrument Serif', serif" text-anchor="end">that is why it is fast.</text>
+      <path d="M 856 276 Q 872 216 864 168" fill="none" stroke="rgba(30,30,30,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <circle cx="864" cy="164" r="2" fill="#5d5d5d"/>
+
+      <!-- Legend -->
+      <line x1="40" y1="472" x2="960" y2="472" stroke="rgba(30,30,30,0.10)" stroke-width="0.8"/>
+      <text x="40" y="488" fill="#5d5d5d" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40" y="504" width="14" height="10" rx="2" fill="rgba(93,93,93,0.10)" stroke="#7e7e7e" stroke-width="1"/>
+      <text x="60" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What you feed it</text>
+
+      <rect x="200" y="504" width="14" height="10" rx="2" fill="#ffffff" stroke="#1e1e1e" stroke-width="1"/>
+      <text x="220" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">What the computer does</text>
+
+      <rect x="424" y="504" width="14" height="10" rx="2" fill="rgba(91,135,199,0.10)" stroke="#5b87c7" stroke-width="1"/>
+      <text x="444" y="512" fill="#5d5d5d" font-size="8.5" font-family="'Geist', sans-serif">Focal · the scene itself, and one blob from it</text>
+    </svg>
+  </div>
+</body>
+</html>

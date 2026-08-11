@@ -53,6 +53,14 @@ npx tsc -b                    # type-check only
 (`files: []` + project references), so `--noEmit` silently type-checks ZERO
 files and always "passes".
 
+### Diagrams
+```bash
+node docs/diagrams/build.mjs   # src/*.html → docs/diagrams/*.svg + the talk deck
+```
+Sources are self-contained HTML in `docs/diagrams/src/`, built with the
+`diagram-design` skill. Edit the HTML, never the generated `.svg`. Conventions
+and the SplatAgent token set: `docs/diagrams/STYLE.md`.
+
 ### Backend
 Needs **Python 3.12** — `open3d` (used by the splat data layer) has no wheel
 for newer Pythons yet. If your system Python is newer, use the Docker path
